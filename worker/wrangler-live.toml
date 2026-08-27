@@ -1,0 +1,28 @@
+# Second Worker, alongside the auth one. Deploy with:
+#   wrangler deploy -c wrangler-live.toml
+name = "pickem-live"
+main = "live.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+GCP_PROJECT = "your-firebase-project-id"
+# Preseason: "2026PRE". Regular season: "2026".
+# This drives the ESPN feed, the game document ids and the week ceiling,
+# so it must match SEASON in index.html.
+SEASON = "2026PRE"
+
+[[kv_namespaces]]
+binding = "SESSIONS"          # reused for the reminder-sent markers
+id = "REPLACE_ME"
+
+# secrets:
+#   wrangler secret put SA_JSON   -c wrangler-live.toml
+#     the whole serviceAccount.json
+#   wrangler secret put ADMIN_KEY -c wrangler-live.toml
+#     any long random string. Guards the /__live/ endpoints, one of
+#     which sends real notifications to real phones.
+
+[triggers]
+# Scores every minute — the job exits immediately when nothing is live,
+# so most runs cost nothing. Reminders every five minutes.
+crons = ["* * * * *", "*/5 * * * *"]

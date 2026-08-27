@@ -1,0 +1,4 @@
+serviceAccount.json
+*.pem
+.DS_Store
+__pycache__/

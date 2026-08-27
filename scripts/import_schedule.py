@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""
+Import a full NFL season schedule into Firestore. Run this ONCE in the
+spring when the schedule drops, then again only if a game is flexed.
+
+    python scripts/import_schedule.py --season 2026
+
+Pulls from ESPN's public scoreboard endpoint. That endpoint is
+undocumented and can change or close without notice. If it does, use
+--csv instead and hand-build the file (272 rows, one evening's work,
+and then you own your data):
+
+    week,away,home,kickoff_utc,network,spread
+    1,BAL,KC,2026-09-10T00:20:00Z,NBC,KC -3
+"""
+
+import argparse, csv, os, sys
+from datetime import datetime, timezone
+
+import requests
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+
+
+def from_espn(season: int, preseason: bool = False):
+    games = []
+    st = 1 if preseason else 2
+    for wk in range(1, 4 if preseason else 19):
+        r = requests.get(ESPN, params={"seasontype": st, "week": wk, "dates": season}, timeout=20)
+        r.raise_for_status()
+        for ev in r.json().get("events", []):
+            c = ev["competitions"][0]
+            teams = {t["homeAway"]: t["team"]["abbreviation"] for t in c["competitors"]}
+            net = ""
+            bc = c.get("broadcasts") or []
+            if bc and bc[0].get("names"):
+                net = bc[0]["names"][0]
+            odds = c.get("odds") or []
+            games.append({
+                # Doc id carries the season id, which already says PRE or
+                # not. One format everywhere: no P/W split to keep in sync.
+                "id": f"{season}{'PRE' if st == 1 else ''}_W{wk}_{teams['away']}_{teams['home']}",
+                "wk": wk,
+                "preseason": st == 1,
+                "away": teams["away"],
+                "home": teams["home"],
+                "kickoff": datetime.fromisoformat(ev["date"].replace("Z", "+00:00")),
+                "network": net,
+                # Only the next week or two are priced. Everything else
+                # comes back empty here, which is correct — score_week.py
+                # fills lines in as the season moves.
+                "spread": (odds[0].get("details") if odds else "") or "",
+                "status": "scheduled",
+                "awayScore": None,
+                "homeScore": None,
+                "winner": None,
+            })
+        print(f"  week {wk}: {len([g for g in games if g['wk'] == wk])} games")
+    return games
+
+
+def from_csv(path: str, season: int):
+    games = []
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            wk = int(row["week"])
+            games.append({
+                "id": f"{season}_W{wk}_{row['away']}_{row['home']}",
+                "wk": wk,
+                "away": row["away"].strip().upper(),
+                "home": row["home"].strip().upper(),
+                "kickoff": datetime.fromisoformat(row["kickoff_utc"].replace("Z", "+00:00")),
+                "network": row.get("network", "").strip(),
+                "spread": row.get("spread", "").strip(),
+                "status": "scheduled",
+                "awayScore": None, "homeScore": None, "winner": None,
+            })
+    return games
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--season", type=int, required=True)
+    ap.add_argument("--preseason", action="store_true",
+                    help="Import preseason (seasontype=1) instead of the regular season. "
+                         "Preseason is 3 weeks; they import as weeks P1-P3.")
+    ap.add_argument("--csv")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    games = (from_csv(args.csv, args.season) if args.csv
+             else from_espn(args.season, args.preseason))
+    print(f"\n{len(games)} games total")
+
+    if args.dry_run:
+        for g in games[:5]:
+            print(f"  {g['id']}  {g['kickoff'].isoformat()}")
+        return
+
+    key = os.environ.get("FIREBASE_SERVICE_ACCOUNT_FILE", "serviceAccount.json")
+    firebase_admin.initialize_app(credentials.Certificate(key))
+    db = firestore.client()
+
+    # Preseason lands in its own season id so the regular season shares
+    # nothing with it. Nothing to unwind later.
+    season_id = f"{args.season}PRE" if args.preseason else str(args.season)
+    col = db.collection("seasons").document(season_id).collection("games")
+    batch, n = db.batch(), 0
+    for g in games:
+        gid = g.pop("id")
+        # merge=True so re-running after a flex updates the time
+        # without wiping any scores already recorded.
+        batch.set(col.document(gid), g, merge=True)
+        n += 1
+        if n % 400 == 0:
+            batch.commit(); batch = db.batch()
+    batch.commit()
+    print(f"Wrote {n} games to seasons/{season_id}/games")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

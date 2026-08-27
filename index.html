@@ -1,0 +1,2227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Weekly NFL Pick’em</title>
+<meta name="description" content="Rank all sixteen games. Highest points wins the week.">
+
+<!-- PWA. Without these the home-screen icon is a screenshot of the page
+     and the app opens inside Safari chrome instead of full screen. -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#1A1917">
+<link rel="icon" href="./icons/favicon.png" sizes="64x64">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pick’em">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --shell:#1A1917; --shell-2:#232120; --shell-3:#2C2926;
+  --paper:#FAF7F1; --paper-2:#EFEAE0;
+  --ink:#15171B; --ink-soft:#6B6862;
+  --rule:rgba(20,22,26,.10);
+  --stamp:#C8342A; --lock:#E0A32E; --live:#5FA855; --hit:#3E7D34;
+  --chalk:rgba(250,247,241,.55);
+  --r:10px; --pad:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-serif;
+  color:var(--paper);-webkit-font-smoothing:antialiased;padding-bottom:96px}
+.mono{font-family:'Roboto Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+.topbar{position:sticky;top:0;z-index:40;
+  background:linear-gradient(180deg,var(--shell) 72%,rgba(26,25,23,.95));
+  border-bottom:1px solid rgba(250,247,241,.09);padding:14px var(--pad) 0}
+.brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand{display:flex;flex-direction:column;gap:2px;white-space:nowrap}
+.b1{font-size:9.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--chalk);line-height:1}
+.b2{font-size:21px;font-weight:900;letter-spacing:-.035em;text-transform:uppercase;
+  line-height:1;display:flex;align-items:center;gap:7px}
+.pre{border-color:var(--lock)!important;color:var(--lock)!important}
+.b2 em{font-style:normal;color:var(--stamp);border:1.5px solid var(--stamp);border-radius:3px;
+  font-size:9.5px;padding:1px 4px;letter-spacing:.08em;font-weight:800}
+.clock{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--lock);
+  font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.clock .dot{width:5px;height:5px;border-radius:50%;background:var(--lock);animation:pulse 2.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+.weeks{display:flex;gap:5px;overflow-x:auto;margin:12px -14px 0;padding:0 14px 12px;scrollbar-width:none}
+.weeks::-webkit-scrollbar{display:none}
+.wk{flex:0 0 auto;min-width:42px;padding:6px 9px;border-radius:7px;background:var(--shell-2);
+  border:1px solid transparent;text-align:center;cursor:pointer;position:relative}
+.wk b{display:block;font-size:14px;font-weight:800;line-height:1.1}
+.wk span{display:block;font-size:8.5px;letter-spacing:.1em;color:var(--chalk);text-transform:uppercase;margin-top:1px}
+.wk.on{background:var(--paper);border-color:var(--paper);color:var(--ink)}
+.wk.on span{color:var(--ink-soft)}
+.wk .live-d{position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;
+  background:var(--live);animation:pulse 1.6s infinite}
+
+.tabs{display:flex;align-items:center;gap:19px;border-top:1px solid rgba(250,247,241,.08);
+  padding-top:2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto}
+.tab{padding:11px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--chalk);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--paper);border-bottom-color:var(--stamp)}
+
+.tray{padding:13px var(--pad) 0}
+.tray-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.tray-title{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;font-weight:700;color:var(--chalk)}
+.tray-count{font-size:10.5px;font-weight:700}
+.stamps{display:flex;gap:4px;flex-wrap:wrap}
+.stampchip{width:28px;height:28px;border-radius:5px;display:grid;place-items:center;
+  font-size:12px;font-weight:800;border:1.5px solid var(--stamp);color:var(--stamp);
+  transition:transform .18s,opacity .18s}
+.stampchip.used{opacity:.16;border-style:dashed;transform:scale(.86)}
+.inplay{margin-top:10px;padding:9px 11px;border-radius:8px;background:var(--shell-2);
+  font-size:11.5px;color:var(--chalk);line-height:1.4}
+.inplay b{color:var(--paper);font-family:'Roboto Mono',monospace;font-weight:700}
+.tray-legend{display:flex;justify-content:space-between;margin-top:7px;font-size:9px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--chalk)}
+
+.dayhead{display:flex;align-items:center;gap:10px;padding:22px var(--pad) 9px}
+.dayhead h2{margin:0;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.slatetag{font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--chalk);
+  border:1px solid rgba(250,247,241,.22);border-radius:3px;padding:1px 4px;font-weight:700}
+.tzchip{border:1px solid rgba(250,247,241,.22);border-radius:3px;padding:1px 5px;
+  font-size:9px;font-weight:800;letter-spacing:.05em;color:var(--chalk);
+  cursor:pointer;white-space:nowrap}
+.tzsel{width:100%;margin-top:12px;padding:11px 12px;border-radius:8px;
+  background:var(--shell-3);border:1.5px solid rgba(250,247,241,.16);color:var(--paper);
+  font-family:inherit;font-size:13px;font-weight:600;-webkit-appearance:none;appearance:none}
+.tznote{margin-top:9px;font-size:11px;line-height:1.55;color:var(--chalk)}
+.tznote b{color:var(--lock)}
+.dayhead .line{flex:1;height:1px;background:rgba(250,247,241,.14)}
+.dayhead .n{font-size:11px;color:var(--chalk);font-weight:600}
+
+.card{margin:0 var(--pad) 9px;border-radius:var(--r);background:var(--paper);color:var(--ink);
+  box-shadow:0 6px 18px rgba(0,0,0,.30);position:relative;overflow:hidden}
+.meta{display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--paper-2);
+  border-bottom:1px solid var(--rule);
+  font-size:10px;color:var(--ink-soft);font-weight:600}
+.meta .tbd{opacity:.42;font-style:italic;letter-spacing:-.01em}
+.meta .net{border:1px solid rgba(21,23,27,.28);border-radius:3px;padding:0 3px;
+  font-size:8.5px;font-weight:800;letter-spacing:.06em}
+.meta .cd{margin-left:auto;font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:9.5px}
+.meta .cd.soon{color:var(--lock)}
+.meta .cd.urgent{color:var(--stamp)}
+.meta .cd.live{color:var(--live)}
+.meta .cd.live::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;
+  background:var(--live);margin-right:5px;vertical-align:1px;animation:pulse 1.6s infinite}
+
+.match{display:flex;height:82px;overflow:hidden}
+.side{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:0 10px;
+  background:var(--paper);border:0;font:inherit;color:inherit;cursor:pointer;text-align:left;
+  transition:flex-grow .3s cubic-bezier(.4,0,.2,1),background-color .22s,color .22s}
+.side.r{flex-direction:row-reverse;text-align:right}
+.side.won{flex-grow:1.1;color:#fff}
+.side.lost{flex-grow:.95;background:var(--paper-2);color:rgba(21,23,27,.4)}
+.side.lost .mark{filter:grayscale(1) contrast(.5);opacity:.45;width:34px;height:34px;border-radius:9px;font-size:11px}
+/* The unpicked side steps back a notch — also stops Buccaneers and
+   Commanders from truncating on a narrow phone. */
+.side.lost .team{font-size:14.5px;letter-spacing:-.03em}
+.side.lost .city{font-size:9px}
+.gutter{flex:0 0 42px;position:relative;z-index:2;background:var(--paper-2);
+  transform:skewX(-9deg);display:grid;place-items:center;
+  box-shadow:1px 0 0 var(--rule),-1px 0 0 var(--rule)}
+.gutter span{transform:skewX(9deg);font-family:'Roboto Mono',monospace;
+  font-size:15px;font-weight:700;color:rgba(21,23,27,.42)}
+.mark{width:42px;height:42px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
+  position:relative;overflow:hidden;font-weight:900;font-size:13px;letter-spacing:-.03em;color:#fff;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+.mark::after{content:'';position:absolute;left:0;right:0;bottom:0;height:6px;background:var(--sec)}
+.mark span{position:relative;z-index:1;transform:translateY(-2px)}
+.names{display:flex;flex-direction:column;min-width:0}
+.side.r .names{align-items:flex-end}
+.city{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;opacity:.62;line-height:1.3}
+.team{font-size:16px;font-weight:800;letter-spacing:-.025em;line-height:1.1;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.rec{font-size:9px;font-weight:700;opacity:.55;letter-spacing:.09em;margin-top:2px;text-transform:uppercase}
+/* Live score, sitting at the outer edge of each side. */
+.rec{white-space:nowrap}
+/* Once a game is live the score takes the record's line. Nothing to
+   truncate, nothing to wrap, and it clears the skewed gutter entirely. */
+.scr{font-size:21px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:1px}
+
+/* A div, not a <button>. Safari insists on its own intrinsic box for
+   buttons and the empty state kept rendering as an inset pill roughly
+   twice the height of the filled one. Both states are now the same
+   40px strip — only the color and the circle change. */
+.stakebar{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  height:40px;padding:0 12px;box-sizing:border-box;
+  background:var(--paper-2);border-top:1px solid var(--rule);
+  line-height:1;color:var(--ink);cursor:pointer;
+  -webkit-user-select:none;user-select:none}
+.sb-l{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-soft);white-space:nowrap}
+.sb-r{display:flex;align-items:center;gap:9px}
+.sb-num{width:26px;height:26px;flex:0 0 26px;border-radius:50%;display:grid;place-items:center;
+  border:2px solid var(--stamp);color:var(--stamp);font-size:13px;font-weight:900;
+  transform:rotate(-7deg)}
+.sb-num.set{animation:slam .28s cubic-bezier(.2,1.5,.4,1)}
+.sb-num.blank{border-style:dashed;border-color:rgba(200,52,42,.55);
+  color:rgba(200,52,42,.6);transform:none;font-size:14px}
+.sb-pts{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--stamp)}
+.stakebar.empty{border-top:1px dashed rgba(200,52,42,.45)}
+.stakebar.empty .sb-l{color:var(--stamp)}
+@keyframes slam{0%{transform:rotate(-26deg) scale(2.1);opacity:0}
+  60%{transform:rotate(-7deg) scale(.9);opacity:1}100%{transform:rotate(-7deg) scale(1)}}
+
+.card.locked .side{pointer-events:none;cursor:default}
+.card.locked .match{filter:saturate(.45) brightness(.94)}
+.lockband{background:#1F1D1B;color:var(--paper);padding:6px 11px;font-size:9px;font-weight:800;
+  letter-spacing:.11em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
+.lockband .miss{color:var(--stamp)}
+
+/* ---------- GRID ---------- */
+.tbwrap{margin:22px var(--pad) 0}
+.tbhead{display:flex;align-items:center;gap:10px;padding:0 0 9px}
+.tbhead h2{margin:0;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.tbhead .line{flex:1;height:1px;background:rgba(250,247,241,.14)}
+.tbcard{background:var(--paper);color:var(--ink);border-radius:var(--r);
+  box-shadow:0 6px 18px rgba(0,0,0,.30);overflow:hidden;position:relative}
+.tbmeta{display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--paper-2);
+  border-bottom:1px solid var(--rule);font-size:10px;color:var(--ink-soft);font-weight:600}
+.tbmeta .tbd{opacity:.42;font-style:italic}
+.tbmeta .cd{margin-left:auto;font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:9.5px}
+.tbmeta .cd.soon{color:var(--lock)}.tbmeta .cd.urgent{color:var(--stamp)}
+.tbmeta .cd.live{color:var(--live)}
+.tbbody{padding:15px 14px 16px;text-align:center}
+.tbq{font-size:12.5px;font-weight:600;color:var(--ink-soft);line-height:1.5;margin-bottom:3px}
+.tbteams{font-size:15px;font-weight:800;letter-spacing:-.02em;margin-bottom:13px}
+.tbinput{width:132px;padding:12px 8px;border-radius:10px;text-align:center;
+  border:2.5px solid var(--stamp);background:transparent;color:var(--ink);
+  font-family:'Roboto Mono',monospace;font-size:30px;font-weight:700;
+  font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.tbinput::-webkit-outer-spin-button,.tbinput::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.tbinput::placeholder{color:rgba(21,23,27,.2)}
+.tbinput:disabled{border-color:rgba(21,23,27,.15);color:rgba(21,23,27,.35)}
+.tbhint{font-size:10.5px;color:var(--ink-soft);margin-top:11px;line-height:1.5}
+.tbhint b{color:var(--ink)}
+.tbband{background:rgba(26,25,23,.9);color:var(--paper);padding:5px 11px;
+  font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  display:flex;justify-content:space-between}
+.tbband .miss{color:var(--stamp)}
+
+.tbpanel{margin:16px var(--pad) 0;background:var(--shell-2);border-radius:10px;padding:14px}
+.tbpanel h4{margin:0 0 3px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.tbpanel .actual{font-size:11.5px;color:var(--chalk);margin-bottom:11px}
+.tbpanel .actual b{color:var(--lock);font-family:'Roboto Mono',monospace}
+.tbrow{display:flex;align-items:center;gap:10px;padding:8px 0;
+  border-top:1px solid rgba(250,247,241,.07);font-size:12.5px}
+.tbrow:first-of-type{border-top:0}
+.tbrow .nm{flex:1;font-weight:600}
+.tbrow .gs{font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px}
+.tbrow .df{font-size:10px;color:var(--chalk);min-width:52px;text-align:right;font-weight:600}
+.tbrow.win .gs{color:var(--live)}
+.tbrow.over .gs{color:rgba(250,247,241,.32);text-decoration:line-through}
+.tbrow.me{color:var(--paper)}
+.tbrow.me .nm::after{content:' · you';font-size:9.5px;color:var(--stamp);
+  letter-spacing:.06em;text-transform:uppercase;font-weight:800}
+
+.gridhead{padding:14px var(--pad) 10px;display:flex;align-items:baseline;justify-content:space-between}
+.gridhead h3{margin:0;font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.gridhead span{font-size:10.5px;color:var(--chalk);font-weight:600}
+.gridmine{padding:0 var(--pad) 12px;font-size:12px;line-height:1.5;color:var(--chalk)}
+.gridmine b{color:var(--paper);font-family:'Roboto Mono',monospace;font-weight:700}
+.gridscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+.gridscroll::-webkit-scrollbar{height:5px}
+.gridscroll::-webkit-scrollbar-thumb{background:rgba(250,247,241,.2);border-radius:3px}
+table.pool{border-collapse:separate;border-spacing:0;font-size:11px}
+table.pool th,table.pool td{padding:0}
+th.pl,td.pl{position:sticky;left:0;z-index:3;background:var(--shell);
+  min-width:112px;max-width:112px;text-align:left;padding:0 10px 0 var(--pad);
+  box-shadow:6px 0 8px -6px rgba(0,0,0,.65)}
+thead th{height:54px;vertical-align:bottom;padding-bottom:6px}
+th.gm{min-width:50px;width:50px;text-align:center;font-weight:700;line-height:1.25}
+th.gm .aw{color:var(--chalk);font-size:10px;letter-spacing:.02em}
+th.gm .hm{color:var(--paper);font-size:10px;letter-spacing:.02em}
+th.gm .sep{height:1px;background:rgba(250,247,241,.18);margin:2px 9px}
+th.gm .st{font-size:7.5px;letter-spacing:.08em;text-transform:uppercase;margin-top:3px;color:var(--chalk)}
+th.gm .st.final{color:rgba(250,247,241,.4)}
+th.gm .st.live{color:var(--live)}
+th.gm .st.open{color:var(--lock)}
+thead th.pl{font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--chalk);font-weight:700}
+
+tbody tr td{border-top:1px solid rgba(250,247,241,.07);height:46px}
+td.pl{vertical-align:middle}
+.plname{display:flex;align-items:center;gap:8px}
+.plrank{font-size:11px;font-weight:800;color:var(--chalk);width:12px;flex:0 0 12px}
+.plmeta{min-width:0}
+.plmeta b{display:block;font-size:13px;font-weight:700;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plmeta span{display:block;font-size:9.5px;color:var(--chalk);margin-top:1px}
+tbody tr.lead td{background:rgba(232,184,75,.09)}
+tbody tr.up .arrow{color:#7BB661}
+tbody tr.down .arrow{color:#C8342A}
+tbody tr.lead td.pl .plrank{color:#E8B84B}
+tbody tr.lead td.pl .plmeta b{color:#FBEFD2}
+tbody tr.lead .totnum{color:#E8B84B}
+tbody tr.poolrow td{background:#161514;border-top:2px solid rgba(250,247,241,.16)}
+tbody tr.poolrow .plmeta b{color:var(--chalk)}
+tbody tr.me td{background:rgba(200,52,42,.07)}
+tbody tr.me td.pl{background:#241F1E}
+tbody tr.me .plrank{color:var(--stamp)}
+
+.cell{margin:4px 3px;height:38px;border-radius:6px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px;background:var(--shell-2);
+  border:1px solid rgba(250,247,241,.07)}
+.cell b{font-size:11px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.cell i{font-style:normal;font-size:8.5px;font-weight:700;opacity:.65;
+  font-family:'Roboto Mono',monospace}
+.cell.hidden{border-style:dashed;border-color:rgba(250,247,241,.16);background:transparent;color:rgba(250,247,241,.22)}
+.cell.hidden b{font-size:13px;letter-spacing:.06em}
+.cell.pend{background:var(--shell-3);color:var(--paper)}
+.cell.hit{background:var(--hit);border-color:var(--hit);color:#fff}
+.cell.miss{background:transparent;border-color:rgba(250,247,241,.1);color:rgba(250,247,241,.3)}
+.cell.miss b{text-decoration:line-through;text-decoration-thickness:1.5px}
+.cell.none{background:transparent;border-color:rgba(200,52,42,.3);color:rgba(200,52,42,.7)}
+
+td.tot{position:sticky;right:0;z-index:3;background:var(--shell);min-width:52px;text-align:center;
+  box-shadow:-6px 0 8px -6px rgba(0,0,0,.65)}
+th.tot{position:sticky;right:0;z-index:4;background:var(--shell);min-width:52px;text-align:center;
+  font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--chalk);font-weight:700;
+  box-shadow:-6px 0 8px -6px rgba(0,0,0,.65)}
+tbody tr.me td.tot{background:#241F1E}
+.totnum{font-size:16px;font-weight:800;letter-spacing:-.03em}
+.totsub{font-size:8.5px;color:var(--chalk);margin-top:2px}
+
+.legend{display:flex;flex-wrap:wrap;gap:12px;padding:14px var(--pad) 0;
+  font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--chalk);font-weight:600}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;
+  vertical-align:-2px;border:1px solid rgba(250,247,241,.14)}
+.lg-hit{background:var(--hit);border-color:var(--hit)}
+.lg-miss{background:transparent}
+.lg-pend{background:var(--shell-3)}
+.lg-hid{background:transparent;border-style:dashed}
+
+.empty{margin:26px var(--pad);padding:30px 20px;border-radius:12px;
+  border:1.5px dashed rgba(250,247,241,.16);text-align:center}
+.empty h4{margin:0 0 6px;font-size:15px;font-weight:800}
+.empty p{margin:0;font-size:12px;line-height:1.6;color:var(--chalk)}
+
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(26,25,23,.97);
+  border-top:1px solid rgba(250,247,241,.12);
+  padding:11px var(--pad) calc(11px + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:12px;backdrop-filter:blur(12px)}
+.progress{flex:1;min-width:0}
+.pbar{height:4px;border-radius:2px;background:rgba(250,247,241,.14);overflow:hidden}
+.pfill{height:100%;background:var(--paper);transition:width .3s;border-radius:2px}
+.plabel{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--chalk);
+  margin-bottom:5px;font-weight:600}
+.submit{flex:0 0 auto;border:0;border-radius:8px;padding:12px 20px;background:var(--stamp);color:#fff;
+  font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;cursor:pointer}
+.submit:disabled{background:var(--shell-2);color:rgba(250,247,241,.3);cursor:not-allowed}
+
+.scrim{position:fixed;inset:0;z-index:60;background:rgba(10,10,9,.62);opacity:0;
+  pointer-events:none;transition:opacity .22s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--paper);color:var(--ink);
+  border-radius:18px 18px 0 0;padding:16px var(--pad) calc(20px + env(safe-area-inset-bottom));
+  transform:translateY(102%);transition:transform .28s cubic-bezier(.3,0,.2,1);max-height:82vh;overflow:auto}
+.sheet.on{transform:translateY(0)}
+.grab{width:34px;height:4px;border-radius:2px;background:rgba(21,23,27,.18);margin:0 auto 13px}
+.sheet h3{margin:0 0 3px;font-size:16px;font-weight:800;letter-spacing:-.02em}
+.sheet .sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:14px;line-height:1.45}
+.numgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.num{aspect-ratio:1;border-radius:8px;border:2px solid var(--stamp);background:transparent;
+  color:var(--stamp);font-family:inherit;font-size:19px;font-weight:900;cursor:pointer;
+  display:grid;place-items:center;position:relative}
+.num:disabled{border-color:rgba(21,23,27,.13);color:rgba(21,23,27,.2);border-style:dashed;cursor:not-allowed}
+.num small{position:absolute;bottom:4px;font-size:7px;font-weight:700;opacity:.75;letter-spacing:.02em}
+.heatlabel{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-soft);margin:10px 2px 0;font-weight:700}
+.clearw{width:100%;margin-top:12px;padding:11px;border-radius:8px;border:1px solid rgba(21,23,27,.18);
+  background:transparent;color:var(--ink-soft);font-family:inherit;font-size:11px;font-weight:700;
+  letter-spacing:.09em;text-transform:uppercase;cursor:pointer}
+
+.board{padding:6px var(--pad) 0}
+.row{display:flex;align-items:center;gap:11px;padding:13px 12px;background:var(--shell-2);
+  border-radius:9px;margin-bottom:6px;border-left:3px solid transparent}
+.row.me{border-left-color:var(--stamp);background:#2A2724}
+.rank{font-size:13px;font-weight:800;width:18px;color:var(--chalk)}
+.row.me .rank{color:var(--stamp)}
+.who{flex:1;min-width:0}
+.who b{display:block;font-size:14.5px;font-weight:700}
+.who span{display:block;font-size:10px;color:var(--chalk);margin-top:2px}
+.pts{text-align:right}
+.pts b{display:block;font-size:19px;font-weight:800;letter-spacing:-.03em;line-height:1}
+.pts span{display:block;font-size:9px;color:var(--chalk);letter-spacing:.08em;text-transform:uppercase;margin-top:3px}
+
+.settings{padding:8px var(--pad) 0}
+.opt{background:var(--shell-2);border-radius:10px;padding:15px;margin-bottom:9px}
+.opt h4{margin:0 0 4px;font-size:13.5px;font-weight:700}
+.opt p{margin:0;font-size:11.5px;line-height:1.55;color:var(--chalk)}
+.prefs{margin-top:12px}
+.pref{display:flex;align-items:center;gap:11px;padding:11px 0;
+  border-top:1px solid rgba(250,247,241,.08);cursor:pointer}
+.pref:first-child{border-top:0}
+.pref-t{flex:1;min-width:0}
+.pref-t b{display:block;font-size:13px;font-weight:600;letter-spacing:-.01em}
+.pref-t span{display:block;font-size:11px;color:var(--chalk);margin-top:2px;line-height:1.4}
+.sw{flex:0 0 42px;width:42px;height:25px;border-radius:13px;background:rgba(250,247,241,.16);
+  position:relative;transition:background .2s}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;
+  background:var(--paper);transition:transform .2s}
+.pref.on .sw{background:var(--stamp)}
+.pref.on .sw::after{transform:translateX(17px)}
+.modeswitch{display:flex;gap:6px;margin-top:13px}
+.mbtn{flex:1;padding:11px 8px;border-radius:8px;border:1.5px solid rgba(250,247,241,.16);
+  background:transparent;color:var(--chalk);font-family:inherit;font-size:11px;font-weight:800;
+  letter-spacing:.07em;text-transform:uppercase;cursor:pointer}
+.mbtn.on{background:var(--paper);border-color:var(--paper);color:var(--ink)}
+.notice{margin-top:11px;padding:11px 12px;border-radius:8px;background:rgba(200,52,42,.11);
+  border:1px solid rgba(200,52,42,.3);font-size:11px;line-height:1.55;color:#F0B6B1}
+.notice b{color:var(--stamp);display:block;margin-bottom:2px;font-size:10px;
+  letter-spacing:.09em;text-transform:uppercase}
+
+/* ---------- ONBOARDING ---------- */
+.ob{position:fixed;inset:0;z-index:200;background:var(--shell);
+  display:flex;flex-direction:column;overflow-y:auto;
+  padding:calc(28px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom))}
+.ob.hide{display:none}
+.ob-brand{font-weight:900;font-size:13px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--chalk);flex:0 0 auto}
+.ob-body{margin:26px 0 0;flex:1 1 auto}
+.ob-kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--stamp);font-weight:800;margin-bottom:7px}
+.ob-h{font-size:27px;font-weight:900;letter-spacing:-.035em;line-height:1.05;margin:0 0 12px}
+.ob-p{font-size:14px;line-height:1.6;color:var(--chalk);margin:0 0 8px}
+.ob-p b{color:var(--paper);font-weight:700}
+.ob-field{margin-top:26px}
+.ob-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;
+  color:var(--chalk);margin-bottom:8px}
+.ob-input{width:100%;padding:15px 16px;border-radius:11px;box-sizing:border-box;
+  background:var(--shell-2);border:1.5px solid rgba(250,247,241,.18);color:var(--paper);
+  font-family:inherit;font-size:17px;font-weight:600;-webkit-appearance:none}
+.ob-input:focus{border-color:var(--stamp);outline:none}
+.ob-help{font-size:11.5px;color:var(--chalk);margin-top:8px;line-height:1.5}
+.ob-steps{margin:20px 0 0;padding:0;list-style:none;counter-reset:ob}
+.ob-steps li{counter-increment:ob;position:relative;padding:11px 0 11px 35px;
+  border-top:1px solid rgba(250,247,241,.09);font-size:13.5px;line-height:1.55}
+.ob-steps b{color:var(--paper);font-weight:800}
+/* Only the lead-in breaks to its own line, so every description starts
+   at the same left edge. Mid-sentence bold stays inline. */
+.ob-steps b.lead{display:block;margin-bottom:3px}
+.ob-steps li::before{content:counter(ob);position:absolute;left:0;top:12px;
+  width:23px;height:23px;border-radius:50%;background:var(--stamp);color:#fff;
+  font-size:12px;font-weight:800;display:grid;place-items:center}
+.ob-note{margin-top:18px;padding:13px 14px;border-radius:10px;
+  background:rgba(224,163,46,.1);border:1px solid rgba(224,163,46,.34);
+  font-size:12.5px;line-height:1.55;color:#F2D8A4}
+.ob-note b{color:var(--lock);display:block;font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;margin-bottom:3px}
+.ob-foot{margin-top:auto;padding-top:26px}
+.ob-btn{width:100%;padding:16px;border-radius:11px;border:0;background:var(--stamp);color:#fff;
+  font-family:inherit;font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  cursor:pointer;-webkit-appearance:none}
+.ob-btn:disabled{background:var(--shell-2);color:rgba(250,247,241,.3)}
+.ob-skip{width:100%;margin-top:11px;padding:13px;background:none;border:0;color:var(--chalk);
+  font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;cursor:pointer}
+.ob-dots{display:flex;gap:6px;justify-content:center;margin-top:17px}
+.ob-dot{width:6px;height:6px;border-radius:50%;background:rgba(250,247,241,.2)}
+.ob-dot.on{background:var(--stamp);width:18px;border-radius:3px}
+.ob-share{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:4px;
+  border:1.5px solid var(--paper);vertical-align:-4px;margin:0 2px;font-size:11px;font-weight:800}
+
+.helpwrap{padding:4px var(--pad) 0}
+.hp-hero{padding:14px 0 6px}
+.hp-hero h2{margin:0 0 5px;font-size:25px;font-weight:900;letter-spacing:-.035em}
+.hp-hero p{margin:0;font-size:13.5px;color:var(--chalk)}
+.hp-steps{margin:16px 0 0;padding:0;list-style:none;counter-reset:hp}
+.hp-steps li{counter-increment:hp;position:relative;padding:14px 0 14px 40px;
+  border-top:1px solid rgba(250,247,241,.09)}
+.hp-steps li::before{content:counter(hp);position:absolute;left:0;top:14px;
+  width:26px;height:26px;border-radius:50%;background:var(--stamp);color:#fff;
+  font-size:13px;font-weight:800;display:grid;place-items:center}
+.hp-steps b{display:block;font-size:15px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px}
+.hp-steps span{display:block;font-size:12.5px;line-height:1.6;color:var(--chalk)}
+.hp-steps span b{display:inline;font-size:inherit;color:var(--paper);margin:0}
+.hp-sec{margin-top:26px;background:var(--shell-2);border-radius:11px;padding:16px}
+.hp-sec h3{margin:0 0 9px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.hp-p{margin:0 0 9px;font-size:12.5px;line-height:1.6;color:var(--chalk)}
+.hp-p:last-child{margin-bottom:0}
+.hp-p b{color:var(--paper);font-weight:700}
+.hp-note{margin:11px 0 0;font-size:11.5px;line-height:1.55;color:var(--chalk)}
+.hp-note b{color:var(--lock);font-family:'Roboto Mono',monospace}
+.bdgrow{display:flex;align-items:flex-start;gap:12px;margin-bottom:11px}
+.bdgart{flex:0 0 30px;display:flex;justify-content:center;padding-top:1px}
+.bdgart svg{width:26px;height:26px}
+.bdgrow .hp-p{margin:0}
+.hp-table{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.hp-cell{background:var(--shell-3);border-radius:6px;padding:7px 4px;text-align:center}
+.hp-cell b{display:block;font-size:14px;font-weight:800;color:var(--stamp);
+  font-family:'Roboto Mono',monospace}
+.hp-cell span{display:block;font-size:9px;color:var(--chalk);margin-top:2px;letter-spacing:.04em}
+.hp-btn{width:100%;margin:24px 0 8px;padding:14px;border-radius:10px;
+  border:1.5px solid rgba(250,247,241,.2);background:transparent;color:var(--paper);
+  font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.09em;
+  text-transform:uppercase;cursor:pointer}
+.danger{width:100%;margin-top:12px;padding:13px;border-radius:9px;
+  border:1.5px solid rgba(200,52,42,.45);background:transparent;color:var(--stamp);
+  font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.09em;
+  text-transform:uppercase;cursor:pointer}
+.saved{color:var(--live)!important}
+
+/* ---------- sign-in hero: the product demonstrating itself ---------- */
+.mc{position:relative;background:var(--paper);border-radius:11px;overflow:hidden;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);margin-bottom:26px}
+.mc-meta{display:flex;align-items:center;gap:7px;padding:6px 10px;background:var(--paper-2);
+  border-bottom:1px solid var(--rule);font-size:9px;font-weight:700;color:var(--ink-soft);
+  letter-spacing:.04em}
+.mc-meta .lk{margin-left:auto;color:var(--stamp);font-weight:800;letter-spacing:.07em;
+  text-transform:uppercase;font-size:8.5px}
+.mc-row{display:flex;height:66px}
+.mc-side{flex:1 1 0;display:flex;align-items:center;gap:8px;padding:0 11px;
+  background:var(--paper);color:var(--ink);min-width:0;
+  transition:flex-grow .45s cubic-bezier(.4,0,.2,1),background-color .35s,color .35s}
+.mc-side.r{flex-direction:row-reverse}
+.mc-ab{width:32px;height:32px;flex:0 0 32px;border-radius:9px;display:grid;place-items:center;
+  color:#fff;font-size:10px;font-weight:900;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+.mc-nm{font-size:14px;font-weight:800;letter-spacing:-.02em;white-space:nowrap}
+.mc-gut{flex:0 0 32px;background:var(--paper-2);transform:skewX(-9deg);position:relative;z-index:2;
+  display:grid;place-items:center;box-shadow:1px 0 0 var(--rule),-1px 0 0 var(--rule)}
+.mc-gut span{transform:skewX(9deg);font-family:'Roboto Mono',monospace;font-size:12px;
+  font-weight:700;color:rgba(21,23,27,.4)}
+.mc.on .mc-side.l{flex-grow:1.35;background:#E31837;color:#fff}
+.mc.on .mc-side.r{flex-grow:.85;background:var(--paper-2);color:rgba(21,23,27,.35)}
+.mc.on .mc-side.r .mc-ab{filter:grayscale(1);opacity:.45}
+.mc-bar{display:flex;align-items:center;justify-content:space-between;height:34px;
+  padding:0 11px;background:var(--paper-2);border-top:1px solid var(--rule)}
+.mc-bar b{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.mc-st{display:flex;align-items:center;gap:7px;opacity:0;transition:opacity .2s}
+.mc.on .mc-st{opacity:1}
+.mc-num{width:23px;height:23px;border-radius:50%;display:grid;place-items:center;
+  border:2px solid var(--stamp);color:var(--stamp);font-size:12px;font-weight:900}
+.mc.on .mc-num{animation:slam .32s cubic-bezier(.2,1.5,.4,1)}
+.mc-pay{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--stamp)}
+
+/* Centred block for the headline only. Lists stay left-aligned —
+   centred body copy is hard to read. */
+.ob-hero-c{text-align:center;padding:6px 0 4px}
+.ob-hero-c .ob-h{margin-bottom:14px}
+.ob-hero-c .ob-p{max-width:19em;margin-left:auto;margin-right:auto}
+.ob-lbl{margin:22px 0 0;font-size:10px;font-weight:800;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--chalk);text-align:center}
+.ob-facts{display:flex;gap:7px;margin:20px 0 4px}
+.ob-fact{flex:1;background:var(--shell-2);border-radius:9px;padding:11px 8px;text-align:center}
+.ob-fact b{display:block;font-size:19px;font-weight:900;letter-spacing:-.03em;
+  font-family:'Roboto Mono',monospace}
+.ob-fact span{display:block;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--chalk);margin-top:3px;font-weight:700;line-height:1.3}
+
+/* ---------- PIN entry ---------- */
+.pinrow{display:flex;gap:8px;margin-top:6px}
+.pinbox{flex:1;min-width:0;aspect-ratio:1/1.22;border-radius:10px;text-align:center;
+  background:var(--shell-2);border:1.5px solid rgba(250,247,241,.18);color:var(--paper);
+  font-family:'Roboto Mono',monospace;font-size:24px;font-weight:700;padding:0;
+  -webkit-appearance:none;appearance:none}
+.pinbox:focus{border-color:var(--stamp);outline:none;background:var(--shell-3)}
+.pinbox.filled{border-color:rgba(200,52,42,.6)}
+.pinrow.bad{animation:shake .38s}
+.pinrow.bad .pinbox{border-color:var(--stamp);color:var(--stamp)}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}
+  40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+.ob-mail{display:flex;align-items:center;gap:8px;margin-top:14px;padding:11px 12px;
+  border-radius:9px;background:var(--shell-2);font-size:12.5px}
+.ob-mail span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-weight:600}
+.ob-mail button{background:none;border:0;color:var(--stamp);font-family:inherit;font-size:10px;
+  font-weight:800;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;padding:0}
+.ob-resend{text-align:center;margin-top:15px;font-size:11.5px;color:var(--chalk)}
+.ob-resend button{background:none;border:0;color:var(--paper);font-family:inherit;
+  font-size:11.5px;font-weight:700;text-decoration:underline;cursor:pointer;padding:0}
+.ob-resend button:disabled{color:var(--chalk);text-decoration:none;cursor:default}
+.ob-err{margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(200,52,42,.12);
+  border:1px solid rgba(200,52,42,.35);font-size:12px;color:#F0B6B1;line-height:1.5}
+
+.ntwrap{margin-top:11px}
+.nt{display:flex;gap:10px;padding:10px 11px;border-radius:13px;background:var(--shell-2);
+  border:1px solid rgba(250,247,241,.09);margin-bottom:7px}
+.nt-ic{width:29px;height:29px;flex:0 0 29px;border-radius:8px;background:var(--stamp);
+  display:grid;place-items:center;font-size:13px;font-weight:900;color:#fff}
+.nt-b{flex:1;min-width:0}
+.nt-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.nt-h b{font-size:12.5px;font-weight:800;letter-spacing:-.015em}
+.nt-h span{font-size:9.5px;color:var(--chalk);white-space:nowrap;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase}
+.nt-p{font-size:11.5px;color:var(--chalk);line-height:1.45;margin-top:2px}
+
+.tro{width:19px;height:19px;flex:0 0 19px;fill:#E8B84B;color:#E8B84B;
+  filter:drop-shadow(0 0 5px rgba(232,184,75,.45))}
+.trowrap{display:inline-flex;align-items:center;gap:2px;margin-left:6px}
+.trox{font-style:normal;font-size:10px;font-weight:800;color:#E8B84B;
+  font-family:'Roboto Mono',monospace}
+.trolegend{display:flex;align-items:flex-start;gap:9px;margin-top:14px;padding:12px 13px;
+  border-radius:10px;background:rgba(232,184,75,.07);border:1px solid rgba(232,184,75,.24)}
+.trolegend .tro{margin-top:1px}
+.trolegend span{font-size:11.5px;line-height:1.5;color:#E4CE9C}
+
+.med{width:13px;height:13px;fill:#C9C4B8;vertical-align:-2px}
+.medwrap{display:inline-flex;align-items:center;gap:2px;margin-left:5px}
+.medx{font-style:normal;font-size:10px;font-weight:800;color:#C9C4B8;
+  font-family:'Roboto Mono',monospace}
+.wbw{margin-top:18px;background:var(--shell-2);border-radius:11px;padding:14px}
+.wbw h4{margin:0 0 4px;font-size:10.5px;font-weight:800;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--chalk)}
+.wbw-r{display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-top:1px solid rgba(250,247,241,.07);font-size:13px}
+.wbw-w{flex:0 0 42px;font-size:11px;font-weight:700;color:var(--chalk)}
+.wbw-n{flex:1;min-width:0;font-weight:700;display:flex;align-items:center;gap:6px;
+  flex-wrap:nowrap;white-space:nowrap;overflow:hidden}
+.wbw-n .seal{width:17px;height:17px;flex:0 0 17px}
+.wbw-p{font-size:14px;font-weight:800;letter-spacing:-.02em}
+.wbw-r.me{color:var(--paper)}
+.wbw-r.me .wbw-p{color:var(--stamp)}
+.wbw-live{font-size:8.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--live);border:1px solid rgba(95,168,85,.45);border-radius:3px;padding:1px 4px}
+
+/* awards */
+.seal{width:20px;height:20px;flex:0 0 20px;transform:rotate(-8deg);
+  font-family:'Archivo',sans-serif}
+.s-gold{color:#E8B84B;filter:drop-shadow(0 0 5px rgba(232,184,75,.4))}
+.s-silver{color:#B9C1CB}
+/* Awards sit in a row beside the name and never wrap under it. */
+.nrow{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0}
+.nrow b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bsvg{flex:0 0 auto;display:block}
+.bdg{display:inline-flex;align-items:center;gap:2px}
+.bdgx{font-style:normal;font-size:10px;font-weight:800;font-family:'Roboto Mono',monospace}
+.bdgx.gold{color:#E8B84B}.bdgx.silver{color:#B9C1CB}
+
+/* leader */
+.row.lead{background:linear-gradient(90deg,rgba(232,184,75,.13),rgba(232,184,75,.03));
+  border-left-color:#E8B84B;position:relative}
+.row.lead .rank{color:#E8B84B}
+.row.lead .who b{color:#FBEFD2}
+.row.lead .pts b{color:#E8B84B}
+.row.me.lead{background:linear-gradient(90deg,rgba(232,184,75,.16),rgba(200,52,42,.08))}
+.leadtag{position:absolute;top:-7px;right:11px;background:#E8B84B;color:#231F16;
+  font-size:8px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;
+  padding:2px 6px;border-radius:3px}
+
+/* movement as results land */
+.arrow{font-style:normal;font-size:7px;margin-left:3px;vertical-align:2px}
+.row.up .arrow{color:#7BB661}.row.down .arrow{color:#C8342A}
+.row.up{animation:bump .5s ease}
+@keyframes bump{0%{transform:translateY(5px);opacity:.6}100%{transform:none;opacity:1}}
+
+.bdglegend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;padding:0 2px}
+.bdglegend span{display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap;
+  white-space:nowrap;font-size:10px;
+  font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--chalk)}
+/* pool consensus, locked games only */
+.cons{background:var(--paper-2);border-top:1px solid var(--rule);padding:9px 11px 10px}
+.cons-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cons-head span{font-size:9px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-soft)}
+.upset{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:.09em;
+  text-transform:uppercase;color:#fff;background:var(--stamp);border-radius:3px;padding:2px 5px}
+.cbar{display:flex;height:22px;border-radius:5px;overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.cseg{display:flex;align-items:center;color:#fff;font-size:10px;font-weight:800;
+  letter-spacing:.03em;transition:width .4s cubic-bezier(.4,0,.2,1)}
+.cseg.l{justify-content:flex-start;padding-left:8px}
+.cseg.r{justify-content:flex-end;padding-right:8px}
+.cons-sub{margin-top:6px;font-size:9.5px;color:var(--ink-soft);font-weight:600}
+
+.arch{padding:6px var(--pad) 0}
+.arch-head{padding:14px 0 4px}
+.arch-head h2{margin:0 0 4px;font-size:23px;font-weight:900;letter-spacing:-.035em}
+.arch-head p{margin:6px 0 0;font-size:12.5px;line-height:1.55;color:var(--chalk)}
+.arch-hid{display:inline-block;font-size:8.5px;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--lock);border:1px solid rgba(224,163,46,.5);
+  border-radius:3px;padding:2px 6px}
+.arch-final{margin:18px 0 9px;font-size:10.5px;font-weight:800;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--chalk)}
+.arch-foot{margin:16px 0 4px;padding:11px 12px;border-radius:9px;background:var(--shell-2);
+  font-size:11.5px;line-height:1.5;color:var(--chalk)}
+
+.alertbar{display:flex;align-items:center;gap:12px;margin:13px var(--pad) 0;
+  padding:11px 13px;border-radius:10px;background:rgba(224,163,46,.11);
+  border:1px solid rgba(224,163,46,.42)}
+.ab-t{flex:1;min-width:0}
+.ab-t b{display:block;font-size:12.5px;font-weight:800;color:var(--lock)}
+.ab-t span{display:block;font-size:11px;line-height:1.45;color:#E4CE9C;margin-top:2px}
+.ab-b{flex:0 0 auto;border:0;border-radius:7px;padding:9px 14px;background:var(--lock);
+  color:#231F16;font-family:inherit;font-size:11px;font-weight:800;letter-spacing:.07em;
+  text-transform:uppercase;cursor:pointer}
+
+.hide{display:none}
+:focus-visible{outline:2.5px solid var(--lock);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (min-width:640px){
+  body{max-width:620px;margin:0 auto}
+  .bar{max-width:620px;left:50%;transform:translateX(-50%)}
+  .sheet{max-width:620px;left:50%;transform:translateX(-50%) translateY(102%)}
+  .sheet.on{transform:translateX(-50%) translateY(0)}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brandrow">
+    <div class="brand">
+      <span class="b1">Weekly NFL</span>
+      <span class="b2">Pick’em <em id="modeTag">CONF</em><em id="preTag" class="pre hide">PRE</em></span>
+    </div>
+    <div class="clock"><span class="dot"></span><span id="countdown">—</span></div>
+  </div>
+  <div class="weeks" id="weeks"></div>
+  <div class="tabs">
+    <div class="tab on" data-tab="picks">Picks</div>
+    <div class="tab" data-tab="grid">Grid</div>
+    <div class="tab" data-tab="standings">Standings</div>
+    <div class="tab hide" data-tab="archive" id="tabArchive">Archive</div>
+    <div class="tab" data-tab="help">Help</div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </div>
+</div>
+
+<div id="v-picks">
+  <div class="alertbar hide" id="alertbar">
+    <div class="ab-t"><b>Kickoff reminders are off</b>
+      <span id="abWhy">You will not be warned before games lock.</span></div>
+    <button class="ab-b" id="abFix">Turn on</button>
+  </div>
+  <div class="tray" id="tray">
+    <div class="tray-head">
+      <div class="tray-title">Confidence ranks</div>
+      <div class="tray-count mono" id="trayCount">16 left</div>
+    </div>
+    <div class="stamps" id="stamps"></div>
+    <div class="inplay" id="inplay"></div>
+    <div class="tray-legend"><span>1 · lock of the week</span>
+      <span>coin flip · <i id="trayMax">16</i></span></div>
+  </div>
+  <div id="slate"></div>
+</div>
+
+<div id="v-grid" class="hide">
+  <div class="gridhead"><h3 id="gridTitle">Week 1</h3><span id="gridSub"></span></div>
+  <div class="gridmine" id="gridMine"></div>
+  <div id="gridBody"></div>
+</div>
+
+<div id="v-standings" class="hide"><div class="board" id="board"></div></div>
+
+<div id="v-archive" class="hide"><div class="arch" id="archBody"></div></div>
+
+<div id="v-help" class="hide">
+  <div class="helpwrap">
+    <div class="hp-hero">
+      <h2>How to play</h2>
+      <p>Five things. Then it's just you and your opinions.</p>
+    </div>
+
+    <ol class="hp-steps">
+      <li><b>Pick a winner</b>
+        <span>Tap either team. Their color floods that side of the card and the loser fades out. Changed your mind? Tap the same side again.</span></li>
+      <li><b>Rank it 1 to 16</b>
+        <span><b>Your number 1 ranking is the game you'd bet the house on.</b> A correct number 1 earns 16 points, number 2 earns 15, and so on down to number 16, which earns 1. Each number gets used exactly once, so choose carefully.</span></li>
+      <li><b>Beat the kickoff</b>
+        <span>Each game slams shut the moment it starts. Never picked it? That's a zero. No late entries, no exceptions, no sympathy.</span></li>
+      <li><b>Call the tiebreaker</b>
+        <span>Bottom of the Picks tab: combined points in the <b>last game of the week</b>, both teams. Usually Monday night in the regular season. Only comes out if two of you finish dead level.</span></li>
+      <li><b>Watch the Grid</b>
+        <span>Your own sheet is always on the <b>Picks</b> tab, editable right up to each kickoff. The <b>Grid</b> tab lines everyone up side by side. It stays sealed until a game starts, then fills in one column at a time all afternoon. Green means you called it.</span></li>
+    </ol>
+
+    <div class="hp-sec">
+      <h3>What each rank pays</h3>
+      <div class="hp-table" id="payTable"></div>
+      <p class="hp-note" id="payNote"></p>
+      <p class="hp-note" style="margin-top:7px">Bye weeks mean some weeks have fewer than
+        sixteen games. The ranks and the payouts shrink with the slate, so a perfect week
+        is worth less in a bye week. Everyone is on the same slate, so it evens out.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>The line is only there to help you</h3>
+      <p class="hp-p">You are picking <b>straight-up winners</b>, not against the spread.
+        If a team wins by one point they won, and your pick was right.</p>
+      <p class="hp-p">The number on each card (KC -3) is Vegas telling you who they think
+        wins and by how much. It is context for deciding your ranks. It has nothing to do
+        with scoring, and it never affects your points.</p>
+      <p class="hp-p">Games that are not priced yet show <b>line TBD</b>. Books only post
+        a week or so ahead.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>How the pool picked</h3>
+      <p class="hp-p">Once a game kicks off, every locked card shows the split: what
+        percentage of the pool took each side. The <b>Grid</b> carries a <b>The pool</b>
+        row along the bottom with the majority pick on every game.</p>
+      <p class="hp-p">It only ever appears <b>after</b> kickoff. Before that it would tell
+        you what everyone else did, which is the whole thing we are protecting.</p>
+      <p class="hp-p">When the crowd goes down together the card gets a red
+        <b>Pool got it wrong</b> tag. Those are the weeks that shake up a table, because
+        whoever went against it just gained on everybody at once.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>A tie is a tie</h3>
+      <p class="hp-p">NFL games can end in a draw. When that happens, <b>nobody scores
+        points that game</b>, whichever team you took. Rare, but it happens roughly once
+        a season.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>Badges</h3>
+      <div class="bdgrow"><span class="bdgart" id="bdg1"></span>
+        <p class="hp-p">Post the highest score of anybody in the pool for a week and this
+          is yours. Rack them up and it starts keeping count. Finish level with somebody
+          and you both take one, no argument.</p></div>
+      <div class="bdgrow"><span class="bdgart" id="bdg2"></span>
+        <p class="hp-p">Second best that week. Close, but somebody was closer.</p></div>
+      <div class="bdgrow"><span class="bdgart" id="bdg3"></span>
+        <p class="hp-p">A perfect week. Read on.</p></div>
+      <p class="hp-p">Sit on top of the season table and your whole row turns gold with a
+        <b>Leader</b> tag on it, in Standings and on the Grid. It is not a trophy, it is a
+        seat, and somebody is always coming for it. Every time a game goes final the table
+        re-sorts underneath you and a small arrow marks who just climbed or slid.</p>
+      <p class="hp-p">The <b>Week by week</b> panel in Standings keeps the receipts: who
+        took every week, and what it cost them.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>The perfect week</h3>
+      <p class="hp-p">Call all sixteen games in a single week and a <b>gold trophy</b> goes
+        next to your name in Standings, permanently. Do it twice and it carries a number.</p>
+      <p class="hp-p">Fair warning: flipping coins, your odds are about 1 in 65,000. Knowing
+        ball helps, but not that much. Most seasons nobody gets one.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>Strategy, briefly</h3>
+      <p class="hp-p">Anyone can go 11-5. The question is <b>which</b> eleven. Same record,
+        same games, and you might walk away with 100 points or 60. It all comes down to
+        what you put your big numbers on.</p>
+      <p class="hp-p">Which is why nobody's ever really out of it. Thirty points back with
+        four weeks left is one gutsy Sunday from the lead.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>Your picks save themselves</h3>
+      <p class="hp-p">Every tap saves instantly. Bail out halfway through, pick it back up
+        on a different phone, and you're right where you left it.</p>
+      <p class="hp-p"><b>Lock in</b> is not a save button. It confirms the week is complete:
+        every game picked, every rank assigned, tiebreaker entered.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>Signing in</h3>
+      <p class="hp-p">Enter your email, we send a six-digit code, you type it in. No password
+        to forget. You stay signed in on that device, so you will not do this every week.</p>
+      <p class="hp-p">Your picks live with your account, not your phone. Sign in anywhere and
+        they follow you.</p>
+    </div>
+
+    <div class="hp-sec">
+      <h3>Alerts</h3>
+      <p class="hp-p">You only ever hear about games you have not picked. Finish the week
+        early and it stays quiet. Turn categories on and off in Settings.</p>
+      <p class="hp-p"><b>On iPhone, alerts only work if the app is on your Home Screen.</b>
+        That is an Apple rule, not ours.</p>
+    </div>
+
+    <button class="hp-btn" id="hpReplay">Show me the walkthrough again</button>
+  </div>
+</div>
+
+<div id="v-settings" class="hide">
+  <div class="settings">
+    <div class="opt">
+      <h4>Scoring</h4>
+      <p>Straight-up gives 1 point per correct pick. Confidence has you rank all 16 games: rank 1 is your surest and pays 16 points, rank 16 is your coin flip and pays 1. A perfect week is 136.</p>
+      <div class="modeswitch">
+        <button class="mbtn" data-mode="straight">Straight-up</button>
+        <button class="mbtn on" data-mode="confidence">Confidence</button>
+      </div>
+      <div class="notice"><b>Takes effect Week 2</b>
+        Changing scoring mid-week would rescore picks people already made. The new mode starts at the next week boundary.</div>
+    </div>
+    <div class="opt">
+      <h4>Time zone</h4>
+      <p>Kickoff is one moment in time. Pick how you want it shown. Everyone else keeps seeing their own.</p>
+      <select class="tzsel" id="tzsel"></select>
+      <div class="tznote" id="tznote"></div>
+    </div>
+    <div class="opt">
+      <h4>Alerts</h4>
+      <p>You only ever hear about games you haven't picked. Finish the week early and these stay quiet.</p>
+      <div class="prefs" id="prefs"></div>
+    </div>
+    <div class="opt"><h4>Kickoff lock</h4>
+      <p>Each game closes the moment it kicks off. Anything you have not picked by then scores zero. There is no late entry.</p></div>
+    <div class="opt"><h4>Pick visibility</h4>
+      <p>Your picks stay hidden from everyone else until each game kicks off. The Grid fills in one game at a time as the day goes on.</p></div>
+    <div class="opt"><h4>Tiebreaker</h4>
+      <p>Closest to the combined points in the week's final game, without going over.
+        That is Monday night most weeks, but it follows the schedule.</p></div>
+    <div class="opt">
+      <h4>Account</h4>
+      <p id="acctLine">Signed in. Your picks live with your account, so they follow you to any device.</p>
+      <button class="danger" id="logout">Sign out</button>
+    </div>
+    <div class="opt"><h4>First run</h4>
+      <p>Replay the welcome screens. Useful when you're walking somebody through installing it.</p>
+      <button class="mbtn" style="margin-top:12px;width:auto;padding:11px 16px" id="obReplay">Show me again</button></div>
+  </div>
+</div>
+
+<div class="bar" id="bar">
+  <div class="progress">
+    <div class="plabel" id="plabel">—</div>
+    <div class="pbar"><div class="pfill" id="pfill" style="width:0%"></div></div>
+  </div>
+  <button class="submit" id="submitBtn" disabled>Lock in</button>
+</div>
+
+
+<div class="ob hide" id="ob">
+  <div class="ob-brand">Weekly NFL Pick’em</div>
+  <div class="ob-body" id="obBody"></div>
+  <div class="ob-foot" id="obFoot"></div>
+  <div class="ob-dots" id="obDots"></div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet">
+  <div class="grab"></div>
+  <h3 id="sheetTitle">Rank this pick</h3>
+  <div class="sub" id="sheetSub"></div>
+  <div class="numgrid" id="numgrid"></div>
+  <div class="heatlabel"><span id="heatLo">1 · surest</span><span id="heatHi">coin flip · pays 1</span></div>
+  <button class="clearw" id="clearw">Take the stamp back</button>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — the only block you edit in this file.
+   See BUILD.md Part 10.
+   ============================================================ */
+const DEMO = true;            // false once Firebase is wired up
+const SEASON = '2026PRE';
+const POOL_LABEL = 'Family Pool 2026';
+/* ============================================================ */
+
+const T={
+ ARI:['Arizona','Cardinals','#97233F','#FFB612'],ATL:['Atlanta','Falcons','#A71930','#000000'],
+ BAL:['Baltimore','Ravens','#241773','#9E7C0C'],BUF:['Buffalo','Bills','#00338D','#C60C30'],
+ CAR:['Carolina','Panthers','#0085CA','#101820'],CHI:['Chicago','Bears','#0B162A','#C83803'],
+ CIN:['Cincinnati','Bengals','#FB4F14','#000000'],CLE:['Cleveland','Browns','#311D00','#FF3C00'],
+ DAL:['Dallas','Cowboys','#003594','#869397'],DEN:['Denver','Broncos','#0C2340','#FB4F14'],
+ DET:['Detroit','Lions','#0076B6','#B0B7BC'],GB:['Green Bay','Packers','#203731','#FFB612'],
+ HOU:['Houston','Texans','#03202F','#A71930'],IND:['Indianapolis','Colts','#002C5F','#A2AAAD'],
+ JAX:['Jacksonville','Jaguars','#006778','#D7A22A'],KC:['Kansas City','Chiefs','#E31837','#FFB81C'],
+ LV:['Las Vegas','Raiders','#101820','#A5ACAF'],LAC:['Los Angeles','Chargers','#0080C6','#FFC20E'],
+ LAR:['Los Angeles','Rams','#003594','#FFA300'],MIA:['Miami','Dolphins','#008E97','#FC4C02'],
+ MIN:['Minnesota','Vikings','#4F2683','#FFC62F'],NE:['New England','Patriots','#002244','#C60C30'],
+ NO:['New Orleans','Saints','#101820','#D3BC8D'],NYG:['New York','Giants','#0B2265','#A71930'],
+ NYJ:['New York','Jets','#125740','#000000'],PHI:['Philadelphia','Eagles','#004C54','#A5ACAF'],
+ PIT:['Pittsburgh','Steelers','#101820','#FFB612'],SF:['San Francisco','49ers','#AA0000','#B3995D'],
+ SEA:['Seattle','Seahawks','#002244','#69BE28'],TB:['Tampa Bay','Buccaneers','#D50A0A','#FF7900'],
+ TEN:['Tennessee','Titans','#0C2340','#4B92DB'],WAS:['Washington','Commanders','#5A1414','#FFB612']};
+
+let PLAYERS=['Lee','Monse','Eliana','Mateo','Sofia'];   // live: from the roster
+let RECORDS={};                                          // live: team W-L, optional
+let STANDINGS={};   // name -> {pts,hits,weekWins,weekSeconds,perfectWeeks}
+let TIEBREAKS={};   // name -> guessed total
+
+/* ---------- RANK AND PAYOUT ----------
+   Rank 1 is your strongest pick; rank 16 is the coin flip.
+   Points are NOT the rank — a rank-1 hit pays 16, a rank-16 hit pays 1.
+   Flip RANK_ONE_IS_BEST to false for the conventional pool where the
+   number you stake is the number you win. Nothing else changes. */
+const RANK_ONE_IS_BEST=true;
+/* Games per week is NOT always 16. Bye weeks drop it to 13-15, so the
+   rank ceiling and every payout move with the slate. */
+const nGames=w=>(WEEKS[w]||[]).length;
+const pay=(r,n)=>!r?1:(RANK_ONE_IS_BEST?(n+1-r):r);
+const perfectScore=n=>n*(n+1)/2;
+const hash=s=>{let x=2166136261;for(const c of s)x=Math.imul(x^c.charCodeAt(0),16777619);return x>>>0;};
+const ME='Lee';
+
+/* four distinct weekly slates */
+const SLATES={
+ 1:[['BAL','KC','KC -3'],['CIN','CLE','CIN -5.5'],['DAL','PHI','PHI -6'],['MIA','NE','NE -1.5'],
+    ['CAR','ATL','ATL -4'],['NYG','WAS','WAS -6.5'],['PIT','IND','PIT -2'],['TB','NO','TB -3.5'],
+    ['JAX','LV','LV -1'],['DEN','SEA','SEA -2.5'],['HOU','LAC','LAC -3'],['GB','DET','DET -4.5'],
+    ['ARI','SF','SF -7'],['MIN','CHI','MIN -2'],['NYJ','BUF','BUF -8'],['TEN','LAR','LAR -6.5']],
+ 2:[['BUF','MIA','BUF -2.5'],['CHI','GB','GB -5'],['SF','LAR','SF -1.5'],['KC','CIN','KC -3'],
+    ['NE','NYJ','NYJ -1'],['PHI','WAS','PHI -4.5'],['DET','MIN','DET -3'],['CLE','BAL','BAL -9'],
+    ['ATL','NO','ATL -2'],['IND','TEN','IND -3.5'],['SEA','ARI','SEA -1'],['LAC','LV','LAC -4'],
+    ['DAL','NYG','DAL -5.5'],['PIT','CAR','PIT -6'],['DEN','HOU','HOU -2.5'],['TB','JAX','TB -3']],
+ 3:[['NO','PHI','PHI -7'],['MIA','BUF','BUF -6.5'],['GB','DET','DET -2'],['LAR','SEA','SEA -1.5'],
+    ['NYJ','NE','NE -2.5'],['WAS','DAL','DAL -3'],['BAL','CIN','BAL -4'],['TEN','JAX','JAX -3.5'],
+    ['CAR','TB','TB -6'],['ARI','SF','SF -5.5'],['LV','KC','KC -9'],['HOU','IND','HOU -1'],
+    ['MIN','CHI','MIN -3'],['NYG','PIT','PIT -4.5'],['CLE','DEN','DEN -5'],['ATL','LAC','LAC -2']],
+ 4:[['LAC','KC','KC -4'],['PIT','CIN','CIN -2.5'],['NYJ','BUF','BUF -7'],['GB','DET','DET -1.5'],
+    ['LAR','SEA','SEA -3'],['NO','TB','TB -5.5'],['HOU','JAX','HOU -2'],['TEN','IND','IND -4'],
+    ['LV','DEN','DEN -6'],['MIA','NE','NE -3.5'],['NYG','PHI','PHI -8'],['WAS','DAL','DAL -2.5'],
+    ['CHI','MIN','MIN -4.5'],['SF','ARI','SF -3'],['BAL','CLE','BAL -6.5'],['ATL','CAR','ATL -1.5']]
+};
+/* Minutes from Thu Sep 10 2026 00:00 UTC — the real Week 1 anchor.
+   Everything the user sees is formatted from these in THEIR timezone.
+   `kick` below stays compressed so the lock still demos live; with real
+   data the two collapse into the single kickoff Timestamp. */
+const ANCHOR=Date.UTC(2026,8,10);
+const SLOT_MIN=[1460, 5340,5340,5340,5340,5340,5340,5340,5340, 5525,5525, 5545,5545,5545, 5780, 7215];
+const SLOTS=[
+ ['Thursday','8:20 PM','NBC'],
+ ['Sunday','1:00 PM','CBS'],['Sunday','1:00 PM','FOX'],['Sunday','1:00 PM','CBS'],['Sunday','1:00 PM','FOX'],
+ ['Sunday','1:00 PM','FOX'],['Sunday','1:00 PM','CBS'],['Sunday','1:00 PM','FOX'],['Sunday','1:00 PM','CBS'],
+ ['Sunday','4:05 PM','CBS'],['Sunday','4:05 PM','FOX'],
+ ['Sunday','4:25 PM','CBS'],['Sunday','4:25 PM','FOX'],['Sunday','4:25 PM','FOX'],
+ ['Sunday','8:20 PM','NBC'],['Monday','8:15 PM','ESPN']];
+
+/* week 1 sits mid-Sunday; later weeks are fully open. compressed for the demo. */
+const W1OFF=[-620,-420,-415,-410,-405,-400,-70,-65,0.6,9,55,120,240,430,700,2100];
+const BOOT=Date.now();
+
+/* Weeks 5-18 are generated so the whole season is browsable.
+   Real matchups arrive with the schedule import — see SETUP.md. */
+const TEAMS=Object.keys(T);
+function slateFor(w){
+  if(SLATES[w])return SLATES[w];
+  const a=[...TEAMS];let s=hash('season-week-'+w);
+  for(let i=a.length-1;i>0;i--){s=(s*1103515245+12345)>>>0;const j=s%(i+1);[a[i],a[j]]=[a[j],a[i]];}
+  const out=[];
+  for(let i=0;i<32;i+=2){
+    const fav=hash(a[i]+a[i+1]+w)%2?a[i]:a[i+1];
+    const line=(((hash(a[i]+'l'+w)%13)+2)/2).toString().replace(/\.0$/,'');
+    out.push([a[i],a[i+1],`${fav} -${line}`]);}
+  return out;
+}
+const WEEKS={};
+for(let w=1;w<=18;w++){
+  WEEKS[w]=slateFor(w).map((m,i)=>{
+    const off = w===1 ? W1OFF[i] : (w-1)*10080 + [0,4300,4300,4300,4300,4300,4300,4300,4300,4490,4490,4510,4510,4510,4740,5000][i];
+    return {id:`w${w}g${i}`,wk:w,d:SLOTS[i][0],t:SLOTS[i][1],net:SLOTS[i][2],
+            a:m[0],h:m[1],sp:m[2],kick:BOOT+off*60000,
+            show:ANCHOR+(SLOT_MIN[i]+(w-1)*10080)*60000};
+  });
+}
+
+const rec=t=>DEMO?`${hash(t+'w')%4}-${hash(t+'l')%3}`:(RECORDS[t]||'');
+const isLive=g=>Date.now()>=g.kick;
+/* Demo scores. In production these come straight off the game document
+   as awayScore / homeScore, written by the live Worker. */
+const demoScore=g=>{const h=hash(g.id+'sc');
+  // >>> not >>. hash() is unsigned 32-bit; a signed shift flips the sign
+  // on anything above 2^31, and JS keeps that sign through %, which was
+  // producing scores like -12.
+  return [10+(h%25), 10+((h>>>5)%25)];};
+const scoreOf=g=>{
+  if(!isLive(g))return null;
+  if(!DEMO)return (g.awayScore==null||g.homeScore==null)?null:[g.awayScore,g.homeScore];
+  const [a,h]=demoScore(g);
+  const w=result(g);
+  return w===g.h?[Math.min(a,h),Math.max(a,h)]:[Math.max(a,h),Math.min(a,h)];};
+/* Books post next week's numbers after the late window Sunday, plus a
+   lookahead line a week further out. Nothing is priced in September for
+   a Week 12 game, so nothing should be shown. */
+const LINE_WINDOW=8*24*3600*1000;
+const lineOut=g=>(g.kick-Date.now())<=LINE_WINDOW;
+const isFinal=g=>Date.now()>=g.kick+200*60000;
+/* winner of a finished game */
+const result=g=>DEMO?(hash(g.id+'res')%100<52?g.h:g.a):(g.winner||null);
+
+/* seeded picks for everyone but me */
+function shuffle(n,seed){const a=[...Array(n)].map((_,i)=>i+1);let s=hash(seed);
+  for(let i=n-1;i>0;i--){s=(s*1103515245+12345)>>>0;const j=s%(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+const BOT={};
+PLAYERS.filter(p=>p!==ME).forEach(p=>{
+  BOT[p]={};
+  for(const w in WEEKS){
+    const order=shuffle(16,p+w);
+    WEEKS[w].forEach((g,i)=>{
+      BOT[p][g.id]={winner:hash(p+g.id)%100<48?g.a:g.h,weight:order[i]};});
+  }});
+
+/* ---------- TIMEZONE ----------
+   Kickoffs are one instant in time. Everyone sees that instant rendered
+   in their own zone, so nobody has to do arithmetic. */
+const TZS=[['auto','My device'],['America/New_York','Eastern'],['America/Chicago','Central'],
+  ['America/Denver','Mountain'],['America/Los_Angeles','Pacific'],['Asia/Tokyo','Japan'],
+  ['Europe/London','UK'],['Europe/Madrid','Spain'],['America/Puerto_Rico','Atlantic']];
+const deviceTZ=()=>Intl.DateTimeFormat().resolvedOptions().timeZone;
+const TZ=()=>state.tz==='auto'?deviceTZ():state.tz;
+const fT=ms=>new Date(ms).toLocaleTimeString('en-US',
+  {hour:'numeric',minute:'2-digit',timeZone:TZ()});
+const fDay=ms=>new Date(ms).toLocaleDateString('en-US',
+  {weekday:'long',timeZone:TZ()});
+const fDate=ms=>new Date(ms).toLocaleDateString('en-US',
+  {month:'short',day:'numeric',timeZone:TZ()});
+const tzAbbr=()=>{try{return new Intl.DateTimeFormat('en-US',{timeZone:TZ(),timeZoneName:'short'})
+  .formatToParts(new Date()).find(x=>x.type==='timeZoneName').value;}catch{return TZ();}};
+/* The US day a game belongs to — the slate's own name, kept as context
+   for anyone whose local day has drifted off it. */
+const usDay=ms=>new Date(ms).toLocaleDateString('en-US',
+  {weekday:'long',timeZone:'America/New_York'});
+
+let state={mode:'confidence',picks:{},tab:'picks',week:1,openGame:null,
+  tz:localStorage.getItem('ps_tz')||'auto',tb:{}};   // tb[week] = guessed total
+
+/* The tiebreaker game is the last kickoff of the week — Monday night. */
+const tbGame=w=>[...WEEKS[w]].sort((a,b)=>a.kick-b.kick).pop();
+/* Demo only: everyone else's guesses, and the eventual real total. */
+const botGuess=(pl,w)=>DEMO?38+(hash(pl+'tb'+w)%22):(TIEBREAKS[pl+'|'+w]??null);
+const tbActual=g=>{
+  if(!DEMO){const s=scoreOf(g);return s?s[0]+s[1]:null;}
+  return 34+(hash(g.id+'total')%24);};
+let lockedSet=new Set(), finalSet=new Set();
+const $=s=>document.querySelector(s);
+const slate=()=>WEEKS[state.week];
+const myPick=id=>state.picks[id];
+const pickOf=(p,id)=>p===ME?state.picks[id]:BOT[p][id];
+
+function fmt(ms){const s=Math.max(0,Math.floor(ms/1000));
+  const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),ss=s%60;
+  if(d>0)return `${d}d ${h}h`; if(h>0)return `${h}h ${String(m).padStart(2,'0')}m`;
+  if(m>0)return `${m}m ${String(ss).padStart(2,'0')}s`; return `${ss}s`;}
+const cdClass=ms=>ms<=0?'live':ms<600000?'urgent':ms<3600000?'soon':'';
+
+function renderWeeks(){
+  let h='';
+  // Derived from the data, not hardcoded to 18 — preseason is 3 weeks.
+  const all=Object.keys(WEEKS).map(Number).sort((a,b)=>a-b);
+  for(const w of all){
+    const live=WEEKS[w].some(g=>isLive(g)&&!isFinal(g));
+    h+=`<div class="wk${w===state.week?' on':''}" data-wk="${w}">
+      ${live?'<span class="live-d"></span>':''}<b>${w}</b><span>Wk</span></div>`;}
+  $('#weeks').innerHTML=h;
+}
+
+function mark(c){const[,,p,s]=T[c];
+  return `<div class="mark" style="background:${p};--sec:${s}"><span>${c}</span></div>`;}
+function side(code,which,cls,bg,ha,sc){const[city,team]=T[code];
+  return `<button class="side ${which} ${cls}" data-side="${which==='l'?'a':'h'}" ${bg}>
+    ${mark(code)}<div class="names"><div class="city">${city}</div>
+    <div class="team">${team}</div>
+    ${sc!=null?`<div class="scr mono">${sc}</div>`
+              :`<div class="rec mono">${ha} · ${rec(code)}</div>`}</div></button>`;}
+
+/* How the pool picked. Only ever computed for games that have kicked
+   off — before that, the picks are sealed and this would leak them. */
+function consensus(g){
+  if(!isLive(g))return null;
+  let a=0,h=0;
+  PLAYERS.forEach(pl=>{
+    const k=pickOf(pl,g.id); if(!k)return;
+    k.winner===g.a?a++:h++;});
+  const n=a+h; if(!n)return null;
+  const pa=Math.round(a/n*100);
+  return {a,h,n,pa,ph:100-pa};
+}
+
+function consensusBar(g){
+  const c=consensus(g); if(!c)return '';
+  const w=isFinal(g)?result(g):null;
+  // The pool getting it wrong together is the fun part, so name it.
+  const upset=w&&((c.pa>60&&w===g.h)||(c.ph>60&&w===g.a));
+  const seg=(pct,code,side)=>pct===0?'':
+    `<div class="cseg ${side}" style="width:${pct}%;background:${T[code][2]}">${
+      pct>=22?`<span>${code} ${pct}%</span>`:''}</div>`;
+  return `<div class="cons">
+    <div class="cons-head">
+      <span>How the pool picked</span>
+      ${upset?'<i class="upset">Pool got it wrong</i>':''}
+    </div>
+    <div class="cbar">${seg(c.pa,g.a,'l')}${seg(c.ph,g.h,'r')}</div>
+    ${(c.pa<22||c.ph<22)?`<div class="cons-sub mono">${g.a} ${c.pa}% · ${g.h} ${c.ph}% · ${c.n} picks</div>`:''}
+  </div>`;
+}
+
+function renderSlate(){
+  const gs=[...slate()].sort((a,b)=>a.show-b.show), N=gs.length;
+  /* Group by the viewer's local date, not the US one. In Japan the
+     Sunday 1pm slate lands on Monday, and the header should say so. */
+  const groups={};
+  gs.forEach(g=>{const k=fDate(g.show);(groups[k]=groups[k]||[]).push(g);});
+  let h='',day='';
+  gs.forEach(g=>{
+    const k=fDate(g.show);
+    if(k!==day){day=k;
+      const grp=groups[k], local=fDay(g.show), us=usDay(g.show);
+      const tag=local===us?'':`<span class="slatetag">${us} slate</span>`;
+      h+=`<div class="dayhead"><h2>${local}</h2>${tag}<div class="line"></div>
+        <div class="n mono">${k} · <span class="tzchip" id="tzchip">${tzAbbr()}</span> · ${grp.length} games</div></div>`;}
+    const p=myPick(g.id),L=isLive(g),sc=scoreOf(g);
+    const aCls=p?(p.winner===g.a?'won':'lost'):'',hCls=p?(p.winner===g.h?'won':'lost'):'';
+    const aBg=p&&p.winner===g.a?`style="background:${T[g.a][2]}"`:'';
+    const hBg=p&&p.winner===g.h?`style="background:${T[g.h][2]}"`:'';
+    /* The stake gets its own row under the matchup. It used to float over
+       the card corner, where it collided with the countdown and clipped
+       the home team's name. */
+    let stake='';
+    if(state.mode==='confidence'&&p&&!L)
+      stake=p.weight
+        ? `<div class="stakebar" role="button" tabindex="0" data-stake="${g.id}">
+             <span class="sb-l">Confidence rank</span>
+             <span class="sb-r"><span class="sb-num set">${p.weight}</span>
+             <span class="sb-pts">pays ${pay(p.weight,N)} points</span></span></div>`
+        : `<div class="stakebar empty" role="button" tabindex="0" data-stake="${g.id}">
+             <span class="sb-l">Tap to rank this pick</span>
+             <span class="sb-r"><span class="sb-num blank">?</span></span></div>`;
+    const band=L?`<div class="lockband"><span>${isFinal(g)
+      ?`Final · ${result(g)} ${sc?Math.max(sc[0],sc[1])+'-'+Math.min(sc[0],sc[1]):''}`
+      :'In progress · locked'}</span>${
+      p?`<span>You took ${p.winner}${p.weight?` · rank ${p.weight} · ${pay(p.weight,N)} pts`:''}</span>`
+       :`<span class="miss">No pick · 0 pts</span>`}</div>`:'';
+    h+=`<div class="card${L?' locked':''}" data-game="${g.id}">
+      <div class="meta"><span class="mono">${fT(g.show)}</span><span class="net">${g.net}</span>
+        <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
+        <span class="cd ${cdClass(g.kick-Date.now())}" data-cd="${g.id}">${
+          L?(isFinal(g)?'Final':'In progress'):'Locks in '+fmt(g.kick-Date.now())}</span></div>
+      <div class="match">${side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null)}
+        <div class="gutter"><span>@</span></div>
+        ${side(g.h,'r',hCls,hBg,'Home',sc?sc[1]:null)}</div>${stake}${
+        L?consensusBar(g):''}${band}</div>`;});
+  $('#slate').innerHTML=h+tbCard();
+}
+
+function tbCard(){
+  const g=tbGame(state.week), L=isLive(g), F=isFinal(g);
+  const v=state.tb[state.week];
+  const band=L?`<div class="tbband"><span>${F?`Actual total · ${tbActual(g)}`:'Locked at kickoff'}</span>${
+    v!=null?`<span>You said ${v}</span>`:'<span class="miss">No guess</span>'}</div>`:'';
+  return `<div class="tbwrap">
+    <div class="tbhead"><h2>Tiebreaker</h2><div class="line"></div></div>
+    <div class="tbcard">
+      <div class="tbmeta"><span class="mono">${fT(g.show)}</span><span class="net">${g.net}</span>
+        <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
+        <span class="cd ${cdClass(g.kick-Date.now())}" data-cd="tb">${
+          L?(F?'Final':'In progress'):'Locks in '+fmt(g.kick-Date.now())}</span></div>
+      <div class="tbbody">
+        <div class="tbq">Combined points scored by both teams in the
+          <b>last game of the week</b></div>
+        <div class="tbteams">${T[g.a][1]} @ ${T[g.h][1]}</div>
+        <input class="tbinput" id="tbin" type="number" inputmode="numeric"
+          min="0" max="120" placeholder="--" value="${v??''}" ${L?'disabled':''}>
+        <div class="tbhint">Only used to break a tie on points.
+          <b>Closest without going over</b> takes it. If everyone overshoots,
+          closest wins outright.</div>
+      </div>${band}</div></div>`;
+}
+
+/* ---------- THE GRID ---------- */
+function weekPoints(pl,w){
+  let pts=0,hits=0;
+  WEEKS[w].forEach(g=>{
+    if(!isFinal(g))return;
+    const p=pickOf(pl,g.id); if(!p)return;
+    if(p.winner===result(g)){
+      pts+=(state.mode==='confidence'?pay(p.weight,nGames(w)):1);hits++;}});
+  return {pts,hits};
+}
+function renderGrid(){
+  const gs=slate();
+  const started=gs.filter(isLive).length, finals=gs.filter(isFinal).length;
+  $('#gridTitle').textContent=`Week ${state.week}`;
+  $('#gridSub').textContent=`${finals} final · ${started-finals} live · ${gs.length-started} to come`;
+  const mine=liveWeek(ME,state.week);
+  $('#gridMine').innerHTML=mine.live>0
+    ? `You have <b>${mine.got}</b> in the bank and <b>${mine.live}</b> still in play.
+       Best case this week: <b>${mine.max}</b>.`
+    : (finals?`Your week finished on <b>${mine.got}</b>.`:'');
+
+  if(!started){
+    $('#gridBody').innerHTML=`<div class="empty"><h4>Nothing to show yet</h4>
+      <p>Picks stay sealed until kickoff. The first game of Week ${state.week} opens the grid, and it fills in one column at a time from there.</p></div>`;
+    return;}
+
+  const rows=PLAYERS.map(p=>({p,...weekPoints(p,state.week)})).sort((a,b)=>b.pts-a.pts);
+  /* Same live movement as Standings. This table ranks the WEEK; the
+     Standings table ranks the SEASON, so the two leaders can differ. */
+  const prevG=gridRank[state.week]||{};
+
+  let head=`<tr><th class="pl">Player</th>`;
+  gs.forEach(g=>{
+    const st=isFinal(g)?['final','Final']:isLive(g)?['live','Live']:['open','—'];
+    head+=`<th class="gm"><div class="aw">${g.a}</div><div class="sep"></div>
+      <div class="hm">${g.h}</div><div class="st ${st[0]}">${st[1]}</div></th>`;});
+  head+=`<th class="tot">Pts</th></tr>`;
+
+  let body='';
+  rows.forEach((r,i)=>{
+    body+=`<tr class="${r.p===ME?'me ':''}${i===0?'lead':''}"><td class="pl"><div class="plname">
+      <div class="plrank mono">${i+1}</div><div class="plmeta"><b>${r.p}</b>
+      <span class="mono">${r.hits} correct</span></div></div></td>`;
+    gs.forEach(g=>{
+      const shown=isLive(g)||r.p===ME;
+      const p=pickOf(r.p,g.id);
+      let cls='hidden',inner='<b>•••</b>';
+      if(shown){
+        if(!p){cls='none';inner='<b>—</b>';}
+        else{
+          const conf=state.mode==='confidence';
+          if(isFinal(g)) cls=p.winner===result(g)?'hit':'miss';
+          else cls='pend';
+          /* A correct cell shows what it paid — that's the payoff moment.
+             Everywhere else shows the rank they assigned. */
+          const tag=!conf?'':cls==='hit'?`<i>+${pay(p.weight,gs.length)}</i>`
+                                        :`<i>#${p.weight||'-'}</i>`;
+          inner=`<b>${p.winner}</b>${tag}`;}}
+      body+=`<td><div class="cell ${cls}">${inner}</div></td>`;});
+    body+=`<td class="tot"><div class="totnum mono">${r.pts}</div>
+      <div class="totsub mono">${r.hits}/${finals}</div></td></tr>`;});
+
+  /* Consensus row. Reveals per game as each one kicks off, same rule
+     as everything else. */
+  body+=`<tr class="poolrow"><td class="pl"><div class="plname">
+    <div class="plrank mono"></div><div class="plmeta"><b>The pool</b>
+    <span class="mono">majority pick</span></div></div></td>`;
+  gs.forEach(g=>{
+    const c=consensus(g);
+    if(!c){body+=`<td><div class="cell hidden"><b>•••</b></div></td>`;return;}
+    const maj=c.pa>=c.ph?g.a:g.h, pct=Math.max(c.pa,c.ph);
+    let cls='pend';
+    if(isFinal(g))cls=maj===result(g)?'hit':'miss';
+    body+=`<td><div class="cell ${cls}"><b>${maj}</b><i>${pct}%</i></div></td>`;});
+  body+=`<td class="tot"></td></tr>`;
+
+  gridRank[state.week]=Object.fromEntries(rows.map((r,i)=>[r.p,i+1]));
+  $('#gridBody').innerHTML=`<div class="gridscroll"><table class="pool">
+    <thead>${head}</thead><tbody>${body}</tbody></table></div>
+    ${tbPanel()}
+    <div class="legend">
+      <span><i class="lg-hit"></i>Correct</span>
+      <span><i class="lg-miss"></i>Wrong</span>
+      <span><i class="lg-pend"></i>In progress</span>
+      <span><i class="lg-hid"></i>Sealed until kickoff</span></div>`;
+}
+
+function tbPanel(){
+  const g=tbGame(state.week);
+  if(!isLive(g))return `<div class="tbpanel"><h4>Tiebreaker</h4>
+    <div class="actual">Sealed until ${T[g.a][1]} @ ${T[g.h][1]} kicks off.</div></div>`;
+
+  const F=isFinal(g), actual=F?tbActual(g):null;
+  const rows=PLAYERS.map(p=>({p,
+    guess:p===ME?(state.tb[state.week]??null):botGuess(p,state.week)}))
+    .filter(r=>r.guess!=null);
+
+  /* Closest without going over. If every guess is over, closest wins. */
+  let winner=null;
+  if(F&&rows.length){
+    const under=rows.filter(r=>r.guess<=actual);
+    const pool=under.length?under:rows;
+    winner=pool.reduce((a,b)=>Math.abs(b.guess-actual)<Math.abs(a.guess-actual)?b:a).p;
+  }
+  rows.sort((a,b)=>F?(Math.abs(a.guess-actual)-Math.abs(b.guess-actual)):b.guess-a.guess);
+
+  return `<div class="tbpanel"><h4>Tiebreaker</h4>
+    <div class="actual">${T[g.a][1]} @ ${T[g.h][1]}, ${
+      F?`combined <b>${actual}</b>`:'in progress, guesses now revealed'}</div>
+    ${rows.map(r=>{
+      const over=F&&r.guess>actual;
+      const cls=[r.p===ME?'me':'',r.p===winner?'win':'',over?'over':''].filter(Boolean).join(' ');
+      return `<div class="tbrow ${cls}"><span class="nm">${r.p}</span>
+        <span class="gs">${r.guess}</span>
+        <span class="df">${F?(over?'over':`${actual-r.guess} under`):''}</span></div>`;}).join('')}
+  </div>`;
+}
+
+function renderTray(){
+  const conf=state.mode==='confidence';
+  $('#tray').style.display=conf?'block':'none';
+  $('#modeTag').textContent=conf?'CONF':'S/U';
+  $('#preTag').classList.toggle('hide',!String(SEASON).endsWith('PRE'));
+  if(!conf)return;
+  const ids=new Set(slate().map(g=>g.id));
+  const used=new Set(Object.entries(state.picks).filter(([k])=>ids.has(k)).map(([,v])=>v.weight).filter(Boolean));
+  const N=nGames(state.week);
+  let h='';for(let i=1;i<=N;i++)h+=`<div class="stampchip${used.has(i)?' used':''}">${i}</div>`;
+  $('#stamps').innerHTML=h;
+  $('#trayCount').textContent=`${N-used.size} left`;
+  $('#trayMax').textContent=N;
+}
+
+/* FIX 2: the app tells you itself.
+   A missing token is invisible from the outside — the person simply
+   stops hearing from the app and assumes it is broken. So check on every
+   render and say so plainly, with a one-tap repair. */
+const ALERT_STATE = DEMO ? 'permission' : null;   // demo: force the banner
+async function renderAlerts(){
+  const bar=$('#alertbar'); if(!bar)return;
+  let reason=ALERT_STATE;
+  if(!DEMO){
+    const h=await PS.alertsHealthy();
+    reason=h.ok?null:h.reason;
+  }
+  bar.classList.toggle('hide',!reason);
+  if(!reason)return;
+  const why={
+    permission:'Notifications are switched off for this app.',
+    'no-token':'This device is not registered with the pool yet.',
+    unsupported:'This browser cannot send alerts. Add the app to your Home Screen.',
+    'signed-out':'Sign in to get reminders.'
+  }[reason]||'';
+  $('#abWhy').textContent=why+' You will not be warned before games lock.';
+}
+
+$('#abFix').addEventListener('click',async()=>{
+  if(!DEMO){
+    try{
+      await Notification.requestPermission();
+      await PS.refreshPushToken();
+      await renderAlerts();
+    }catch(e){ console.warn(e); }
+  }
+  $('#abFix').textContent='Done';
+});
+
+function renderInPlay(){
+  const el=$('#inplay'); if(!el)return;
+  const m=liveWeek(ME,state.week);
+  const anyLive=slate().some(g=>isLive(g)&&!isFinal(g));
+  el.innerHTML=(m.live>0&&anyLive)
+    ? `<b>${m.got}</b> banked · <b>${m.live}</b> still in play · best case <b>${m.max}</b>`
+    : '';
+  el.style.display=el.innerHTML?'block':'none';
+}
+
+function renderBar(){
+  const open=slate().filter(g=>!isLive(g));
+  const picked=open.filter(g=>state.picks[g.id]).length;
+  const conf=state.mode==='confidence';
+  const staked=open.filter(g=>state.picks[g.id]&&state.picks[g.id].weight).length;
+  const tbg=tbGame(state.week), tbNeeded=!isLive(tbg), tbDone=state.tb[state.week]!=null;
+  const ready=open.length>0&&picked===open.length&&(!conf||staked===open.length)
+              &&(!tbNeeded||tbDone);
+  $('#pfill').style.width=(open.length?picked/open.length*100:100)+'%';
+  $('#plabel').textContent=!open.length?'Every game is locked'
+    :(conf&&picked===open.length&&staked<open.length)?`${open.length-staked} games still need a rank`
+    :(picked===open.length&&tbNeeded&&!tbDone)?'Tiebreaker still needs a number'
+    :`${picked} of ${open.length} still open`;
+  $('#submitBtn').disabled=!ready;
+  $('#submitBtn').textContent='Lock in';
+  $('#plabel').classList.remove('saved');
+}
+
+/* ONE SVG for the whole award cluster.
+   Separate <span> badges kept wrapping onto their own lines whatever flex
+   rules were applied. Drawing them side by side inside a single <svg>
+   removes the question: one element cannot stack. */
+const SEAL_D=`<circle cx="22" cy="22" r="20.4" fill="none" stroke="currentColor"
+    stroke-width="2.4" stroke-dasharray="2.6 2.4" stroke-linecap="round"/>
+  <circle cx="22" cy="22" r="15.6" fill="none" stroke="currentColor" stroke-width="1.5"/>`;
+const TROPHY_D=`<path d="M7 3h10v5a5 5 0 0 1-10 0V3z"/>
+  <path d="M7 4.5H4.6V7a3.4 3.4 0 0 0 3.4 3.4M17 4.5h2.4V7a3.4 3.4 0 0 1-3.4 3.4"
+    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M11 13h2v4h-2zM7.5 18.4h9V21h-9z"/>`;
+const GOLD='#E8B84B', SILVER='#B9C1CB', S=21, GAP=6;
+
+function badgeSVG(items){
+  items=items.filter(Boolean);
+  if(!items.length)return '';
+  let x=0,out='';
+  items.forEach(it=>{
+    if(it.kind==='trophy'){
+      out+=`<g transform="translate(${x},1) scale(${S/24})" fill="${GOLD}"
+        color="${GOLD}">${TROPHY_D}</g>`;
+    }else{
+      const col=it.kind==='1st'?GOLD:SILVER;
+      out+=`<g transform="translate(${x},0) scale(${(S/44).toFixed(4)})" color="${col}">
+        <g transform="rotate(-8 22 22)">${SEAL_D}<text x="22" y="27.6" text-anchor="middle"
+          font-size="15" font-weight="900" fill="${col}"
+          font-family="Archivo, sans-serif">${it.kind==='1st'?'1ST':'2ND'}</text></g></g>`;
+    }
+    x+=S;
+    if(it.n>1){
+      out+=`<text x="${x+1}" y="${(S*0.74).toFixed(1)}" font-size="10.5" font-weight="800"
+        fill="${it.kind==='2nd'?SILVER:GOLD}"
+        font-family="ui-monospace, monospace">${it.n}</text>`;
+      x+=9;
+    }
+    x+=GAP;
+  });
+  const w=Math.max(1,x-GAP);
+  return `<svg class="bsvg" width="${w}" height="${S+2}" viewBox="0 0 ${w} ${S+2}"
+    role="img">${out}</svg>`;
+}
+
+/* A perfect week is every game in a completed week called correctly.
+   Sixteen straight. It will almost never happen, which is the point. */
+
+/* A weekly win is topping the pool for one week. Achievable, so people
+   have something to collect while the trophy stays out of reach. */
+const TROPHY=badgeSVG([{kind:'trophy',n:1}]);
+const SEAL1=badgeSVG([{kind:'1st',n:1}]);
+const SEAL2=badgeSVG([{kind:'2nd',n:1}]);
+
+/* Weeks with at least one final game, newest first. */
+function scoredWeeks(){
+  return Object.keys(WEEKS).map(Number)
+    .filter(w=>WEEKS[w].some(isFinal)).sort((a,b)=>b-a);
+}
+function weekLeaders(w){
+  const rows=PLAYERS.map(p=>({p,...weekPoints(p,w)}));
+  const top=Math.max(...rows.map(r=>r.pts));
+  return {done:WEEKS[w].every(isFinal), top,
+          winners:top>0?rows.filter(r=>r.pts===top).map(r=>r.p):[]};
+}
+function weekLeaders2(w){
+  const rows=PLAYERS.map(p=>({p,...weekPoints(p,w)})).sort((a,b)=>b.pts-a.pts);
+  const top=rows[0]?.pts||0;
+  const second=rows.find(r=>r.pts<top)?.pts||0;
+  return second>0?rows.filter(r=>r.pts===second).map(r=>r.p):[];
+}
+function weekWins(pl){
+  if(!DEMO)return (STANDINGS[pl]||{}).weekWins||0;   // written by score_week.py
+  let n=0;
+  scoredWeeks().forEach(w=>{const L=weekLeaders(w);
+    if(L.done&&L.winners.includes(pl))n++;});
+  return Math.max(n,{Monse:2,Mateo:1,Lee:1}[pl]||0);      // demo seed
+}
+function weekSeconds(pl){
+  if(!DEMO)return (STANDINGS[pl]||{}).weekSeconds||0;
+  let n=0;
+  scoredWeeks().forEach(w=>{if(WEEKS[w].every(isFinal)&&weekLeaders2(w).includes(pl))n++;});
+  return Math.max(n,{Eliana:2,Lee:1,Sofia:1}[pl]||0);
+}
+
+function perfectWeeks(pl){
+  let n=0;
+  for(const w in WEEKS){
+    const gs=WEEKS[w];
+    if(!gs.every(isFinal))continue;             // the week has to be over
+    if(gs.every(g=>{const p=pickOf(pl,g.id);
+      return p&&p.winner===result(g);}))n++;
+  }
+  // Demo only: nobody in generated data ever goes 16-0, so seed one to
+  // show the badge. Delete with the rest of the demo scaffolding.
+  if(DEMO&&pl==='Mateo')n=Math.max(n,1);
+  return DEMO?n:((STANDINGS[pl]||{}).perfectWeeks||0);
+}
+
+let lastRank={}, gridRank={};
+/* Points still available to a player this week: every unfinished game
+   they picked, at what it would pay. The number that tells you whether
+   Sunday night still matters. */
+function liveWeek(pl,w){
+  const gs=WEEKS[w], N=gs.length;
+  let got=0, live=0;
+  gs.forEach(g=>{
+    const p=pickOf(pl,g.id); if(!p)return;
+    const v=state.mode==='confidence'?pay(p.weight,N):1;
+    if(isFinal(g)){ if(p.winner===result(g))got+=v; }
+    else live+=v;
+  });
+  return {got,live,max:got+live};
+}
+
+function renderBoard(){
+  const rows=PLAYERS.map(p=>{
+    let pts=0,hits=0,gp=0;
+    for(const w in WEEKS){const r=weekPoints(p,w);pts+=r.pts;hits+=r.hits;
+      gp+=WEEKS[w].filter(isFinal).length;}
+    return{p,pts,hits,gp};}).sort((a,b)=>b.pts-a.pts);
+  let any=false;
+  $('#board').innerHTML=rows.map((r,i)=>{
+    const tw=perfectWeeks(r.p); if(tw)any=true;
+    const ww=weekWins(r.p), w2=weekSeconds(r.p);
+    const badge=badgeSVG([
+      tw&&{kind:'trophy',n:tw}, ww&&{kind:'1st',n:ww}, w2&&{kind:'2nd',n:w2}]);
+    const sub=[ww?`${ww} first`:'', w2?`${w2} second`:'',
+                `${r.hits} of ${r.gp} correct`].filter(Boolean).join(' · ');
+    /* Rows re-sort as results land, so show which way somebody just moved. */
+    const was=lastRank[r.p], mv=was===undefined?'':(was>i+1?'up':was<i+1?'down':'');
+    return `<div class="row${r.p===ME?' me':''}${i===0?' lead':''}${mv?' '+mv:''}">
+      <div class="rank mono">${i+1}${mv?`<i class="arrow">${
+        mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
+      <div class="who">
+        <div class="nrow"><b>${r.p}</b>${badge}</div>
+        <span class="mono">${sub}</span></div>
+      <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>
+      ${i===0?'<span class="leadtag">Leader</span>':''}</div>`;}).join('')
+    + weekByWeek()
+    + `<div class="trolegend">${TROPHY}<span>${any
+        ? 'A perfect week. Every game called, all sixteen ranks paid out, 136 points.'
+        : 'Nobody has taken one yet. Call all sixteen in a week and this is yours.'}</span></div>`
+    + `<div class="bdglegend">
+        <span>${SEAL1}Won the week</span>
+        <span>${SEAL2}Runner-up</span>
+        <span>${TROPHY}Perfect week</span></div>`;
+  rows.forEach((r,i)=>lastRank[r.p]=i+1);   // for next render's movement arrows
+}
+
+function weekByWeek(){
+  const ws=scoredWeeks();
+  if(!ws.length)return '';
+  return `<div class="wbw"><h4>Week by week</h4>
+    ${ws.map(w=>{const L=weekLeaders(w);
+      if(!L.winners.length)return '';
+      const who=L.winners.join(' & ');
+      return `<div class="wbw-r${L.winners.includes(ME)?' me':''}">
+        <span class="wbw-w mono">Wk ${w}</span>
+        <span class="wbw-n">${L.done?SEAL1:''}${who}</span>
+        <span class="wbw-p mono">${L.top}</span>
+        ${L.done?'':'<span class="wbw-live">live</span>'}</div>`;}).join('')}
+  </div>`;
+}
+
+/* Pay table in Help. Follows the current week's slate size, since bye
+   weeks are not sixteen games. */
+function renderPayTable(){
+  const N=nGames(state.week);
+  const t=$('#payTable'); if(!t)return;
+  t.innerHTML=Array.from({length:N},(_,i)=>i+1).map(r=>
+    `<div class="hp-cell"><b>${r}</b><span>pays ${pay(r,N)}</span></div>`).join('');
+  // Show the actual badge art in Help rather than describing it in words.
+  const art=[['#bdg1',SEAL1],['#bdg2',SEAL2],['#bdg3',TROPHY]];
+  art.forEach(([id,svg])=>{const e=$(id); if(e)e.innerHTML=svg;});
+  const note=$('#payNote');
+  if(note)note.innerHTML=`A perfect week is <b>${perfectScore(N)} points</b>. `
+    +`Flipping coins gets you about ${Math.round(perfectScore(N)/2)}. Blow your number 1 `
+    +`and it stings as much as missing your bottom four put together.`;
+}
+
+/* ---------- ARCHIVE ----------
+   A finished pool, flattened into one document so it survives the pool
+   being deleted. Written by scripts/archive_pool.py.
+
+   `visible` is the switch: flip it false when the real season starts and
+   the tab disappears for everyone. The owner still sees it, marked
+   hidden, so it can be checked without being public. */
+/* Three states, not two:
+     'public'  everyone sees the tab
+     'owner'   only the owner sees it, marked hidden
+     'off'     nobody sees it. The security rule denies the read outright,
+               so the client never receives the document and the tab does
+               not exist. Data is retained for the admin scripts.
+   Deleting the document removes it permanently. */
+const ARCHIVE_DEMO = {
+  id:'preseason-2026', label:'Preseason 2026', state:'public',
+  note:'Three weeks, five players, everything working. Kept as a reference.',
+  standings:[
+    {name:'Mateo', pts:214, hits:31, of:42, wins:2, seconds:0, perfect:0},
+    {name:'Monse', pts:198, hits:29, of:42, wins:1, seconds:2, perfect:0},
+    {name:'Lee',   pts:186, hits:28, of:42, wins:0, seconds:1, perfect:0},
+    {name:'Eliana',pts:171, hits:26, of:42, wins:0, seconds:0, perfect:0},
+    {name:'Sofia', pts:150, hits:24, of:42, wins:0, seconds:0, perfect:0}],
+  weeks:[{wk:3,winner:'Mateo',pts:78},{wk:2,winner:'Monse',pts:71},{wk:1,winner:'Mateo',pts:65}]
+};
+const ARCHIVE_OF=()=>DEMO?ARCHIVE_DEMO:ARCHIVE_LIVE;
+
+const archiveVisible=()=>{const A=ARCHIVE_OF();return !!A && (
+  A.state==='public' || (A.state==='owner' && IS_OWNER));};
+const IS_OWNER = DEMO;                  // production: pool.ownerUid === user.uid
+
+function renderArchive(){
+  const on=archiveVisible();
+  const t=$('#tabArchive'); if(t)t.classList.toggle('hide',!on);
+  if(!on){
+    // Somebody could be sitting on the tab when it is switched off.
+    if(state.tab==='archive'){
+      const pick=document.querySelector('[data-tab="picks"]');
+      if(pick)pick.click();
+    }
+    return;
+  }
+  const el=$('#archBody'); const A=ARCHIVE_OF(); if(!el||!A)return;
+  el.innerHTML=`
+    <div class="arch-head">
+      <h2>${A.label}</h2>
+      ${A.state==='owner'?'<span class="arch-hid">Hidden from everyone else</span>':''}
+      <p>${A.note||''}</p>
+    </div>
+    <div class="arch-final">Final standings</div>
+    ${A.standings.map((r,i)=>{
+      const b=badgeSVG([
+        r.perfect&&{kind:'trophy',n:r.perfect},
+        r.wins&&{kind:'1st',n:r.wins},
+        r.seconds&&{kind:'2nd',n:r.seconds}]);
+      return `<div class="row${i===0?' lead':''}">
+        <div class="rank mono">${i+1}</div>
+        <div class="who"><div class="nrow"><b>${r.name}</b>${b}</div>
+          <span class="mono">${r.hits} of ${r.of} correct</span></div>
+        <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>
+        ${i===0?'<span class="leadtag">Champion</span>':''}</div>`;}).join('')}
+    <div class="wbw"><h4>Week by week</h4>
+      ${A.weeks.map(w=>`<div class="wbw-r">
+        <span class="wbw-w mono">Wk ${w.wk}</span>
+        <span class="wbw-n">${SEAL1}${w.winner}</span>
+        <span class="wbw-p mono">${w.pts}</span></div>`).join('')}</div>
+    <div class="arch-foot">This pool is closed. Nothing here counts toward the
+      current season.</div>`;
+}
+
+function render(){renderWeeks();renderSlate();renderTray();renderBar();renderGrid();
+  renderBoard();renderTZ();renderPayTable();renderInPlay();renderArchive();
+  renderAlerts();}
+
+function tick(){
+  let changed=false;
+  Object.values(WEEKS).flat().forEach(g=>{
+    const L=isLive(g);
+    if(L&&!lockedSet.has(g.id)){lockedSet.add(g.id);changed=true;}
+    // A game going final is what actually moves the standings.
+    if(isFinal(g)&&!finalSet.has(g.id)){finalSet.add(g.id);changed=true;}
+    const el=document.querySelector(`[data-cd="${g.id}"]`);
+    if(el&&!L){el.textContent='Locks in '+fmt(g.kick-Date.now());
+      el.className='cd '+cdClass(g.kick-Date.now());}});
+  const tbg=tbGame(state.week), tbel=document.querySelector('[data-cd="tb"]');
+  if(tbel&&!isLive(tbg)){tbel.textContent='Locks in '+fmt(tbg.kick-Date.now());
+    tbel.className='cd '+cdClass(tbg.kick-Date.now());}
+  const next=Object.values(WEEKS).flat().filter(g=>!isLive(g)).sort((a,b)=>a.kick-b.kick)[0];
+  $('#countdown').textContent=next?'Locks in '+fmt(next.kick-Date.now()):'Season closed';
+  if(changed)render();
+}
+setInterval(tick,1000);
+
+$('#slate').addEventListener('input',e=>{
+  if(e.target.id!=='tbin')return;
+  const raw=e.target.value.trim();
+  if(raw===''){delete state.tb[state.week];}
+  else{const n=Math.max(0,Math.min(120,parseInt(raw,10)));
+       if(!isNaN(n))state.tb[state.week]=n;}
+  if(!DEMO)PS.saveTiebreak(state.week,state.tb[state.week],tbGame(state.week))
+             .catch(e=>console.warn('tb',e));
+  flashSaved();                      // don't re-render the slate mid-typing
+});
+
+$('#slate').addEventListener('click',e=>{
+  const st=e.target.closest('[data-stake]');
+  if(st){const g=slate().find(x=>x.id===st.dataset.stake);if(isLive(g))return;openSheet(g.id);return;}
+  const s=e.target.closest('.side');if(!s)return;
+  const card=s.closest('.card'),g=slate().find(x=>x.id===card.dataset.game);
+  if(isLive(g))return;
+  const w=s.dataset.side==='a'?g.a:g.h,prev=state.picks[g.id];
+  if(prev&&prev.winner===w)delete state.picks[g.id];
+  else state.picks[g.id]={winner:w,weight:prev?prev.weight:null};
+  if(!DEMO)PS.savePicks(state.week,state.picks,slate()).catch(e=>console.warn('save',e));
+  renderSlate();renderTray();renderGrid();flashSaved();});
+
+function openSheet(gid){
+  state.openGame=gid;
+  const p=state.picks[gid];
+  $('#sheetTitle').textContent=`${T[p.winner][1]} to win`;
+  const NN=nGames(state.week);
+  $('#sheetSub').textContent=`Rank 1 is your surest game and pays ${NN} points. `
+    +`Rank ${NN} is your coin flip and pays 1. Wrong pays nothing either way, `
+    +`and each rank is used once per week.`;
+  const ids=new Set(slate().map(g=>g.id)),used=new Map();
+  Object.entries(state.picks).forEach(([k,v])=>{if(v.weight&&k!==gid&&ids.has(k))used.set(v.weight,v.winner);});
+  const N=nGames(state.week);
+  let h='';for(let i=1;i<=N;i++){const u=used.get(i);
+    h+=`<button class="num" data-w="${i}"${u?' disabled':''}>${i}
+      <small>${u?u:`${pay(i,N)} pts`}</small></button>`;}
+  $('#numgrid').innerHTML=h;
+  $('#heatLo').textContent=`1 · surest, pays ${NN}`;
+  $('#heatHi').textContent=`${NN} · coin flip, pays 1`;
+  $('#clearw').style.display=p.weight?'block':'none';
+  $('#scrim').classList.add('on');$('#sheet').classList.add('on');}
+const closeSheet=()=>{$('#scrim').classList.remove('on');$('#sheet').classList.remove('on');state.openGame=null;};
+$('#scrim').addEventListener('click',closeSheet);
+$('#numgrid').addEventListener('click',e=>{const b=e.target.closest('.num');if(!b||b.disabled)return;
+  state.picks[state.openGame].weight=+b.dataset.w;closeSheet();
+  if(!DEMO)PS.savePicks(state.week,state.picks,slate()).catch(e=>console.warn('save',e));
+  renderSlate();renderTray();renderGrid();flashSaved();});
+$('#clearw').addEventListener('click',()=>{state.picks[state.openGame].weight=null;closeSheet();
+  renderSlate();renderTray();renderBar();renderGrid();});
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on');state.tab=t.dataset.tab;
+  ['picks','grid','standings','archive','help','settings'].forEach(v=>$('#v-'+v).classList.toggle('hide',v!==state.tab));
+  $('#bar').style.display=state.tab==='picks'?'flex':'none';}));
+
+document.querySelectorAll('.mbtn').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.mbtn').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');state.mode=b.dataset.mode;render();}));
+
+$('#weeks').addEventListener('click',e=>{
+  const w=e.target.closest('.wk');if(!w)return;
+  const n=+w.dataset.wk;if(!WEEKS[n])return;
+  state.week=n;render();window.scrollTo({top:0,behavior:'smooth'});});
+
+$('#submitBtn').addEventListener('click',()=>{
+  $('#submitBtn').textContent='Locked in';$('#submitBtn').disabled=true;});
+
+/* ---------- timezone controls ---------- */
+$('#tzsel').innerHTML=TZS.map(([v,l])=>
+  `<option value="${v}"${state.tz===v?' selected':''}>${l}${v==='auto'?` (${deviceTZ()})`:''}</option>`).join('');
+$('#tzsel').addEventListener('change',e=>{
+  state.tz=e.target.value;localStorage.setItem('ps_tz',state.tz);render();});
+
+function renderTZ(){
+  const first=[...slate()].sort((a,b)=>a.show-b.show)[0];
+  const drift=fDay(first.show)!==usDay(first.show);
+  $('#tznote').innerHTML=`Showing <b>${tzAbbr()}</b>. Week ${state.week} opens `
+    +`${fDay(first.show)} ${fDate(first.show)} at ${fT(first.show)} your time.`
+    +(drift?` That is the ${usDay(first.show)} game in the US. Your calendar day runs ahead, `
+      +`so a game can lock while you are asleep. Reminders follow this zone too.`:'');
+}
+/* Tapping the chip in the header jumps to the setting. */
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.tzchip'))return;
+  document.querySelector('[data-tab="settings"]').click();
+  setTimeout(()=>$('#tzsel').scrollIntoView({behavior:'smooth',block:'center'}),80);});
+
+
+/* ============================================================
+   LIVE DATA  (DEMO = false)
+
+   Fills the same variables the demo generators fill, so every render
+   function is untouched. One place to look when something is wrong.
+   ============================================================ */
+async function boot(){
+  if(DEMO){ render(); tick(); return; }
+
+  // 1. session. If the cookie is still good we are straight in.
+  try{
+    const r=await fetch('/api/session',{credentials:'include'});
+    if(r.ok){ const {token}=await r.json(); await PS.signInWithToken(token); }
+  }catch(e){ console.warn('no session',e); }
+
+  // 2. wait for auth, then load. watchAuth already handles roster,
+  //    membership and the push token.
+  PS.watchAuth(async u=>{
+    if(!u){ showOnboarding(); return; }
+    const pool=await PS.getPool();
+    if(!pool){ showOnboarding(); return; }
+    document.getElementById('ob').classList.add('hide');
+    await loadSeason();
+    await loadWeek(state.week);
+    render(); tick();
+    watchLive();
+  });
+}
+
+/* Whole-season shell: weeks and their kickoff times. */
+async function loadSeason(){
+  const weeks=await PS.getAllWeeks();        // [{wk, games:[...]}]
+  Object.keys(WEEKS).forEach(k=>delete WEEKS[k]);
+  weeks.forEach(({wk,games})=>{
+    WEEKS[wk]=games.map(g=>({...g, kick:g.kickoff.toMillis(), show:g.kickoff.toMillis()}));
+  });
+  const cur=weeks.map(w=>w.wk).find(w=>WEEKS[w].some(g=>!isLive(g)));
+  state.week=cur||weeks[weeks.length-1]?.wk||1;
+
+  const members=await PS.getMembers();
+  PLAYERS=members.map(m=>m.name).sort();
+  const st=await PS.getStandings();
+  STANDINGS={}; st.forEach(r=>{ STANDINGS[r.name]=r; });
+  state.mode=await PS.getScoringMode(state.week);
+}
+
+/* One week: my picks, everyone's revealed picks, tiebreakers. */
+async function loadWeek(wk){
+  state.picks=await PS.myPicks(wk);
+  const revealed=await PS.getRevealed(wk);
+  Object.keys(BOT).forEach(k=>delete BOT[k]);
+  PLAYERS.forEach(p=>BOT[p]={});
+  revealed.forEach(p=>{ if(BOT[p.name]) BOT[p.name][p.gameId]={winner:p.winner,weight:p.weight}; });
+  const tbs=await PS.getTiebreaks(wk);
+  tbs.forEach(t=>{ TIEBREAKS[t.name+'|'+wk]=t.total; if(t.mine)state.tb[wk]=t.total; });
+  ARCHIVE_LIVE=await PS.getArchive();
+}
+let ARCHIVE_LIVE=null;
+
+/* Scores and newly revealed picks push themselves in. */
+function watchLive(){
+  PS.watchWeek(state.week, games=>{
+    WEEKS[state.week]=games.map(g=>({...g,kick:g.kickoff.toMillis(),show:g.kickoff.toMillis()}));
+    render();
+  });
+  PS.watchRevealed(state.week, rows=>{
+    PLAYERS.forEach(p=>BOT[p]=BOT[p]||{});
+    rows.forEach(p=>{ if(BOT[p.name]) BOT[p.name][p.gameId]={winner:p.winner,weight:p.weight}; });
+    render();
+  });
+}
+
+function showOnboarding(){
+  const ob=document.getElementById('ob');
+  if(ob)ob.classList.remove('hide');
+  obStep=0; obRender();
+}
+
+Object.values(WEEKS).flat().forEach(g=>{
+  if(isLive(g))lockedSet.add(g.id);
+  if(isFinal(g))finalSet.add(g.id);});
+boot();
+if(DEMO){
+  const b=document.createElement('div');
+  b.style.cssText='position:fixed;bottom:96px;left:14px;right:14px;z-index:90;'
+    +'background:#E0A32E;color:#1A1917;padding:8px 12px;border-radius:8px;'
+    +'font:800 10px/1.4 Archivo,sans-serif;letter-spacing:.08em;text-transform:uppercase;'
+    +'text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.4)';
+  b.textContent='Demo data. Set DEMO = false to go live';
+  document.body.appendChild(b);
+  setTimeout(()=>b.remove(),6000);
+}
+
+/* ============================================================
+   ONBOARDING
+
+   Three screens, one text field. Everything else is captured
+   silently or asked for at the only moment it can work.
+
+   The pool comes from the invite link (?join=CODE), so nobody
+   types a code. Timezone comes from the browser. Notifications
+   are asked for LAST, because on iPhone the request fails
+   outright until the app is on the Home Screen — and a declined
+   permission is very hard to get back.
+   ============================================================ */
+const POOL_NAME=POOL_LABEL;
+const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+const installed=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+let obStep=0, obName=localStorage.getItem('ps_name')||'', obEmail='', obErr='', obTick=0;
+
+/* The hero is the product explaining itself: a real pick card that picks
+   itself on a loop. Faster than any paragraph about how it works. */
+/* Mock push notifications. Showing the actual thing they will receive
+   explains the screen faster than any heading could — the old numbered
+   list read like steps to follow rather than a schedule. */
+const nt=(when,title,body)=>`<div class="nt">
+  <div class="nt-ic">P</div>
+  <div class="nt-b">
+    <div class="nt-h"><b>${title}</b><span>${when}</span></div>
+    <div class="nt-p">${body}</div>
+  </div></div>`;
+
+const heroCard=`<div class="mc" id="mcard">
+  <div class="mc-meta"><span>SUN 1:00 PM</span><span class="lk">Locks in 2h 14m</span></div>
+  <div class="mc-row">
+    <div class="mc-side l"><span class="mc-ab" style="background:#E31837">KC</span>
+      <span class="mc-nm">Chiefs</span></div>
+    <div class="mc-gut"><span>@</span></div>
+    <div class="mc-side r"><span class="mc-nm">Ravens</span>
+      <span class="mc-ab" style="background:#241773">BAL</span></div>
+  </div>
+  <div class="mc-bar"><b>Confidence rank</b>
+    <span class="mc-st"><span class="mc-num">1</span><span class="mc-pay">pays 16 points</span></span></div>
+</div>`;
+
+const obScreens=()=>[
+  /* ---------- 1. sign in ---------- */
+  {
+    show:true, id:'signin',
+    body:`${heroCard}
+      <div class="ob-kicker">2026 season</div>
+      <h1 class="ob-h">136 points.<br>Come and get them.</h1>
+      <p class="ob-p">Call all sixteen games, rank them right, and the perfect
+        week is yours. Nobody has ever done it. Somebody will.</p>
+      <div class="ob-facts">
+        <div class="ob-fact"><b>16</b><span>Games<br>a week</span></div>
+        <div class="ob-fact"><b>136</b><span>Points, perfect<br>week</span></div>
+        <div class="ob-fact"><b>0</b><span>Excuses<br>accepted</span></div>
+      </div>
+      <div class="ob-field">
+        <div class="ob-label">What do we call you?</div>
+        <input class="ob-input" id="obNameIn" maxlength="20" autocomplete="name"
+          placeholder="Your name" value="${obName}">
+      </div>
+      <div class="ob-field">
+        <div class="ob-label">Where do we send your code?</div>
+        <input class="ob-input" id="obMailIn" type="email" inputmode="email"
+          autocomplete="email" autocapitalize="off" spellcheck="false"
+          placeholder="you@email.com" value="${obEmail}">
+        <div class="ob-help">Six digits, no password. Nothing to forget, nothing to reset.</div>
+      </div>`,
+    btn:'Deal me in',
+    can:()=>obName.trim().length>0&&/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(obEmail.trim()),
+    after(){
+      const n=$('#obNameIn'), m=$('#obMailIn');
+      const sync=()=>{obName=n.value;obEmail=m.value;$('#obGo').disabled=!this.can();};
+      n.oninput=sync; m.oninput=sync;
+      m.onkeydown=e=>{if(e.key==='Enter'&&this.can())$('#obGo').click();};
+      if(!obName)setTimeout(()=>n.focus(),260);
+    },
+    async go(){
+      localStorage.setItem('ps_name',obName.trim());
+      obTick=60; obErr='';
+      if(!DEMO){
+        try{
+          await fetch('/api/request-code',{method:'POST',credentials:'include',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({email:obEmail.trim()})});
+        }catch(e){ obErr='Could not reach the server. Check your connection.'; }
+      }
+      return true;
+    }
+  },
+
+  /* ---------- 2. the code ---------- */
+  {
+    show:true, id:'pin',
+    body:`<div class="ob-kicker">Check your inbox</div>
+      <h1 class="ob-h">Six digits.<br>Ten minutes.</h1>
+      <p class="ob-p">Have a peek in spam if it's playing hard to get.</p>
+      <div class="pinrow" id="pinrow">${[...Array(6)].map((_,i)=>
+        `<input class="pinbox" id="pin${i}" type="tel" inputmode="numeric" maxlength="1"
+          ${i===0?'autocomplete="one-time-code"':''}>`).join('')}</div>
+      ${obErr?`<div class="ob-err">${obErr}</div>`:''}
+      <div class="ob-mail"><span>${obEmail||'you@email.com'}</span>
+        <button id="obEdit">Change</button></div>
+      <div class="ob-resend">Didn't get it?
+        <button id="obResend" disabled>Resend</button><span id="obCd"></span></div>`,
+    btn:'Let me in', can:()=>pinValue().length===6,
+    after(){
+      const boxes=[...Array(6)].map((_,i)=>$('#pin'+i));
+
+      /* Auto-advance, backspace steps back, and a pasted code fills the
+         whole row. This is the fiddly bit of every email-code flow. */
+      boxes.forEach((b,i)=>{
+        b.oninput=e=>{
+          const v=e.target.value.replace(/\D/g,'').slice(-1);
+          e.target.value=v;
+          b.classList.toggle('filled',!!v);
+          if(v&&i<5)boxes[i+1].focus();
+          $('#obGo').disabled=pinValue().length!==6;
+          if(pinValue().length===6)setTimeout(()=>$('#obGo').click(),140);
+        };
+        b.onkeydown=e=>{
+          if(e.key==='Backspace'&&!b.value&&i>0){boxes[i-1].focus();boxes[i-1].value='';
+            boxes[i-1].classList.remove('filled');$('#obGo').disabled=true;}
+        };
+        b.onpaste=e=>{
+          e.preventDefault();
+          const d=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);
+          d.split('').forEach((c,k)=>{boxes[k].value=c;boxes[k].classList.add('filled');});
+          boxes[Math.min(d.length,5)].focus();
+          $('#obGo').disabled=d.length!==6;
+          if(d.length===6)setTimeout(()=>$('#obGo').click(),140);
+        };
+      });
+      setTimeout(()=>boxes[0].focus(),260);
+
+      $('#obEdit').onclick=()=>{obStep=0;obErr='';obRender();};
+      const cd=()=>{
+        const b=$('#obResend'), t=$('#obCd');
+        if(!b)return;
+        if(obTick>0){b.disabled=true;t.textContent=` in ${obTick}s`;obTick--;setTimeout(cd,1000);}
+        else{b.disabled=false;t.textContent='';}
+      };
+      cd();
+      $('#obResend').onclick=async()=>{
+        obTick=60;obErr='';cd();
+        if(!DEMO)await fetch('/api/request-code',{method:'POST',credentials:'include',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({email:obEmail.trim()})}).catch(()=>{});};
+    },
+    async go(){
+      const code=pinValue();
+      if(!DEMO&&code.length===6){
+        try{
+          const r=await fetch('/api/verify-code',{method:'POST',credentials:'include',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({email:obEmail.trim(),code})});
+          if(!r.ok){
+            const d=await r.json().catch(()=>({}));
+            obErr=d.left!=null
+              ? `That code is not right. ${d.left} ${d.left===1?'try':'tries'} left.`
+              : 'That code has expired. Ask for a new one.';
+            $('#pinrow').classList.add('bad');
+            setTimeout(()=>{obStep=1;obRender();},480);
+            return false;
+          }
+          const {token}=await r.json();
+          await PS.signInWithToken(token);
+          const join=new URLSearchParams(location.search).get('join');
+          if(join)await PS.joinPool(join);
+          await PS.upsertRoster({name:obName.trim()});
+        }catch(e){ obErr='Could not reach the server. Try again.'; obRender(); return false; }
+      }
+      if(code.length!==6){
+        $('#pinrow').classList.add('bad');
+        setTimeout(()=>$('#pinrow').classList.remove('bad'),400);
+        return false;
+      }
+      return true;
+    }
+  },
+
+  /* ---------- 3. install (iPhone, not yet installed) ---------- */
+  {
+    show:isIOS&&!installed, id:'install',
+    body:`<div class="ob-kicker">One more thing</div>
+      <h1 class="ob-h">Make it a real app</h1>
+      <ol class="ob-steps">
+        <li>Tap <span class="ob-share">&#8593;</span> at the bottom of Safari</li>
+        <li>Scroll and choose <b>Add to Home Screen</b></li>
+        <li>Open Pick’em from your new icon</li>
+      </ol>
+      <div class="ob-note"><b>This is not optional on iPhone</b>
+        Apple only allows notifications for apps on the Home Screen. Skip this
+        and you get no kickoff reminders at all.</div>`,
+    btn:'I added it', skip:'Later'
+  },
+
+  /* ---------- 4. alerts ---------- */
+  {
+    show:true, id:'alerts',
+    body:`<div class="ob-hero-c">
+        <div class="ob-kicker">Almost done</div>
+        <h1 class="ob-h">We'll be your<br>Sunday morning<br>conscience.</h1>
+        <p class="ob-p">Nobody likes a zero. Games slam shut the second they kick off, and a
+          game you forgot is worth nothing at all. You'll hear about it all week.</p>
+      </div>
+      <p class="ob-lbl">Every alert we will ever send you</p>
+      <div class="ntwrap">
+        ${nt('Tue','Week 4 is open','16 games to pick. First kickoff Sunday 1:00 PM.')}
+        ${nt('Sat','Week 4, 6 left',"You still need 6 picks before Sunday 1:00 PM.")}
+        ${nt('Sun','3 unpicked','2 hours until kickoff. After that they score zero.')}
+        ${nt('Sun','Last call, 3 games','Kickoff in 30 minutes. Unpicked games score zero.')}
+      </div>
+      <p class="ob-p" style="margin-top:14px">That's the entire list. We only ever
+        mention games you <b>haven't</b> picked, so get your week in early and you'll
+        never hear from us at all.</p>`,
+    btn:'Keep me honest', skip:'Not now',
+    async go(){
+      try{
+        if('Notification' in window)await Notification.requestPermission();
+        if(!DEMO)await PS.enablePush();
+      }catch(e){ console.warn('push',e); }
+      return true;
+    }
+  },
+
+  /* ---------- 5. how it works ---------- */
+  {
+    show:true, id:'howto', howto:true,
+    body:`<div class="ob-kicker">How it works</div>
+      <h1 class="ob-h">Six rules.<br>Zero excuses.</h1>
+      <ol class="ob-steps">
+        <li><b class="lead">Tap a team</b>Straight-up winners, not against the spread. The
+          line on the card is only there to help you decide.</li>
+        <li><b class="lead">Rank every game</b>Usually sixteen of them. Your number 1 is the
+          game you'd bet the house on. Your last rank is the one you're flat-out guessing at.</li>
+        <li><b class="lead">Your ranking is your payout</b>On a sixteen-game week a correct
+          number 1 earns 16 points, number 2 earns 15, and so on down to 1. Guess wrong at any
+          rank and it earns you nothing.</li>
+        <li><b class="lead">Beat the kickoff</b>Late is the same as never. An unpicked game
+          scores zero.</li>
+        <li><b class="lead">Call the last game's total</b>Combined points in the week's
+          final game. Only matters if you finish tied.</li>
+        <li><b class="lead">Watch the Grid</b>Your own sheet stays on <b>Picks</b>, editable right
+          up to kickoff. The <b>Grid</b> tab lines everyone up side by side, filling in game
+          by game as they start.</li>
+      </ol>
+      <p class="ob-p" style="margin-top:18px">Everything saves as you tap, so pick a few
+        now and sleep on the rest. It's all in the <b>Help</b> tab whenever you want it.</p>`,
+    btn:"Let's play"
+  }
+].filter(x=>x.show);
+
+const pinValue=()=>[...Array(6)].map((_,i)=>
+  (document.getElementById('pin'+i)||{}).value||'').join('');
+
+function obRender(){
+  const sc=obScreens(), s=sc[obStep];
+  $('#obBody').innerHTML=s.body;
+  $('#obFoot').innerHTML=`<button class="ob-btn" id="obGo"${
+    s.can&&!s.can()?' disabled':''}>${s.btn}</button>`+
+    (s.skip?`<button class="ob-skip" id="obSkip">${s.skip}</button>`:'');
+  $('#obDots').innerHTML=sc.map((_,i)=>
+    `<span class="ob-dot${i===obStep?' on':''}"></span>`).join('');
+  if(s.after)s.after();
+  if(s.id==='signin')heroLoop();
+  $('#obGo').onclick=async()=>{
+    if(s.go&&(await s.go())===false)return;
+    obAdvance(sc);
+  };
+  if($('#obSkip'))$('#obSkip').onclick=()=>obAdvance(sc);
+}
+
+let heroTimer=null;
+function heroLoop(){
+  clearInterval(heroTimer);
+  const el=$('#mcard'); if(!el)return;
+  const beat=()=>{el.classList.add('on');
+    setTimeout(()=>el.classList.remove('on'),2600);};
+  setTimeout(beat,700);
+  heroTimer=setInterval(beat,4200);
+}
+
+function obAdvance(sc){
+  if(obStep<sc.length-1){obStep++;obRender();window.scrollTo(0,0);}
+  else{clearInterval(heroTimer);localStorage.setItem('ps_onboarded','1');
+       $('#ob').classList.add('hide');}
+}
+
+/* ---------- autosave indicator ----------
+   Every tap writes immediately. "Lock in" is a completeness check, not
+   a save. */
+let savedTimer=null;
+function flashSaved(){
+  const el=$('#plabel'); if(!el)return;
+  el.textContent='Saved'; el.classList.add('saved');
+  clearTimeout(savedTimer);
+  savedTimer=setTimeout(()=>{el.classList.remove('saved');renderBar();},1400);
+}
+
+/* ---------- notification preferences ----------
+   Stored on the roster as booleans. remind.py and worker/live.js both
+   check each tier's key before adding someone to a send group. */
+const PREFS=[
+  ['open','Week opens','Tuesday, once the previous week is final'],
+  ['day','Day before','24 hours out, if you still owe picks'],
+  ['hours','Kickoff approaching','A couple of hours before each slate'],
+  ['final','Last call','30 minutes out. The one that saves you.'],
+  ['results','Results','Sunday night and Tuesday final standings']];
+let prefs=JSON.parse(localStorage.getItem('ps_prefs')||'null')
+  ||Object.fromEntries(PREFS.map(([k])=>[k,true]));
+
+function renderPrefs(){
+  const el=$('#prefs'); if(!el)return;
+  el.innerHTML=PREFS.map(([k,t,d])=>
+    `<div class="pref${prefs[k]?' on':''}" data-pref="${k}">
+      <div class="pref-t"><b>${t}</b><span>${d}</span></div>
+      <div class="sw"></div></div>`).join('');
+}
+$('#prefs').addEventListener('click',e=>{
+  const el=e.target.closest('[data-pref]'); if(!el)return;
+  const k=el.dataset.pref; prefs[k]=!prefs[k];
+  localStorage.setItem('ps_prefs',JSON.stringify(prefs));
+  if(!DEMO)PS.upsertRoster({prefs}).catch(()=>{});
+  renderPrefs();
+});
+renderPrefs();
+
+/* ---------- sign out ----------
+   Nothing is lost: picks live in Firestore against the account, not the
+   device. This exists mainly for a shared iPad. */
+$('#logout').addEventListener('click',()=>{
+  if(!confirm('Sign out? Your picks are saved to your account and will be here when you sign back in.'))return;
+  if(!DEMO){
+    fetch('/api/logout',{method:'POST',credentials:'include'}).catch(()=>{});
+    PS.signOut().catch(()=>{});
+  }
+  ['ps_onboarded','ps_name','ps_pool'].forEach(k=>localStorage.removeItem(k));
+  location.reload();
+});
+
+/* ---------- replay the walkthrough ---------- */
+function replayOnboarding(toHowTo){
+  const sc=obScreens();
+  obStep=toHowTo?Math.max(0,sc.findIndex(x=>x.howto)):0;
+  if(obStep<0)obStep=sc.length-1;
+  localStorage.removeItem('ps_onboarded');
+  $('#ob').classList.remove('hide');
+  obRender(); window.scrollTo(0,0);
+}
+$('#hpReplay').addEventListener('click',()=>replayOnboarding(true));
+$('#obReplay').addEventListener('click',()=>replayOnboarding(false));
+
+if(!localStorage.getItem('ps_onboarded')){
+  $('#ob').classList.remove('hide');
+  obRender();
+}
+
+</script>
+</body>
+</html>

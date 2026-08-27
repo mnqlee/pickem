@@ -1,0 +1,48 @@
+name: Score the week
+
+on:
+  schedule:
+    # Times are UTC. GitHub cron can run up to ~15 min late — fine here.
+    - cron: '0 1 * * 1'    # Sun 9:00 PM ET  — after the late window
+    - cron: '0 5 * * 1'    # Mon 1:00 AM ET  — after Sunday night
+    - cron: '0 5 * * 2'    # Tue 1:00 AM ET  — after Monday night, final
+  workflow_dispatch:
+    inputs:
+      week:
+        description: 'Week to score (blank = auto-detect)'
+        required: false
+      no_push:
+        description: 'Skip notifications'
+        type: boolean
+        default: false
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install firebase-admin requests
+
+      - name: Write service account key
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: echo "$SA" > /tmp/sa.json
+
+      - name: Score
+        env:
+          FIREBASE_SERVICE_ACCOUNT_FILE: /tmp/sa.json
+        run: |
+          ARGS="--season ${{ vars.SEASON || '2026' }}"
+          [ -n "${{ inputs.week }}" ] && ARGS="$ARGS --week ${{ inputs.week }}"
+          [ "${{ inputs.no_push }}" = "true" ] && ARGS="$ARGS --no-push"
+          python scripts/score_week.py $ARGS
+
+      - name: Shred the key
+        if: always()
+        run: rm -f /tmp/sa.json

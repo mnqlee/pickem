@@ -1,0 +1,23 @@
+name = "poolsheet-auth"
+main = "auth.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+APP_ORIGIN = "https://yourdomain.com"
+FROM_EMAIL = "Weekly NFL Pick’em <picks@yourdomain.com>"
+
+[[kv_namespaces]]
+binding = "PINS"
+id = "REPLACE_ME"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "REPLACE_ME"
+
+# secrets, set with `wrangler secret put NAME`:
+#   SA_JSON      the Firebase service account JSON, pasted whole
+#   RESEND_KEY   your Resend API key
+
+[[routes]]
+pattern = "yourdomain.com/api/*"
+zone_name = "yourdomain.com"

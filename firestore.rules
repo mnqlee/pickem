@@ -1,0 +1,187 @@
+rules_version = '2';
+
+/* ============================================================
+   Weekly NFL Pick’em — security rules
+
+   This file is the app. Everything in the browser is a suggestion;
+   these rules are what actually stops a late pick or a peek at
+   someone else's sheet. Do not skip deploying this.
+   ============================================================ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(poolId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/pools/$(poolId)/members/$(request.auth.uid));
+    }
+
+    function isOwner(poolId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/pools/$(poolId)).data.ownerUid == request.auth.uid;
+    }
+
+    // ---------- SCHEDULE ----------
+    // Anyone signed in can read it. Only the scoring job (Admin SDK,
+    // which bypasses rules entirely) ever writes it.
+    match /seasons/{season}/games/{gameId} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
+
+    // ---------- POOLS ----------
+    match /pools/{poolId} {
+      // Readable so joinPool() can look up a code.
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isOwner(poolId);
+
+      // ---------- MEMBERS ----------
+      match /members/{uid} {
+        allow read:  if isMember(poolId);
+        // You may only create or edit your own membership record.
+        allow write: if signedIn() && request.auth.uid == uid;
+      }
+
+      // ---------- CONFIG ----------
+      match /config/{docId} {
+        allow read:  if isMember(poolId);
+        allow write: if isOwner(poolId);
+      }
+
+      // ---------- ARCHIVE ----------
+      // A finished pool flattened into one document, written by
+      // archive_pool.py. Survives the source pool being deleted.
+      // `visible: false` hides it from members; the owner still sees it.
+      match /archive/{docId} {
+        // state: 'public' | 'owner' | 'off'
+        //   off  -> nobody can read it, so the client never receives the
+        //           document and the tab does not render at all. Not a
+        //           hidden button: an unreadable document.
+        allow read: if isMember(poolId) && (
+          resource.data.state == 'public' ||
+          (resource.data.state == 'owner' && isOwner(poolId))
+        );
+        allow write: if false;
+      }
+
+      // ---------- SNAPSHOTS ----------
+      // What the app actually reads. Built by build_snapshot.py, which
+      // has already stripped anything not yet revealed. Two reads render
+      // the Grid instead of several thousand.
+      match /snapshots/{docId} {
+        allow read:  if isMember(poolId);
+        allow write: if false;
+      }
+
+      // ---------- PRIVATE ----------
+      // The working set: every pick including unrevealed ones, plus the
+      // roster and reminder progress. Clients never read this.
+      match /private/{docId} {
+        allow read: if false;
+
+        // The one exception: each member maintains their own roster entry.
+        // Field name is the uid, so the rule can pin the write to one key.
+        // Written blind with updateDoc — no read required, none granted.
+        allow update: if docId == 'roster'
+          && isMember(poolId)
+          && request.resource.data.diff(resource.data)
+               .affectedKeys().hasOnly([request.auth.uid]);
+        allow create: if false;
+        allow delete: if false;
+      }
+
+      // ---------- STANDINGS ----------
+      // Written only by the scoring job.
+      match /standings/{uid} {
+        allow read:  if isMember(poolId);
+        allow write: if false;
+      }
+
+      // ---------- TIEBREAKS ----------
+      // One guess per person per week. Locks and reveals with the
+      // week's final game, exactly like a pick.
+      match /tiebreaks/{tbId} {
+
+        function tbGame() {
+          return get(/databases/$(database)/documents/seasons/
+            $(get(/databases/$(database)/documents/pools/$(poolId)).data.season)/games/
+            $(request.resource.data.gameId)).data;
+        }
+
+        allow read: if isMember(poolId) && (
+          resource.data.uid == request.auth.uid ||
+          resource.data.revealAt <= request.time
+        );
+
+        allow create, update: if isMember(poolId)
+          && tbId == request.auth.uid + '_' + string(request.resource.data.wk)
+          && request.resource.data.uid == request.auth.uid
+          && request.time < tbGame().kickoff
+          && request.resource.data.revealAt == tbGame().kickoff
+          && request.resource.data.total is int
+          && request.resource.data.total >= 0
+          && request.resource.data.total <= 120;
+
+        allow delete: if false;
+      }
+
+      // ---------- PICKS ----------
+      // The whole design turns on this block.
+      match /picks/{pickId} {
+
+        function game() {
+          return get(/databases/$(database)/documents/seasons/
+            $(get(/databases/$(database)/documents/pools/$(poolId)).data.season)/games/
+            $(request.resource.data.gameId)).data;
+        }
+
+        // READ: your own picks only. Nobody queries anyone else's any
+        // more — reveal happens in the snapshot, which is both cheaper
+        // and a stronger guarantee, since an unrevealed pick is never
+        // in a document a client can reach.
+        allow read: if isMember(poolId) && resource.data.uid == request.auth.uid;
+
+        // WRITE: four conditions, all required.
+        allow create, update: if isMember(poolId)
+          // 1. The doc id must be yours. Stops writing to someone else's pick.
+          && pickId == request.auth.uid + '_' + request.resource.data.gameId
+          && request.resource.data.uid == request.auth.uid
+          // 2. Kickoff must still be in the future. THIS is the lock.
+          //    Server time, not the phone's clock.
+          && request.time < game().kickoff
+          // 3. revealAt must be an honest copy of kickoff, so it cannot
+          //    be backdated to expose picks early or forward-dated to hide them.
+          && request.resource.data.revealAt == game().kickoff
+          // 4. Weight is either absent or a legal stake.
+          && (request.resource.data.weight == null ||
+              (request.resource.data.weight is int &&
+               request.resource.data.weight >= 1 &&
+               request.resource.data.weight <= 16));
+
+        // Picks are never deleted, only overwritten before kickoff.
+        allow delete: if false;
+      }
+    }
+  }
+}
+
+/* ============================================================
+   NOT ENFORCED HERE — read this.
+
+   Rules cannot check uniqueness across documents, so they cannot stop
+   someone staking 16 on every game. Two ways to cover it:
+
+   A. The scoring job validates. If a week's weights are not a clean
+      1..16 permutation, that week scores as straight-up and the pool
+      gets told. Simple, no extra infrastructure, catches everything.
+
+   B. Write picks through a Cloud Function or Cloudflare Worker that
+      validates the whole week atomically before committing.
+
+   Start with A. It is a family pool, and being caught is enough.
+   ============================================================ */
