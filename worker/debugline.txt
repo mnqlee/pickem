@@ -1,1 +1,0 @@
-  if (globalThis.__DEBUG_SENDPIN) return new Response(JSON.stringify({keyPresent: !!env.RESEND_KEY, keyLen: (env.RESEND_KEY || '').length, from: env.FROM_EMAIL, to: [email]}), {status:200});
