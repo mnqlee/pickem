@@ -95,7 +95,7 @@ async function ensureMember() {
   const snap = await getDoc(ref);
   if (!snap.exists()) {
     await setDoc(ref, {
-      name: user.displayName || user.email.split('@')[0],
+      name: user.displayName || (user.email ? user.email.split('@')[0] : (document.getElementById('obMailIn')?.value || 'Player').split('@')[0]),
       photo: user.photoURL || null,
       joinedAt: serverTimestamp()
     });
