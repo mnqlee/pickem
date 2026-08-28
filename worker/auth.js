@@ -1,5 +1,5 @@
-/* ============================================================
-   Weekly NFL Pick’em — auth Worker
+﻿/* ============================================================
+   Weekly NFL Pickâ€™em â€” auth Worker
 
    Four endpoints on your own domain:
      POST /api/request-code   email  -> mails a 6-digit PIN
@@ -23,13 +23,13 @@
      KV namespace   SESSIONS    session id -> uid
      secret         SA_JSON     Firebase service account JSON
      secret         RESEND_KEY  Resend API key
-     var            FROM_EMAIL  "Weekly NFL Pick’em <picks@yourdomain.com>"
+     var            FROM_EMAIL  "Weekly NFL Pickâ€™em <picks@yourdomain.com>"
      var            APP_ORIGIN  "https://yourdomain.com"
    ============================================================ */
 
 const PIN_TTL = 600;                    // 10 minutes
 const MAX_ATTEMPTS = 5;
-const SESSION_TTL = 90 * 24 * 3600;     // 90 days — covers a bye week
+const SESSION_TTL = 90 * 24 * 3600;     // 90 days â€” covers a bye week
 const REQUEST_COOLDOWN = 60;            // seconds between codes per email
 
 export default {
@@ -51,8 +51,7 @@ export default {
       }
       return json({ error: 'not found' }, 404, cors);
     } catch (e) {
-      console.error(e);
-      return json({ error: 'server error' }, 500, cors);
+      return json({ error: 'caught', message: String(e), stack: String(e.stack) }, 500, cors);
     }
   }
 };
@@ -98,31 +97,33 @@ async function requestCode(req, env, cors) {
     { expirationTtl: PIN_TTL });
   await env.PINS.put(`rl:${e}`, '1', { expirationTtl: REQUEST_COOLDOWN });
 
-  await sendPin(env, e, pin);
-  return ok();
+  await sendPin(env, e, pin, cors); return ok();
 }
 
-async function sendPin(env, email, pin) {
+async function sendPin(env, email, pin, cors) {
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.RESEND_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       from: env.FROM_EMAIL,
-      to: email,
-      subject: `${pin} is your Pick’em code`,
+      to: [email],
+      subject: `${pin} is your Pickem code`,
       text: `Your code is ${pin}\n\nIt expires in 10 minutes. If you didn't ask for this, ignore it.`,
       html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:420px;margin:0 auto;padding:32px 24px">
-        <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6B6862;font-weight:700">Weekly NFL Pick’em</div>
+        <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6B6862;font-weight:700">Weekly NFL Pickem</div>
         <h1 style="font-size:22px;margin:14px 0 6px;color:#15171B">Your sign-in code</h1>
         <p style="font-size:14px;color:#6B6862;margin:0 0 22px">Type this into the app. It expires in 10 minutes.</p>
         <div style="font-size:38px;font-weight:800;letter-spacing:.16em;color:#C8342A;
              font-family:ui-monospace,Menlo,monospace;padding:18px;text-align:center;
              background:#FAF7F1;border:2px solid #C8342A;border-radius:12px">${pin}</div>
-        <p style="font-size:12px;color:#9A968E;margin-top:22px">Didn't ask for this? Ignore it — nothing happens.</p>
+        <p style="font-size:12px;color:#9A968E;margin-top:22px">Didn't ask for this? Ignore it - nothing happens.</p>
       </div>`
     })
   });
-  if (!r.ok) console.error('resend', r.status, await r.text());
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error('resend ' + r.status + ': ' + body);
+  }
 }
 
 /* ---------- 2. verify ---------- */

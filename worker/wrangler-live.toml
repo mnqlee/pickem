@@ -5,7 +5,7 @@ main = "live.js"
 compatibility_date = "2025-01-01"
 
 [vars]
-GCP_PROJECT = "your-firebase-project-id"
+GCP_PROJECT = "pickem-c0d06"
 # Preseason: "2026PRE". Regular season: "2026".
 # This drives the ESPN feed, the game document ids and the week ceiling,
 # so it must match SEASON in index.html.
@@ -13,7 +13,7 @@ SEASON = "2026PRE"
 
 [[kv_namespaces]]
 binding = "SESSIONS"          # reused for the reminder-sent markers
-id = "REPLACE_ME"
+id = "15a1d88c2a5045fcacae2f207d09b401"
 
 # secrets:
 #   wrangler secret put SA_JSON   -c wrangler-live.toml

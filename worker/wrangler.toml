@@ -1,23 +1,23 @@
-name = "poolsheet-auth"
+﻿name = "poolsheet-auth"
 main = "auth.js"
 compatibility_date = "2025-01-01"
 
 [vars]
-APP_ORIGIN = "https://yourdomain.com"
-FROM_EMAIL = "Weekly NFL Pick’em <picks@yourdomain.com>"
+APP_ORIGIN = "https://nflweeklypickem.com"
+FROM_EMAIL = "picks@nflweeklypickem.com"
 
 [[kv_namespaces]]
 binding = "PINS"
-id = "REPLACE_ME"
+id = "56aa4bf7ae2244ef97000e51d0e0c4e5"
 
 [[kv_namespaces]]
 binding = "SESSIONS"
-id = "REPLACE_ME"
+id = "15a1d88c2a5045fcacae2f207d09b401"
 
 # secrets, set with `wrangler secret put NAME`:
 #   SA_JSON      the Firebase service account JSON, pasted whole
 #   RESEND_KEY   your Resend API key
 
 [[routes]]
-pattern = "yourdomain.com/api/*"
-zone_name = "yourdomain.com"
+pattern = "nflweeklypickem.com/api/*"
+zone_name = "nflweeklypickem.com"
