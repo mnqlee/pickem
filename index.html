@@ -2035,7 +2035,7 @@ const obScreens=()=>[
           const join=new URLSearchParams(location.search).get('join');
           if(join)await PS.joinPool(join);
           await PS.upsertRoster({name:obName.trim()});
-        }catch(e){ obErr='Could not reach the server. Try again.'; obRender(); return false; }
+        }catch(e){ obErr='ERR: ' + (e && e.message ? e.message : String(e)); obRender(); return false; }
       }
       if(code.length!==6){
         $('#pinrow').classList.add('bad');
@@ -2226,3 +2226,4 @@ if(!localStorage.getItem('ps_onboarded')){
 </script>
 </body>
 </html>
+
