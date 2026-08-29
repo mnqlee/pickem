@@ -1085,7 +1085,12 @@ let lockedSet=new Set(), finalSet=new Set();
 const $=s=>document.querySelector(s);
 const slate=()=>WEEKS[state.week];
 const myPick=id=>state.picks[id];
-const pickOf=(p,id)=>p===ME?state.picks[id]:BOT[p][id];
+// Guard against a player who exists in PLAYERS (from getMembers()) but
+// hasn't gotten a BOT[name]={} entry yet — e.g. a brand-new member whose
+// join lands between loadWeek()'s snapshot and watchRevealed()'s first
+// fire. Missing data here just means "no revealed pick", same as an
+// empty {} — never worth crashing the whole render chain over.
+const pickOf=(p,id)=>p===ME?state.picks[id]:BOT[p]&&BOT[p][id];
 
 function fmt(ms){const s=Math.max(0,Math.floor(ms/1000));
   const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),ss=s%60;
@@ -1743,10 +1748,16 @@ document.querySelectorAll('.mbtn').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.mbtn').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.mode=b.dataset.mode;render();}));
 
-$('#weeks').addEventListener('click',e=>{
+$('#weeks').addEventListener('click',async e=>{
   const w=e.target.closest('.wk');if(!w)return;
-  const n=+w.dataset.wk;if(!WEEKS[n])return;
-  state.week=n;render();window.scrollTo({top:0,behavior:'smooth'});});
+  const n=+w.dataset.wk;if(!WEEKS[n]||n===state.week)return;
+  state.week=n;
+  // loadWeek was previously only ever called once (for the boot-time
+  // week), so switching tabs showed the right games with the WRONG
+  // picks/reveals/tiebreak still attached from whichever week loaded
+  // first. Not DEMO-gated: real data needs this on every switch.
+  if(!DEMO)await loadWeek(n);
+  render();window.scrollTo({top:0,behavior:'smooth'});});
 
 $('#submitBtn').addEventListener('click',()=>{
   $('#submitBtn').textContent='Locked in';$('#submitBtn').disabled=true;});
