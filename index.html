@@ -1756,7 +1756,13 @@ $('#weeks').addEventListener('click',async e=>{
   // week), so switching tabs showed the right games with the WRONG
   // picks/reveals/tiebreak still attached from whichever week loaded
   // first. Not DEMO-gated: real data needs this on every switch.
-  if(!DEMO)await loadWeek(n);
+  // Wrapped in try/catch so a failed fetch (e.g. a permissions hiccup
+  // on an old week) can't silently swallow the tab switch entirely —
+  // the games themselves should still show even if picks/reveals don't.
+  if(!DEMO){
+    try{ await loadWeek(n); }
+    catch(err){ console.error('loadWeek failed for week',n,err); }
+  }
   render();window.scrollTo({top:0,behavior:'smooth'});});
 
 $('#submitBtn').addEventListener('click',()=>{
