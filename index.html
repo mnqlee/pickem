@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Weekly NFL Pickâ€™em</title>
+<title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
 <!-- PWA. Without these the home-screen icon is a screenshot of the page
@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Pickâ€™em">
+<meta name="apple-mobile-web-app-title" content="Pick’em">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -124,7 +124,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .side.won{flex-grow:1.1;color:#fff}
 .side.lost{flex-grow:.95;background:var(--paper-2);color:rgba(21,23,27,.4)}
 .side.lost .mark{filter:grayscale(1) contrast(.5);opacity:.45;width:34px;height:34px;border-radius:9px;font-size:11px}
-/* The unpicked side steps back a notch â€” also stops Buccaneers and
+/* The unpicked side steps back a notch — also stops Buccaneers and
    Commanders from truncating on a narrow phone. */
 .side.lost .team{font-size:14.5px;letter-spacing:-.03em}
 .side.lost .city{font-size:9px}
@@ -153,7 +153,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 /* A div, not a <button>. Safari insists on its own intrinsic box for
    buttons and the empty state kept rendering as an inset pill roughly
    twice the height of the filled one. Both states are now the same
-   40px strip â€” only the color and the circle change. */
+   40px strip — only the color and the circle change. */
 .stakebar{display:flex;align-items:center;justify-content:space-between;gap:10px;
   height:40px;padding:0 12px;box-sizing:border-box;
   background:var(--paper-2);border-top:1px solid var(--rule);
@@ -223,7 +223,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .tbrow.win .gs{color:var(--live)}
 .tbrow.over .gs{color:rgba(250,247,241,.32);text-decoration:line-through}
 .tbrow.me{color:var(--paper)}
-.tbrow.me .nm::after{content:' Â· you';font-size:9.5px;color:var(--stamp);
+.tbrow.me .nm::after{content:' · you';font-size:9.5px;color:var(--stamp);
   letter-spacing:.06em;text-transform:uppercase;font-weight:800}
 
 .gridhead{padding:14px var(--pad) 10px;display:flex;align-items:baseline;justify-content:space-between}
@@ -504,7 +504,7 @@ tbody tr.me td.tot{background:#241F1E}
 .mc.on .mc-num{animation:slam .32s cubic-bezier(.2,1.5,.4,1)}
 .mc-pay{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--stamp)}
 
-/* Centred block for the headline only. Lists stay left-aligned â€”
+/* Centred block for the headline only. Lists stay left-aligned —
    centred body copy is hard to read. */
 .ob-hero-c{text-align:center;padding:6px 0 4px}
 .ob-hero-c .ob-h{margin-bottom:14px}
@@ -672,9 +672,9 @@ tbody tr.me td.tot{background:#241F1E}
   <div class="brandrow">
     <div class="brand">
       <span class="b1">Weekly NFL</span>
-      <span class="b2">Pickâ€™em <em id="modeTag">CONF</em><em id="preTag" class="pre hide">PRE</em></span>
+      <span class="b2">Pick’em <em id="modeTag">CONF</em><em id="preTag" class="pre hide">PRE</em></span>
     </div>
-    <div class="clock"><span class="dot"></span><span id="countdown">â€”</span></div>
+    <div class="clock"><span class="dot"></span><span id="countdown">—</span></div>
   </div>
   <div class="weeks" id="weeks"></div>
   <div class="tabs">
@@ -700,8 +700,8 @@ tbody tr.me td.tot{background:#241F1E}
     </div>
     <div class="stamps" id="stamps"></div>
     <div class="inplay" id="inplay"></div>
-    <div class="tray-legend"><span>1 Â· lock of the week</span>
-      <span>coin flip Â· <i id="trayMax">16</i></span></div>
+    <div class="tray-legend"><span>1 · lock of the week</span>
+      <span>coin flip · <i id="trayMax">16</i></span></div>
   </div>
   <div id="slate"></div>
 </div>
@@ -881,7 +881,7 @@ tbody tr.me td.tot{background:#241F1E}
 
 <div class="bar" id="bar">
   <div class="progress">
-    <div class="plabel" id="plabel">â€”</div>
+    <div class="plabel" id="plabel">—</div>
     <div class="pbar"><div class="pfill" id="pfill" style="width:0%"></div></div>
   </div>
   <button class="submit" id="submitBtn" disabled>Lock in</button>
@@ -889,7 +889,7 @@ tbody tr.me td.tot{background:#241F1E}
 
 
 <div class="ob hide" id="ob">
-  <div class="ob-brand">Weekly NFL Pickâ€™em</div>
+  <div class="ob-brand">Weekly NFL Pick’em</div>
   <div class="ob-body" id="obBody"></div>
   <div class="ob-foot" id="obFoot"></div>
   <div class="ob-dots" id="obDots"></div>
@@ -901,14 +901,14 @@ tbody tr.me td.tot{background:#241F1E}
   <h3 id="sheetTitle">Rank this pick</h3>
   <div class="sub" id="sheetSub"></div>
   <div class="numgrid" id="numgrid"></div>
-  <div class="heatlabel"><span id="heatLo">1 Â· surest</span><span id="heatHi">coin flip Â· pays 1</span></div>
+  <div class="heatlabel"><span id="heatLo">1 · surest</span><span id="heatHi">coin flip · pays 1</span></div>
   <button class="clearw" id="clearw">Take the stamp back</button>
 </div>
 
 <script type="module" src="firebase-init.js"></script>
 <script type="module">
 /* ============================================================
-   CONFIG â€” the only block you edit in this file.
+   CONFIG — the only block you edit in this file.
    See BUILD.md Part 10.
    ============================================================ */
 const DEMO = false;            // false once Firebase is wired up
@@ -941,7 +941,7 @@ let TIEBREAKS={};   // name -> guessed total
 
 /* ---------- RANK AND PAYOUT ----------
    Rank 1 is your strongest pick; rank 16 is the coin flip.
-   Points are NOT the rank â€” a rank-1 hit pays 16, a rank-16 hit pays 1.
+   Points are NOT the rank — a rank-1 hit pays 16, a rank-16 hit pays 1.
    Flip RANK_ONE_IS_BEST to false for the conventional pool where the
    number you stake is the number you win. Nothing else changes. */
 const RANK_ONE_IS_BEST=true;
@@ -972,7 +972,7 @@ const SLATES={
     ['LV','DEN','DEN -6'],['MIA','NE','NE -3.5'],['NYG','PHI','PHI -8'],['WAS','DAL','DAL -2.5'],
     ['CHI','MIN','MIN -4.5'],['SF','ARI','SF -3'],['BAL','CLE','BAL -6.5'],['ATL','CAR','ATL -1.5']]
 };
-/* Minutes from Thu Sep 10 2026 00:00 UTC â€” the real Week 1 anchor.
+/* Minutes from Thu Sep 10 2026 00:00 UTC — the real Week 1 anchor.
    Everything the user sees is formatted from these in THEIR timezone.
    `kick` below stays compressed so the lock still demos live; with real
    data the two collapse into the single kickoff Timestamp. */
@@ -991,7 +991,7 @@ const W1OFF=[-620,-420,-415,-410,-405,-400,-70,-65,0.6,9,55,120,240,430,700,2100
 const BOOT=Date.now();
 
 /* Weeks 5-18 are generated so the whole season is browsable.
-   Real matchups arrive with the schedule import â€” see SETUP.md. */
+   Real matchups arrive with the schedule import — see SETUP.md. */
 const TEAMS=Object.keys(T);
 function slateFor(w){
   if(SLATES[w])return SLATES[w];
@@ -1066,7 +1066,7 @@ const fDate=ms=>new Date(ms).toLocaleDateString('en-US',
   {month:'short',day:'numeric',timeZone:TZ()});
 const tzAbbr=()=>{try{return new Intl.DateTimeFormat('en-US',{timeZone:TZ(),timeZoneName:'short'})
   .formatToParts(new Date()).find(x=>x.type==='timeZoneName').value;}catch{return TZ();}};
-/* The US day a game belongs to â€” the slate's own name, kept as context
+/* The US day a game belongs to — the slate's own name, kept as context
    for anyone whose local day has drifted off it. */
 const usDay=ms=>new Date(ms).toLocaleDateString('en-US',
   {weekday:'long',timeZone:'America/New_York'});
@@ -1074,7 +1074,7 @@ const usDay=ms=>new Date(ms).toLocaleDateString('en-US',
 let state={mode:'confidence',picks:{},tab:'picks',week:1,openGame:null,
   tz:localStorage.getItem('ps_tz')||'auto',tb:{}};   // tb[week] = guessed total
 
-/* The tiebreaker game is the last kickoff of the week â€” Monday night. */
+/* The tiebreaker game is the last kickoff of the week — Monday night. */
 const tbGame=w=>[...WEEKS[w]].sort((a,b)=>a.kick-b.kick).pop();
 /* Demo only: everyone else's guesses, and the eventual real total. */
 const botGuess=(pl,w)=>DEMO?38+(hash(pl+'tb'+w)%22):(TIEBREAKS[pl+'|'+w]??null);
@@ -1095,7 +1095,7 @@ const cdClass=ms=>ms<=0?'live':ms<600000?'urgent':ms<3600000?'soon':'';
 
 function renderWeeks(){
   let h='';
-  // Derived from the data, not hardcoded to 18 â€” preseason is 3 weeks.
+  // Derived from the data, not hardcoded to 18 — preseason is 3 weeks.
   const all=Object.keys(WEEKS).map(Number).sort((a,b)=>a-b);
   for(const w of all){
     const live=WEEKS[w].some(g=>isLive(g)&&!isFinal(g));
@@ -1111,10 +1111,10 @@ function side(code,which,cls,bg,ha,sc){const[city,team]=T[code];
     ${mark(code)}<div class="names"><div class="city">${city}</div>
     <div class="team">${team}</div>
     ${sc!=null?`<div class="scr mono">${sc}</div>`
-              :`<div class="rec mono">${ha} Â· ${rec(code)}</div>`}</div></button>`;}
+              :`<div class="rec mono">${ha} · ${rec(code)}</div>`}</div></button>`;}
 
 /* How the pool picked. Only ever computed for games that have kicked
-   off â€” before that, the picks are sealed and this would leak them. */
+   off — before that, the picks are sealed and this would leak them. */
 function consensus(g){
   if(!isLive(g))return null;
   let a=0,h=0;
@@ -1140,7 +1140,7 @@ function consensusBar(g){
       ${upset?'<i class="upset">Pool got it wrong</i>':''}
     </div>
     <div class="cbar">${seg(c.pa,g.a,'l')}${seg(c.ph,g.h,'r')}</div>
-    ${(c.pa<22||c.ph<22)?`<div class="cons-sub mono">${g.a} ${c.pa}% Â· ${g.h} ${c.ph}% Â· ${c.n} picks</div>`:''}
+    ${(c.pa<22||c.ph<22)?`<div class="cons-sub mono">${g.a} ${c.pa}% · ${g.h} ${c.ph}% · ${c.n} picks</div>`:''}
   </div>`;
 }
 
@@ -1157,7 +1157,7 @@ function renderSlate(){
       const grp=groups[k], local=fDay(g.show), us=usDay(g.show);
       const tag=local===us?'':`<span class="slatetag">${us} slate</span>`;
       h+=`<div class="dayhead"><h2>${local}</h2>${tag}<div class="line"></div>
-        <div class="n mono">${k} Â· <span class="tzchip" id="tzchip">${tzAbbr()}</span> Â· ${grp.length} games</div></div>`;}
+        <div class="n mono">${k} · <span class="tzchip" id="tzchip">${tzAbbr()}</span> · ${grp.length} games</div></div>`;}
     const p=myPick(g.id),L=isLive(g),sc=scoreOf(g);
     const aCls=p?(p.winner===g.a?'won':'lost'):'',hCls=p?(p.winner===g.h?'won':'lost'):'';
     const aBg=p&&p.winner===g.a?`style="background:${T[g.a][2]}"`:'';
@@ -1176,10 +1176,10 @@ function renderSlate(){
              <span class="sb-l">Tap to rank this pick</span>
              <span class="sb-r"><span class="sb-num blank">?</span></span></div>`;
     const band=L?`<div class="lockband"><span>${isFinal(g)
-      ?`Final Â· ${result(g)} ${sc?Math.max(sc[0],sc[1])+'-'+Math.min(sc[0],sc[1]):''}`
-      :'In progress Â· locked'}</span>${
-      p?`<span>You took ${p.winner}${p.weight?` Â· rank ${p.weight} Â· ${pay(p.weight,N)} pts`:''}</span>`
-       :`<span class="miss">No pick Â· 0 pts</span>`}</div>`:'';
+      ?`Final · ${result(g)} ${sc?Math.max(sc[0],sc[1])+'-'+Math.min(sc[0],sc[1]):''}`
+      :'In progress · locked'}</span>${
+      p?`<span>You took ${p.winner}${p.weight?` · rank ${p.weight} · ${pay(p.weight,N)} pts`:''}</span>`
+       :`<span class="miss">No pick · 0 pts</span>`}</div>`:'';
     h+=`<div class="card${L?' locked':''}" data-game="${g.id}">
       <div class="meta"><span class="mono">${fT(g.show)}</span><span class="net">${g.net}</span>
         <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
@@ -1195,7 +1195,7 @@ function renderSlate(){
 function tbCard(){
   const g=tbGame(state.week), L=isLive(g), F=isFinal(g);
   const v=state.tb[state.week];
-  const band=L?`<div class="tbband"><span>${F?`Actual total Â· ${tbActual(g)}`:'Locked at kickoff'}</span>${
+  const band=L?`<div class="tbband"><span>${F?`Actual total · ${tbActual(g)}`:'Locked at kickoff'}</span>${
     v!=null?`<span>You said ${v}</span>`:'<span class="miss">No guess</span>'}</div>`:'';
   return `<div class="tbwrap">
     <div class="tbhead"><h2>Tiebreaker</h2><div class="line"></div></div>
@@ -1230,7 +1230,7 @@ function renderGrid(){
   const gs=slate();
   const started=gs.filter(isLive).length, finals=gs.filter(isFinal).length;
   $('#gridTitle').textContent=`Week ${state.week}`;
-  $('#gridSub').textContent=`${finals} final Â· ${started-finals} live Â· ${gs.length-started} to come`;
+  $('#gridSub').textContent=`${finals} final · ${started-finals} live · ${gs.length-started} to come`;
   const mine=liveWeek(ME,state.week);
   $('#gridMine').innerHTML=mine.live>0
     ? `You have <b>${mine.got}</b> in the bank and <b>${mine.live}</b> still in play.
@@ -1249,7 +1249,7 @@ function renderGrid(){
 
   let head=`<tr><th class="pl">Player</th>`;
   gs.forEach(g=>{
-    const st=isFinal(g)?['final','Final']:isLive(g)?['live','Live']:['open','â€”'];
+    const st=isFinal(g)?['final','Final']:isLive(g)?['live','Live']:['open','—'];
     head+=`<th class="gm"><div class="aw">${g.a}</div><div class="sep"></div>
       <div class="hm">${g.h}</div><div class="st ${st[0]}">${st[1]}</div></th>`;});
   head+=`<th class="tot">Pts</th></tr>`;
@@ -1262,14 +1262,14 @@ function renderGrid(){
     gs.forEach(g=>{
       const shown=isLive(g)||r.p===ME;
       const p=pickOf(r.p,g.id);
-      let cls='hidden',inner='<b>â€¢â€¢â€¢</b>';
+      let cls='hidden',inner='<b>•••</b>';
       if(shown){
-        if(!p){cls='none';inner='<b>â€”</b>';}
+        if(!p){cls='none';inner='<b>—</b>';}
         else{
           const conf=state.mode==='confidence';
           if(isFinal(g)) cls=p.winner===result(g)?'hit':'miss';
           else cls='pend';
-          /* A correct cell shows what it paid â€” that's the payoff moment.
+          /* A correct cell shows what it paid — that's the payoff moment.
              Everywhere else shows the rank they assigned. */
           const tag=!conf?'':cls==='hit'?`<i>+${pay(p.weight,gs.length)}</i>`
                                         :`<i>#${p.weight||'-'}</i>`;
@@ -1285,7 +1285,7 @@ function renderGrid(){
     <span class="mono">majority pick</span></div></div></td>`;
   gs.forEach(g=>{
     const c=consensus(g);
-    if(!c){body+=`<td><div class="cell hidden"><b>â€¢â€¢â€¢</b></div></td>`;return;}
+    if(!c){body+=`<td><div class="cell hidden"><b>•••</b></div></td>`;return;}
     const maj=c.pa>=c.ph?g.a:g.h, pct=Math.max(c.pa,c.ph);
     let cls='pend';
     if(isFinal(g))cls=maj===result(g)?'hit':'miss';
@@ -1350,7 +1350,7 @@ function renderTray(){
 }
 
 /* FIX 2: the app tells you itself.
-   A missing token is invisible from the outside â€” the person simply
+   A missing token is invisible from the outside — the person simply
    stops hearing from the app and assumes it is broken. So check on every
    render and say so plainly, with a one-tap repair. */
 const ALERT_STATE = DEMO ? 'permission' : null;   // demo: force the banner
@@ -1388,7 +1388,7 @@ function renderInPlay(){
   const m=liveWeek(ME,state.week);
   const anyLive=slate().some(g=>isLive(g)&&!isFinal(g));
   el.innerHTML=(m.live>0&&anyLive)
-    ? `<b>${m.got}</b> banked Â· <b>${m.live}</b> still in play Â· best case <b>${m.max}</b>`
+    ? `<b>${m.got}</b> banked · <b>${m.live}</b> still in play · best case <b>${m.max}</b>`
     : '';
   el.style.display=el.innerHTML?'block':'none';
 }
@@ -1536,7 +1536,7 @@ function renderBoard(){
     const badge=badgeSVG([
       tw&&{kind:'trophy',n:tw}, ww&&{kind:'1st',n:ww}, w2&&{kind:'2nd',n:w2}]);
     const sub=[ww?`${ww} first`:'', w2?`${w2} second`:'',
-                `${r.hits} of ${r.gp} correct`].filter(Boolean).join(' Â· ');
+                `${r.hits} of ${r.gp} correct`].filter(Boolean).join(' · ');
     /* Rows re-sort as results land, so show which way somebody just moved. */
     const was=lastRank[r.p], mv=was===undefined?'':(was>i+1?'up':was<i+1?'down':'');
     return `<div class="row${r.p===ME?' me':''}${i===0?' lead':''}${mv?' '+mv:''}">
@@ -1720,8 +1720,8 @@ function openSheet(gid){
     h+=`<button class="num" data-w="${i}"${u?' disabled':''}>${i}
       <small>${u?u:`${pay(i,N)} pts`}</small></button>`;}
   $('#numgrid').innerHTML=h;
-  $('#heatLo').textContent=`1 Â· surest, pays ${NN}`;
-  $('#heatHi').textContent=`${NN} Â· coin flip, pays 1`;
+  $('#heatLo').textContent=`1 · surest, pays ${NN}`;
+  $('#heatHi').textContent=`${NN} · coin flip, pays 1`;
   $('#clearw').style.display=p.weight?'block':'none';
   $('#scrim').classList.add('on');$('#sheet').classList.add('on');}
 const closeSheet=()=>{$('#scrim').classList.remove('on');$('#sheet').classList.remove('on');state.openGame=null;};
@@ -1874,7 +1874,7 @@ if(DEMO){
    The pool comes from the invite link (?join=CODE), so nobody
    types a code. Timezone comes from the browser. Notifications
    are asked for LAST, because on iPhone the request fails
-   outright until the app is on the Home Screen â€” and a declined
+   outright until the app is on the Home Screen — and a declined
    permission is very hard to get back.
    ============================================================ */
 const POOL_NAME=POOL_LABEL;
@@ -1885,7 +1885,7 @@ let obStep=0, obName=localStorage.getItem('ps_name')||'', obEmail='', obErr='', 
 /* The hero is the product explaining itself: a real pick card that picks
    itself on a loop. Faster than any paragraph about how it works. */
 /* Mock push notifications. Showing the actual thing they will receive
-   explains the screen faster than any heading could â€” the old numbered
+   explains the screen faster than any heading could — the old numbered
    list read like steps to follow rather than a schedule. */
 const nt=(when,title,body)=>`<div class="nt">
   <div class="nt-ic">P</div>
@@ -2054,7 +2054,7 @@ const obScreens=()=>[
       <ol class="ob-steps">
         <li>Tap <span class="ob-share">&#8593;</span> at the bottom of Safari</li>
         <li>Scroll and choose <b>Add to Home Screen</b></li>
-        <li>Open Pickâ€™em from your new icon</li>
+        <li>Open Pick’em from your new icon</li>
       </ol>
       <div class="ob-note"><b>This is not optional on iPhone</b>
         Apple only allows notifications for apps on the Home Screen. Skip this

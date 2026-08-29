@@ -1,5 +1,5 @@
-﻿/* ============================================================
-   Weekly NFL Pickâ€™em â€” auth Worker
+/* ============================================================
+   Weekly NFL Pick’em — auth Worker
 
    Four endpoints on your own domain:
      POST /api/request-code   email  -> mails a 6-digit PIN
@@ -23,13 +23,13 @@
      KV namespace   SESSIONS    session id -> uid
      secret         SA_JSON     Firebase service account JSON
      secret         RESEND_KEY  Resend API key
-     var            FROM_EMAIL  "Weekly NFL Pickâ€™em <picks@yourdomain.com>"
+     var            FROM_EMAIL  "Weekly NFL Pick’em <picks@yourdomain.com>"
      var            APP_ORIGIN  "https://yourdomain.com"
    ============================================================ */
 
 const PIN_TTL = 600;                    // 10 minutes
 const MAX_ATTEMPTS = 5;
-const SESSION_TTL = 90 * 24 * 3600;     // 90 days â€” covers a bye week
+const SESSION_TTL = 90 * 24 * 3600;     // 90 days — covers a bye week
 const REQUEST_COOLDOWN = 60;            // seconds between codes per email
 
 export default {

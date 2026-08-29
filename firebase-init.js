@@ -357,7 +357,10 @@ async function upsertRoster(extra = {}) {
   if (!user || !poolId) return;
   const ref = doc(db, 'pools', poolId, 'private', 'roster');
   const entry = {
-    name: user.displayName || user.email.split('@')[0],
+    name: user.displayName
+      || (user.email ? user.email.split('@')[0] : null)
+      || (document.getElementById('obMailIn')?.value?.split('@')[0])
+      || 'Player',
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
     ...extra
   };
