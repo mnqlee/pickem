@@ -932,7 +932,7 @@ const T={
  NYJ:['New York','Jets','#125740','#000000'],PHI:['Philadelphia','Eagles','#004C54','#A5ACAF'],
  PIT:['Pittsburgh','Steelers','#101820','#FFB612'],SF:['San Francisco','49ers','#AA0000','#B3995D'],
  SEA:['Seattle','Seahawks','#002244','#69BE28'],TB:['Tampa Bay','Buccaneers','#D50A0A','#FF7900'],
- TEN:['Tennessee','Titans','#0C2340','#4B92DB'],WAS:['Washington','Commanders','#5A1414','#FFB612']};
+ TEN:['Tennessee','Titans','#0C2340','#4B92DB'],WSH:['Washington','Commanders','#5A1414','#FFB612']};
 
 let PLAYERS=['Lee','Monse','Eliana','Mateo','Sofia'];   // live: from the roster
 let RECORDS={};                                          // live: team W-L, optional
@@ -956,20 +956,20 @@ const ME='Lee';
 /* four distinct weekly slates */
 const SLATES={
  1:[['BAL','KC','KC -3'],['CIN','CLE','CIN -5.5'],['DAL','PHI','PHI -6'],['MIA','NE','NE -1.5'],
-    ['CAR','ATL','ATL -4'],['NYG','WAS','WAS -6.5'],['PIT','IND','PIT -2'],['TB','NO','TB -3.5'],
+    ['CAR','ATL','ATL -4'],['NYG','WSH','WSH -6.5'],['PIT','IND','PIT -2'],['TB','NO','TB -3.5'],
     ['JAX','LV','LV -1'],['DEN','SEA','SEA -2.5'],['HOU','LAC','LAC -3'],['GB','DET','DET -4.5'],
     ['ARI','SF','SF -7'],['MIN','CHI','MIN -2'],['NYJ','BUF','BUF -8'],['TEN','LAR','LAR -6.5']],
  2:[['BUF','MIA','BUF -2.5'],['CHI','GB','GB -5'],['SF','LAR','SF -1.5'],['KC','CIN','KC -3'],
-    ['NE','NYJ','NYJ -1'],['PHI','WAS','PHI -4.5'],['DET','MIN','DET -3'],['CLE','BAL','BAL -9'],
+    ['NE','NYJ','NYJ -1'],['PHI','WSH','PHI -4.5'],['DET','MIN','DET -3'],['CLE','BAL','BAL -9'],
     ['ATL','NO','ATL -2'],['IND','TEN','IND -3.5'],['SEA','ARI','SEA -1'],['LAC','LV','LAC -4'],
     ['DAL','NYG','DAL -5.5'],['PIT','CAR','PIT -6'],['DEN','HOU','HOU -2.5'],['TB','JAX','TB -3']],
  3:[['NO','PHI','PHI -7'],['MIA','BUF','BUF -6.5'],['GB','DET','DET -2'],['LAR','SEA','SEA -1.5'],
-    ['NYJ','NE','NE -2.5'],['WAS','DAL','DAL -3'],['BAL','CIN','BAL -4'],['TEN','JAX','JAX -3.5'],
+    ['NYJ','NE','NE -2.5'],['WSH','DAL','DAL -3'],['BAL','CIN','BAL -4'],['TEN','JAX','JAX -3.5'],
     ['CAR','TB','TB -6'],['ARI','SF','SF -5.5'],['LV','KC','KC -9'],['HOU','IND','HOU -1'],
     ['MIN','CHI','MIN -3'],['NYG','PIT','PIT -4.5'],['CLE','DEN','DEN -5'],['ATL','LAC','LAC -2']],
  4:[['LAC','KC','KC -4'],['PIT','CIN','CIN -2.5'],['NYJ','BUF','BUF -7'],['GB','DET','DET -1.5'],
     ['LAR','SEA','SEA -3'],['NO','TB','TB -5.5'],['HOU','JAX','HOU -2'],['TEN','IND','IND -4'],
-    ['LV','DEN','DEN -6'],['MIA','NE','NE -3.5'],['NYG','PHI','PHI -8'],['WAS','DAL','DAL -2.5'],
+    ['LV','DEN','DEN -6'],['MIA','NE','NE -3.5'],['NYG','PHI','PHI -8'],['WSH','DAL','DAL -2.5'],
     ['CHI','MIN','MIN -4.5'],['SF','ARI','SF -3'],['BAL','CLE','BAL -6.5'],['ATL','CAR','ATL -1.5']]
 };
 /* Minutes from Thu Sep 10 2026 00:00 UTC — the real Week 1 anchor.
@@ -1791,7 +1791,10 @@ async function boot(){
   //    membership and the push token.
   PS.watchAuth(async u=>{
     if(!u){ showOnboarding(); return; }
-    const pool=await PS.getPool();
+    // ensureCurrentPool (not getPool) so a pool id left over from an
+    // earlier/different season gets cleared instead of silently loading
+    // stale data — see firebase-init.js's SEASON HANDOVER note.
+    const pool=await PS.ensureCurrentPool();
     if(!pool){ showOnboarding(); return; }
     document.getElementById('ob').classList.add('hide');
     await loadSeason();
@@ -1806,7 +1809,12 @@ async function loadSeason(){
   const weeks=await PS.getAllWeeks();        // [{wk, games:[...]}]
   Object.keys(WEEKS).forEach(k=>delete WEEKS[k]);
   weeks.forEach(({wk,games})=>{
-    WEEKS[wk]=games.map(g=>({...g, kick:g.kickoff.toMillis(), show:g.kickoff.toMillis()}));
+    // Firestore games (import_schedule.py) use away/home/spread; every
+    // render function below was built against the demo's short keys
+    // (a/h/sp). Without this mapping g.a is undefined for every real
+    // game, T[g.a] throws, and render() aborts silently mid-chain.
+    WEEKS[wk]=games.map(g=>({...g, a:g.away, h:g.home, sp:g.spread,
+      kick:g.kickoff.toMillis(), show:g.kickoff.toMillis()}));
   });
   const cur=weeks.map(w=>w.wk).find(w=>WEEKS[w].some(g=>!isLive(g)));
   state.week=cur||weeks[weeks.length-1]?.wk||1;
@@ -1834,7 +1842,8 @@ let ARCHIVE_LIVE=null;
 /* Scores and newly revealed picks push themselves in. */
 function watchLive(){
   PS.watchWeek(state.week, games=>{
-    WEEKS[state.week]=games.map(g=>({...g,kick:g.kickoff.toMillis(),show:g.kickoff.toMillis()}));
+    WEEKS[state.week]=games.map(g=>({...g, a:g.away, h:g.home, sp:g.spread,
+      kick:g.kickoff.toMillis(), show:g.kickoff.toMillis()}));
     render();
   });
   PS.watchRevealed(state.week, rows=>{
@@ -2032,10 +2041,14 @@ const obScreens=()=>[
           }
           const {token}=await r.json();
           await PS.signInWithToken(token);
-          const join=new URLSearchParams(location.search).get('join');
+          // Falls back to the one active pool so the bare domain works
+          // on its own — update DEFAULT_JOIN here if you ever spin up
+          // a second pool and need the code to matter again.
+          const DEFAULT_JOIN='TYQKTP';
+          const join=new URLSearchParams(location.search).get('join')||DEFAULT_JOIN;
           if(join)await PS.joinPool(join);
           await PS.upsertRoster({name:obName.trim()});
-        }catch(e){ console.error('SIGNIN_FAIL', e, e && e.code, e && e.stack); obErr='ERR: ' + (e && e.message ? e.message : String(e)); obRender(); return false; }
+                }catch(e){ obErr='Could not reach the server. Try again.'; obRender(); return false; }
       }
       if(code.length!==6){
         $('#pinrow').classList.add('bad');

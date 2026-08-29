@@ -27,7 +27,12 @@ ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 def from_espn(season: int, preseason: bool = False):
     games = []
     st = 1 if preseason else 2
-    for wk in range(1, 4 if preseason else 19):
+    # ESPN numbers the Hall of Fame Game as its own preseason week 1, which
+    # pushes the "real" three preseason weeks to ESPN weeks 2-4. Fetching
+    # only 1-3 silently drops the actual final preseason week — confirmed
+    # 2026-08-29: ESPN week=4 is the real Week 3 slate (Steelers/Bills,
+    # Commanders/Ravens, Lions/Colts, etc., Aug 27-29), and it was missing.
+    for wk in range(1, 5 if preseason else 19):
         r = requests.get(ESPN, params={"seasontype": st, "week": wk, "dates": season}, timeout=20)
         r.raise_for_status()
         for ev in r.json().get("events", []):
