@@ -34,7 +34,7 @@ const firebaseConfig = {
 /* ---- STEP 9: paste your Web Push certificate key pair ---- */
 const VAPID_KEY = "BHd0epdIuyVNZK2ly8EKsZ3QUB-lERPlMM7hnuH_e_Y1auimWPhlww9iPQ-HoVVcFE4NtFav07KM9thxS3mOiag";
 
-const SEASON = "2026PRE";
+const SEASON = "2026";
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);

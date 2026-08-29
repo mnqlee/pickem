@@ -912,7 +912,7 @@ tbody tr.me td.tot{background:#241F1E}
    See BUILD.md Part 10.
    ============================================================ */
 const DEMO = false;            // false once Firebase is wired up
-const SEASON = '2026PRE';
+const SEASON = '2026';
 const POOL_LABEL = 'Family Pool 2026';
 /* ============================================================ */
 
@@ -2061,7 +2061,7 @@ const obScreens=()=>[
           // Falls back to the one active pool so the bare domain works
           // on its own — update DEFAULT_JOIN here if you ever spin up
           // a second pool and need the code to matter again.
-          const DEFAULT_JOIN='TYQKTP';
+          const DEFAULT_JOIN='REG26X';
           const join=new URLSearchParams(location.search).get('join')||DEFAULT_JOIN;
           if(join)await PS.joinPool(join);
           await PS.upsertRoster({name:obName.trim()});
