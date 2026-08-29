@@ -542,6 +542,14 @@ tbody tr.me td.tot{background:#241F1E}
 .ob-resend button:disabled{color:var(--chalk);text-decoration:none;cursor:default}
 .ob-err{margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(200,52,42,.12);
   border:1px solid rgba(200,52,42,.35);font-size:12px;color:#F0B6B1;line-height:1.5}
+/* Same slot, good news. Used when a resend actually went out. */
+.ob-err.ok{background:rgba(45,140,90,.14);border-color:rgba(45,140,90,.4);color:#A8DCC0}
+/* Busy is not disabled. The button is doing exactly what was asked of it,
+   so it stays live-looking — greying it out reads as "that didn't work". */
+.ob-btn.busy:disabled{background:var(--stamp);color:rgba(255,255,255,.85);
+  opacity:.78;cursor:progress;animation:obpulse 1.1s ease-in-out infinite}
+@keyframes obpulse{0%,100%{opacity:.78}50%{opacity:.97}}
+@media(prefers-reduced-motion:reduce){.ob-btn.busy:disabled{animation:none}}
 
 .ntwrap{margin-top:11px}
 .nt{display:flex;gap:10px;padding:10px 11px;border-radius:13px;background:var(--shell-2);
@@ -1897,8 +1905,11 @@ if(DEMO){
    Three screens, one text field. Everything else is captured
    silently or asked for at the only moment it can work.
 
-   The pool comes from the invite link (?join=CODE), so nobody
-   types a code. Timezone comes from the browser. Notifications
+   Nobody types a pool code. While one pool exists, DEFAULT_JOIN
+   below means the bare domain is itself the invite; ?join=CODE
+   overrides it and only matters if a second pool ever exists.
+   Either way the code is never asked for. Timezone comes from
+   the browser. Notifications
    are asked for LAST, because on iPhone the request fails
    outright until the app is on the Home Screen — and a declined
    permission is very hard to get back.
@@ -1906,7 +1917,15 @@ if(DEMO){
 const POOL_NAME=POOL_LABEL;
 const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
 const installed=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
-let obStep=0, obName=localStorage.getItem('ps_name')||'', obEmail='', obErr='', obTick=0;
+let obStep=0, obName=localStorage.getItem('ps_name')||'', obEmail='', obTick=0;
+/* Guards the one action the whole app is judged on. Both the auto-submit
+   that fires when the sixth digit lands and a real tap on the button call
+   the same handler, so without this a single code could be verified twice
+   concurrently — and whichever request lost the race reported a failure
+   over the top of the one that had already succeeded. That is what made a
+   correct code, typed fast, come back as "expired". */
+let obBusy=false;
+let obCdTimer=null;   // the single resend countdown — see cd() below
 
 /* The hero is the product explaining itself: a real pick card that picks
    itself on a loop. Faster than any paragraph about how it works. */
@@ -1958,8 +1977,9 @@ const obScreens=()=>[
           autocomplete="email" autocapitalize="off" spellcheck="false"
           placeholder="you@email.com" value="${obEmail}">
         <div class="ob-help">Six digits, no password. Nothing to forget, nothing to reset.</div>
-      </div>`,
-    btn:'Deal me in',
+      </div>
+      <div class="ob-err" id="obSignErr" style="display:none"></div>`,
+    btn:'Deal me in', wait:'Sending your code',
     can:()=>obName.trim().length>0&&/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(obEmail.trim()),
     after(){
       const n=$('#obNameIn'), m=$('#obMailIn');
@@ -1970,14 +1990,31 @@ const obScreens=()=>[
     },
     async go(){
       localStorage.setItem('ps_name',obName.trim());
-      obTick=60; obErr='';
-      if(!DEMO){
-        try{
-          await fetch('/api/request-code',{method:'POST',credentials:'include',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({email:obEmail.trim()})});
-        }catch(e){ obErr='Could not reach the server. Check your connection.'; }
+      signErr('');
+      if(DEMO){ obTick=60; return true; }
+
+      // The old version ignored this response entirely and advanced to the
+      // code screen no matter what came back — so a send that failed still
+      // told the user to go check their inbox for a code that was never
+      // coming. Never move them forward on an unread answer.
+      let r;
+      try{
+        r=await fetch('/api/request-code',{method:'POST',credentials:'include',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({email:obEmail.trim()})});
+      }catch(e){
+        signErr("We couldn't reach the server. Check your connection and try again.");
+        return false;
       }
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok){
+        signErr(
+          d.error==='bad_email'  ? "That address doesn't look quite right. Mind checking it?" :
+          d.error==='send_failed'? "We couldn't send your code just now. Give it a few seconds and try again." :
+                                   'Something went wrong on our end. Try that once more.');
+        return false;
+      }
+      obTick=60;                 // only now is a code genuinely on its way
       return true;
     }
   },
@@ -1991,25 +2028,46 @@ const obScreens=()=>[
       <div class="pinrow" id="pinrow">${[...Array(6)].map((_,i)=>
         `<input class="pinbox" id="pin${i}" type="tel" inputmode="numeric" maxlength="1"
           ${i===0?'autocomplete="one-time-code"':''}>`).join('')}</div>
-      ${obErr?`<div class="ob-err">${obErr}</div>`:''}
+      <div class="ob-err" id="obPinErr" style="display:none"></div>
       <div class="ob-mail"><span>${obEmail||'you@email.com'}</span>
         <button id="obEdit">Change</button></div>
       <div class="ob-resend">Didn't get it?
         <button id="obResend" disabled>Resend</button><span id="obCd"></span></div>`,
-    btn:'Let me in', can:()=>pinValue().length===6,
+    btn:'Let me in', wait:'Signing you in', can:()=>pinValue().length===6,
     after(){
       const boxes=[...Array(6)].map((_,i)=>$('#pin'+i));
 
-      /* Auto-advance, backspace steps back, and a pasted code fills the
-         whole row. This is the fiddly bit of every email-code flow. */
+      /* Spread a run of digits across the row from `from`. A whole code
+         always starts at box one, wherever it was dropped. */
+      const spread=(digits,from=0)=>{
+        const d=digits.length>=6?digits.slice(0,6):digits.slice(0,6-from);
+        const at=digits.length>=6?0:from;
+        d.split('').forEach((c,k)=>{
+          boxes[at+k].value=c; boxes[at+k].classList.add('filled');
+        });
+        boxes[Math.min(at+d.length,5)].focus();
+        const full=pinValue().length===6;
+        $('#obGo').disabled=!full;
+        if(full)setTimeout(()=>$('#obGo').click(),140);
+      };
+
+      /* Auto-advance, backspace steps back, and a pasted or autofilled code
+         fills the whole row. This is the fiddly bit of every email-code flow. */
       boxes.forEach((b,i)=>{
         b.oninput=e=>{
-          const v=e.target.value.replace(/\D/g,'').slice(-1);
-          e.target.value=v;
-          b.classList.toggle('filled',!!v);
-          if(v&&i<5)boxes[i+1].focus();
-          $('#obGo').disabled=pinValue().length!==6;
-          if(pinValue().length===6)setTimeout(()=>$('#obGo').click(),140);
+          const digits=e.target.value.replace(/\D/g,'');
+          /* iOS one-time-code autofill, Android, and password managers put
+             the ENTIRE code into a single box as one input event — they do
+             not distribute it. The old handler kept slice(-1) of that, so a
+             perfectly good autofilled code collapsed to its last digit and
+             looked to the user like autofill was broken. Spread it instead. */
+          if(digits.length>1){ e.target.value=''; spread(digits,i); return; }
+          e.target.value=digits;
+          b.classList.toggle('filled',!!digits);
+          if(digits&&i<5)boxes[i+1].focus();
+          const full=pinValue().length===6;
+          $('#obGo').disabled=!full;
+          if(full)setTimeout(()=>$('#obGo').click(),140);
         };
         b.onkeydown=e=>{
           if(e.key==='Backspace'&&!b.value&&i>0){boxes[i-1].focus();boxes[i-1].value='';
@@ -2017,59 +2075,110 @@ const obScreens=()=>[
         };
         b.onpaste=e=>{
           e.preventDefault();
-          const d=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);
-          d.split('').forEach((c,k)=>{boxes[k].value=c;boxes[k].classList.add('filled');});
-          boxes[Math.min(d.length,5)].focus();
-          $('#obGo').disabled=d.length!==6;
-          if(d.length===6)setTimeout(()=>$('#obGo').click(),140);
+          spread((e.clipboardData.getData('text')||'').replace(/\D/g,''),i);
         };
       });
       setTimeout(()=>boxes[0].focus(),260);
 
-      $('#obEdit').onclick=()=>{obStep=0;obErr='';obRender();};
+      $('#obEdit').onclick=()=>{obStep=0;pinNote('');obRender();};
+
+      /* One timer, always. This used to chain setTimeout with nothing
+         cancelling the old chain, so every re-render of this screen left
+         another live countdown decrementing the same counter — after two
+         errors the clock ran at triple speed and Resend unlocked early. */
       const cd=()=>{
+        clearTimeout(obCdTimer);
         const b=$('#obResend'), t=$('#obCd');
         if(!b)return;
-        if(obTick>0){b.disabled=true;t.textContent=` in ${obTick}s`;obTick--;setTimeout(cd,1000);}
+        if(obTick>0){b.disabled=true;t.textContent=` in ${obTick}s`;obTick--;obCdTimer=setTimeout(cd,1000);}
         else{b.disabled=false;t.textContent='';}
       };
       cd();
+
       $('#obResend').onclick=async()=>{
-        obTick=60;obErr='';cd();
-        if(!DEMO)await fetch('/api/request-code',{method:'POST',credentials:'include',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({email:obEmail.trim()})}).catch(()=>{});};
+        if(obBusy)return;
+        obBusy=true;
+        const b=$('#obResend'); b.disabled=true;
+        try{
+          if(!DEMO){
+            const r=await fetch('/api/request-code',{method:'POST',credentials:'include',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({email:obEmail.trim()})});
+            const d=await r.json().catch(()=>({}));
+            if(!r.ok){
+              pinNote(d.error==='send_failed'
+                ? "We couldn't send another code just now. Try again in a moment."
+                : 'Something went wrong. Try again in a moment.');
+              return;
+            }
+            pinNote(d.throttled
+              ? 'Your code is already on its way — check your inbox, and spam.'
+              : 'Sent. Check your inbox.',{ok:true});
+          }
+          obTick=60;
+        }catch(e){
+          pinNote("We couldn't reach the server. Check your connection and try again.");
+        }finally{
+          obBusy=false; cd();
+        }
+      };
     },
     async go(){
       const code=pinValue();
-      if(!DEMO&&code.length===6){
-        try{
-          const r=await fetch('/api/verify-code',{method:'POST',credentials:'include',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({email:obEmail.trim(),code})});
-          if(!r.ok){
-            const d=await r.json().catch(()=>({}));
-            obErr=d.left!=null
-              ? `That code is not right. ${d.left} ${d.left===1?'try':'tries'} left.`
-              : 'That code has expired. Ask for a new one.';
-            $('#pinrow').classList.add('bad');
-            setTimeout(()=>{obStep=1;obRender();},480);
-            return false;
-          }
-          const {token}=await r.json();
-          await PS.signInWithToken(token);
-          // Falls back to the one active pool so the bare domain works
-          // on its own — update DEFAULT_JOIN here if you ever spin up
-          // a second pool and need the code to matter again.
-          const DEFAULT_JOIN='REG26X';
-          const join=new URLSearchParams(location.search).get('join')||DEFAULT_JOIN;
-          if(join)await PS.joinPool(join);
-          await PS.upsertRoster({name:obName.trim()});
-                }catch(e){ obErr='Could not reach the server. Try again.'; obRender(); return false; }
+      if(code.length!==6){ pinNote('',{shake:true}); return false; }
+      if(DEMO)return true;
+
+      let r;
+      try{
+        r=await fetch('/api/verify-code',{method:'POST',credentials:'include',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({email:obEmail.trim(),code})});
+      }catch(e){
+        // A thrown fetch is the ONLY case where "couldn't reach the server"
+        // is a true statement. It used to be the message for every failure
+        // in this function, including ones that happened after a completely
+        // successful sign-in.
+        pinNote("We couldn't reach the server. Check your connection and try again.",{shake:true});
+        return false;
       }
-      if(code.length!==6){
-        $('#pinrow').classList.add('bad');
-        setTimeout(()=>$('#pinrow').classList.remove('bad'),400);
+
+      const d=await r.json().catch(()=>({}));
+
+      if(!r.ok){
+        pinNote(
+          d.error==='wrong_code'   ? `That code isn't right. ${d.left} ${d.left===1?'try':'tries'} left.` :
+          d.error==='locked'       ? 'Too many tries. Ask for a new code in a few minutes.' :
+          d.error==='bad_request'  ? 'A code is six digits — check you got them all.' :
+                                     'Something went wrong on our end. Try that once more.',
+          {shake:true, clear:d.error==='wrong_code'});
+        return false;
+      }
+
+      /* Past this line the code was ACCEPTED and the session exists. Anything
+         that fails below is a problem opening the pool, not a bad code — so
+         it must never bounce them back to the keypad. Retyping a code that
+         has already been accepted cannot fix a join failure, and the old
+         code did exactly that, which is why a successful sign-in could still
+         end up looking like a rejected PIN. */
+      try{
+        await PS.signInWithToken(d.token);
+        // Falls back to the one active pool so the bare domain works
+        // on its own — update DEFAULT_JOIN here if you ever spin up
+        // a second pool and need the code to matter again.
+        const DEFAULT_JOIN='REG26X';
+        const join=new URLSearchParams(location.search).get('join')||DEFAULT_JOIN;
+        if(join)await PS.joinPool(join);
+        await PS.upsertRoster({name:obName.trim()});
+        /* Tidy the address bar. Because of DEFAULT_JOIN above, the bare
+           domain is already a complete invite — ?join= only matters if a
+           second pool ever exists. So once it has been used there is no
+           reason to leave it sitting in the URL: what gets bookmarked,
+           shared onward or screenshotted should just be the domain. */
+        if(location.search)history.replaceState({},'',location.pathname);
+      }catch(e){
+        console.error('signed in, but opening the pool failed',e);
+        pinNote("You're signed in, but we couldn't open the pool. Reload the page "
+               +"and it will pick up where it left off.");
         return false;
       }
       return true;
@@ -2151,6 +2260,44 @@ const obScreens=()=>[
 const pinValue=()=>[...Array(6)].map((_,i)=>
   (document.getElementById('pin'+i)||{}).value||'').join('');
 
+/* ---------- what the sign-in screens are allowed to say ----------
+   Both screens used to report every possible failure through one string
+   and a full re-render. The re-render was the expensive part: it rebuilt
+   the code screen from scratch, which restarted the resend countdown and
+   threw away the digits the user had typed even when the problem had
+   nothing to do with them. These two write into a dedicated slot instead,
+   so a message never costs anyone their place. */
+const signErr=msg=>{
+  const el=document.getElementById('obSignErr');
+  if(!el)return;
+  el.textContent=msg||'';
+  el.style.display=msg?'':'none';
+};
+
+function pinNote(msg,opt={}){
+  const el=document.getElementById('obPinErr');
+  if(el){
+    el.textContent=msg||'';
+    el.className='ob-err'+(opt.ok?' ok':'');
+    el.style.display=msg?'':'none';
+  }
+  if(opt.shake){
+    const row=$('#pinrow');
+    if(row){row.classList.add('bad');setTimeout(()=>row.classList.remove('bad'),480);}
+  }
+  // Only clear the boxes for a wrong code. An expired or server-side
+  // failure is not something retyping the same digits will fix, and
+  // wiping them makes the user feel they did something wrong.
+  if(opt.clear){
+    for(let i=0;i<6;i++){
+      const b=document.getElementById('pin'+i);
+      if(b){b.value='';b.classList.remove('filled');}
+    }
+    const go=document.getElementById('obGo'); if(go)go.disabled=true;
+    const f=document.getElementById('pin0'); if(f)setTimeout(()=>f.focus(),240);
+  }
+}
+
 function obRender(){
   const sc=obScreens(), s=sc[obStep];
   $('#obBody').innerHTML=s.body;
@@ -2162,8 +2309,22 @@ function obRender(){
   if(s.after)s.after();
   if(s.id==='signin')heroLoop();
   $('#obGo').onclick=async()=>{
-    if(s.go&&(await s.go())===false)return;
-    obAdvance(sc);
+    if(obBusy)return;                          // see obBusy — no double submits
+    const btn=$('#obGo'), label=btn.textContent;
+    obBusy=true;
+    btn.disabled=true; btn.classList.add('busy'); btn.textContent=s.wait||'One moment';
+    let ok=true;
+    try{ if(s.go) ok=(await s.go())!==false; }
+    finally{
+      obBusy=false;
+      // s.go() may have re-rendered the screen underneath us, in which case
+      // this button is detached and there is nothing left to restore.
+      if($('#obGo')===btn){
+        btn.classList.remove('busy'); btn.textContent=label;
+        btn.disabled=s.can?!s.can():false;      // respect the screen's own gate
+      }
+    }
+    if(ok)obAdvance(sc);
   };
   if($('#obSkip'))$('#obSkip').onclick=()=>obAdvance(sc);
 }

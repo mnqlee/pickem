@@ -29,9 +29,30 @@ from firebase_admin import credentials, firestore
 ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
+def canonical(email: str) -> str:
+    """Must stay identical to canonical() in worker/auth.js.
+
+    Gmail ignores dots in the local part and treats anything after a "+" as
+    a tag, so every spelling of one inbox has to resolve to one uid or the
+    same person turns up as two players. Applied to gmail only: plenty of
+    other hosts treat "+" as an ordinary character, and merging there would
+    let whoever holds name+tag@host inherit name@host's account.
+    """
+    e = email.strip().lower()
+    at = e.rfind("@")
+    if at < 1:
+        return e
+    local, domain = e[:at], e[at + 1:]
+    if domain in ("gmail.com", "googlemail.com"):
+        local = local.split("+")[0].replace(".", "")
+        if not local:
+            return e
+        return local + "@gmail.com"
+    return e
+
+
 def owner_uid(email: str) -> str:
-    norm = email.strip().lower()
-    h = hashlib.sha256(norm.encode()).hexdigest()
+    h = hashlib.sha256(canonical(email).encode()).hexdigest()
     return "u_" + h[:24]
 
 
@@ -79,7 +100,13 @@ Next:
   3. Set SEASON = '{a.season}' in worker/wrangler-live.toml, redeploy the
      pickem-live Worker
   4. Update DEFAULT_JOIN in index.html to {code}
-  5. Share  https://YOURDOMAIN/?join={code}
+  5. Share the bare domain: https://YOURDOMAIN
+
+     Step 4 is what makes step 5 work — with DEFAULT_JOIN set, a visitor
+     who arrives at the plain domain is put in this pool without any code
+     in the link. https://YOURDOMAIN/?join={code} still works and is what
+     you would send if a second pool ever exists, but there is no reason
+     to put it in front of people while this is the only one.
 """)
 
 
