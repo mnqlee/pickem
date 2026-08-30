@@ -151,11 +151,27 @@ service cloud.firestore {
             $(request.resource.data.gameId)).data;
         }
 
-        // READ: your own picks only. Nobody queries anyone else's any
-        // more — reveal happens in the snapshot, which is both cheaper
-        // and a stronger guarantee, since an unrevealed pick is never
-        // in a document a client can reach.
-        allow read: if isMember(poolId) && resource.data.uid == request.auth.uid;
+        /* READ: your own picks at any time, plus anyone's once the game
+           they belong to has kicked off.
+
+           This rule previously allowed your own picks ONLY, on the basis
+           that the Grid would read a precomputed snapshot instead. That
+           migration never happened on the client: index.html still calls
+           getRevealed()/watchRevealed(), which query this collection for
+           everyone's revealed picks, and nothing in the app reads the
+           snapshot documents at all. A list query is refused unless the
+           rule permits every document it could return, so that query was
+           denied every single time and the Grid could never fill in.
+
+           The reveal guarantee is unchanged and still enforced here, not
+           in the client: revealAt is pinned to the game's kickoff by the
+           create/update rule below, so an unrevealed pick stays
+           unreadable no matter what a client asks for. Same shape as the
+           tiebreaks rule above, deliberately. */
+        allow read: if isMember(poolId) && (
+          resource.data.uid == request.auth.uid ||
+          resource.data.revealAt <= request.time
+        );
 
         // WRITE: four conditions, all required.
         allow create, update: if isMember(poolId)

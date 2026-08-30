@@ -62,11 +62,22 @@ function watchAuth(cb) {
   onAuthStateChanged(auth, async u => {
     user = u;
     if (u) {
-      const pool = await ensureCurrentPool();   // clears a stale pool id
-      if (pool) {
-        await ensureMember();
-        await upsertRoster();                   // name + timezone
-        await refreshPushToken();               // re-arm alerts for THIS pool
+      /* Guarded, because cb(u) is the contract and it has to fire.
+         ensureCurrentPool() and ensureMember() have no internal try/catch,
+         so a single denied read or one offline moment used to throw
+         straight past the callback: boot() never heard that anyone had
+         signed in, and the app sat on its loading screen forever with no
+         error, no retry and nothing in the UI to say why. Setup failing is
+         recoverable; never being told about the sign-in is not. */
+      try {
+        const pool = await ensureCurrentPool();   // clears a stale pool id
+        if (pool) {
+          await ensureMember();
+          await upsertRoster();                   // name + timezone
+          await refreshPushToken();               // re-arm alerts for THIS pool
+        }
+      } catch (e) {
+        console.warn('post-sign-in setup failed', e);
       }
     }
     cb(u);
@@ -259,8 +270,15 @@ async function getAllWeeks() {
     const g = { id: d.id, ...d.data() };
     (byWeek[g.wk] ||= []).push(g);
   });
+  // kickoff is a Firestore Timestamp, and Timestamp - Timestamp is NaN, so
+  // this "sort" was silently a no-op and the games came back in whatever
+  // order Firestore returned them. Every caller happens to re-sort, which
+  // is the only reason it never showed — but a function that says it sorts
+  // should sort.
+  const ms = t => t && typeof t.toMillis === 'function' ? t.toMillis()
+                : t instanceof Date ? t.getTime() : (+t || 0);
   return Object.keys(byWeek).map(Number).sort((a, b) => a - b)
-    .map(wk => ({ wk, games: byWeek[wk].sort((a, b) => a.kickoff - b.kickoff) }));
+    .map(wk => ({ wk, games: byWeek[wk].sort((a, b) => ms(a.kickoff) - ms(b.kickoff)) }));
 }
 
 /* Everyone's picks for games that have already kicked off.

@@ -145,6 +145,17 @@ def score_pools(db, season, week):
         members = {m.id: m.to_dict()
                    for m in db.collection("pools").document(pid).collection("members").stream()}
 
+        # Push tokens and alert preferences live on private/roster as
+        # {uid: {name, tz, tokens: [...], prefs: {...}}} — written by
+        # enablePush()/upsertRoster() in firebase-init.js, and read that way
+        # by worker/live.js. This script was reading members[uid]["pushToken"],
+        # a field nothing has ever written, so r["token"] was always None and
+        # notify() skipped every single player. Weekly result notifications
+        # have never gone out. A person may have a phone and a laptop, so it
+        # is a LIST.
+        roster_doc = (db.collection("pools").document(pid)
+                        .collection("private").document("roster").get().to_dict()) or {}
+
         results = []
         for uid, name in ((u, m.get("name", "Player")) for u, m in members.items()):
             wpts = whits = 0
@@ -173,9 +184,11 @@ def score_pools(db, season, week):
                 "updatedAt": datetime.now(timezone.utc),
             }, merge=True)
 
+            entry = roster_doc.get(uid) or {}
             results.append({"uid": uid, "name": name, "wpts": wpts, "whits": whits,
                             "total": sum(w["pts"] for w in weeks.values()),
-                            "token": members[uid].get("pushToken")})
+                            "tokens": entry.get("tokens") or [],
+                            "prefs": entry.get("prefs") or {}})
 
         results.sort(key=lambda r: -r["total"])
         results = apply_tiebreak(db, pid, week, results, finals)
@@ -238,9 +251,10 @@ def notify(reports):
             continue
         leader = rep["results"][0]
         for i, r in enumerate(rep["results"]):
-            if not r["token"]:
+            tokens = r.get("tokens") or []
+            if not tokens:
                 continue
-            if not r.get("prefs", {}).get("results", True):
+            if not (r.get("prefs") or {}).get("results", True):
                 continue
             if rep["complete"]:
                 title = f"Week {rep['week']} final"
@@ -250,14 +264,17 @@ def notify(reports):
             else:
                 title = f"Week {rep['week']} so far"
                 body = f"{r['wpts']} points, {r['whits']} correct. {ordinal(i+1)} place."
-            try:
-                messaging.send(messaging.Message(
-                    token=r["token"],
-                    notification=messaging.Notification(title=title, body=body),
-                    webpush=messaging.WebpushConfig(
-                        fcm_options=messaging.WebpushFCMOptions(link="/index.html"))))
-            except Exception as e:
-                print(f"  push failed for {r['name']}: {e}")
+            for tk in tokens:
+                try:
+                    messaging.send(messaging.Message(
+                        token=tk,
+                        notification=messaging.Notification(title=title, body=body),
+                        webpush=messaging.WebpushConfig(
+                            fcm_options=messaging.WebpushFCMOptions(link="/index.html"))))
+                except Exception as e:
+                    # One dead device token must not stop the rest of the pool
+                    # from hearing how their week went.
+                    print(f"  push failed for {r['name']}: {e}")
 
 
 def apply_tiebreak(db, pid, week, results, games):

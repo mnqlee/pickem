@@ -563,6 +563,13 @@ tbody tr.me td.tot{background:#241F1E}
   background:var(--stamp);color:#fff;font-family:inherit;font-size:12px;font-weight:800;
   letter-spacing:.1em;text-transform:uppercase;cursor:pointer;-webkit-appearance:none}
 .boot-retry.hide{display:none}
+.boot-out{margin-top:10px;padding:11px 22px;border:1px solid rgba(250,247,241,.2);
+  border-radius:10px;background:none;color:var(--chalk);font-family:inherit;font-size:11px;
+  font-weight:800;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;-webkit-appearance:none}
+.boot-out.hide{display:none}
+.boot-why{margin-top:18px;font-size:10.5px;line-height:1.5;color:rgba(250,247,241,.34);
+  font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+.boot-why.hide{display:none}
 @media(prefers-reduced-motion:reduce){.boot-bar i{animation:none;width:100%}}
 
 .ob-err{margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(200,52,42,.12);
@@ -932,6 +939,10 @@ tbody tr.me td.tot{background:#241F1E}
     <div class="boot-bar" id="bootBar"><i></i></div>
     <div class="boot-msg" id="bootMsg">Getting your week…</div>
     <button class="boot-retry hide" id="bootRetry">Try again</button>
+    <!-- One muted line of the real reason. Costs nothing to a player who
+         will never read it, and saves an hour for whoever has to fix it. -->
+    <button class="boot-out hide" id="bootOut">Start over</button>
+    <div class="boot-why hide" id="bootWhy"></div>
   </div>
 </div>
 
@@ -1902,12 +1913,27 @@ document.addEventListener('click',e=>{
 /* ---------- the boot cover ---------- */
 const bootEl=()=>document.getElementById('boot');
 function bootHide(){ const b=bootEl(); if(b)b.classList.add('hide'); }
-function bootFail(msg){
+function bootFail(msg,err){
   const b=bootEl(); if(!b)return;
   b.classList.remove('hide'); b.classList.add('err');
   const m=document.getElementById('bootMsg'); if(m)m.textContent=msg;
   const r=document.getElementById('bootRetry');
   if(r){ r.classList.remove('hide'); r.onclick=()=>location.reload(); }
+  // Always leave a way out. A stored pool id that cannot be loaded used to
+  // be a dead end: every reload found the same pool and failed the same
+  // way, with no route back to the sign-in screen.
+  const o=document.getElementById('bootOut');
+  if(o){ o.classList.remove('hide'); o.onclick=()=>{
+    try{ localStorage.removeItem('ps_pool'); }catch(_){}
+    location.reload(); }; }
+  const w=document.getElementById('bootWhy');
+  if(w&&err){
+    // Firestore puts the useful part in .code ("permission-denied",
+    // "unavailable"); fall back to the message.
+    const why=[err.code,err.message].filter(Boolean).join(' · ');
+    w.textContent=String(why).slice(0,160);
+    w.classList.remove('hide');
+  }
 }
 
 async function boot(){
@@ -1921,29 +1947,69 @@ async function boot(){
 
   // 2. wait for auth, then load. watchAuth already handles roster,
   //    membership and the push token.
+  /* watchAuth is a listener, not a one-shot: it fires on the initial
+     state, on sign-in, and again on every token refresh. Running the whole
+     load each time is how a player mid-sign-in got the onboarding yanked
+     out from under them — PIN in their inbox, nowhere left to type it. */
+  let booting=false, booted=false;
+
   PS.watchAuth(async u=>{
+    if(booting||booted)return;
     try{
       if(!u){ bootHide(); showOnboarding(); return; }
+      booting=true;
       // ensureCurrentPool (not getPool) so a pool id left over from an
       // earlier/different season gets cleared instead of silently loading
       // stale data — see firebase-init.js's SEASON HANDOVER note.
       const pool=await PS.ensureCurrentPool();
       if(!pool){ bootHide(); showOnboarding(); return; }
-      document.getElementById('ob').classList.add('hide');
+
+      await ensureJoined();
       await loadSeason();
       await loadWeek(state.week);
       render(); tick();
       watchLive();
-      bootHide();            // last, so the app is never seen half-drawn
+      // Only now is there an app worth showing. Hiding onboarding any
+      // earlier meant a failed load left the user staring at nothing,
+      // with no route back to the sign-in screen.
+      document.getElementById('ob').classList.add('hide');
+      bootHide();
+      booted=true;
     }catch(e){
       /* Every one of these reads used to be unguarded. A single failure —
          a dropped connection, a rules hiccup, a cold Firestore — left the
          user on an empty shell forever with nothing to read and nothing
          to press. */
       console.error('boot failed',e);
-      bootFail("We couldn't load your week. Check your connection and try again.");
-    }
+      bootFail("We couldn't load your week. Check your connection and try again.",e);
+    }finally{ booting=false; }
   });
+}
+
+/* Being IN a pool and being a MEMBER of it are two different records, and
+   they can come apart.
+
+   setup_season.py writes pools/{id} with ownerUid but no members/{uid} —
+   so the pool's own owner starts out able to read the pool document and
+   nothing else, because firestore.rules gates the roster, standings,
+   picks and tiebreaks on isMember(). Worse, the app found a pool, so it
+   never offered the join screen that would have fixed it: a locked door
+   with the key on the far side.
+
+   joinPool() ends in ensureMember(), which only writes when the record is
+   missing, so calling it here is safe to repeat and costs one read. */
+async function ensureJoined(){
+  try{
+    const members=await PS.getMembers();
+    if(members.some(m=>m.uid===PS.user?.uid))return;
+  }catch(e){
+    // A denied read IS the symptom — isMember() was false.
+    console.warn('roster unreadable, joining',(e&&e.code)||e);
+  }
+  try{
+    await PS.joinPool(new URLSearchParams(location.search).get('join')||DEFAULT_JOIN);
+    await PS.upsertRoster({name:localStorage.getItem('ps_name')||undefined});
+  }catch(e){ console.warn('self-join failed',e); }
 }
 
 /* Whole-season shell: weeks and their kickoff times. */
@@ -1957,22 +2023,36 @@ const mapGames=games=>games.map(g=>({...g,
   a:g.away, h:g.home, sp:g.spread, net:g.network||'',
   kick:g.kickoff.toMillis(), show:g.kickoff.toMillis()}));
 
+/* Not every read is equally important, and treating them as if they were
+   is how one hiccup takes down a whole app. The schedule is the app: with
+   no games there is nothing to show. Everything else is enrichment — a
+   missing standings collection should cost you the Standings tab, not the
+   Picks tab. So the schedule throws and the rest degrade quietly. */
+const optional=(p,fallback,label)=>p.catch(e=>{
+  console.warn('optional read failed:',label,e);
+  return fallback;
+});
+
 async function loadSeason(){
   // Independent reads, so fetch them together. In series this was four
   // round trips stacked back to back before anything could render — on a
   // phone that is the difference between instant and visibly slow.
   const [weeks,members,st]=await Promise.all([
-    PS.getAllWeeks(),                        // [{wk, games:[...]}]
-    PS.getMembers(),
-    PS.getStandings(),
+    PS.getAllWeeks(),                                    // essential
+    optional(PS.getMembers(),  [], 'getMembers'),
+    optional(PS.getStandings(),[], 'getStandings'),
   ]);
+
+  if(!weeks||!weeks.length) throw new Error('no schedule for season '+PS.SEASON);
 
   Object.keys(WEEKS).forEach(k=>delete WEEKS[k]);
   weeks.forEach(({wk,games})=>{ WEEKS[wk]=mapGames(games); });
   const cur=weeks.map(w=>w.wk).find(w=>WEEKS[w].some(g=>!isLive(g)));
   state.week=cur||weeks[weeks.length-1]?.wk||1;
 
-  PLAYERS=members.map(m=>m.name).sort();
+  // Fall back to just me so the sheet still works in a pool whose roster
+  // could not be read — a solo view beats no view.
+  PLAYERS=members.length?members.map(m=>m.name).sort():[ME];
   STANDINGS={};
   // getStandings() returns every doc in the collection, including the
   // "_weeks" summary score_week.py writes, which has no name. Skip it
@@ -1980,15 +2060,21 @@ async function loadSeason(){
   st.forEach(r=>{ if(r.name) STANDINGS[r.name]=r; });
 
   // Depends on state.week, so it cannot join the batch above.
-  state.mode=await PS.getScoringMode(state.week);
+  state.mode=await optional(PS.getScoringMode(state.week),'confidence','getScoringMode');
 }
 
 /* One week: my picks, everyone's revealed picks, tiebreakers. */
 async function loadWeek(wk){
   // Four independent reads — in series they were four more round trips on
   // top of loadSeason's, all before the first paint.
+  // All four degrade: an unreadable tiebreak list or archive is a missing
+  // panel, never a dead app. Picks fall back to empty, which is also what
+  // a brand-new player legitimately has.
   const [picks,revealed,tbs,archive]=await Promise.all([
-    PS.myPicks(wk), PS.getRevealed(wk), PS.getTiebreaks(wk), PS.getArchive(),
+    optional(PS.myPicks(wk),      {}, 'myPicks'),
+    optional(PS.getRevealed(wk),  [], 'getRevealed'),
+    optional(PS.getTiebreaks(wk), [], 'getTiebreaks'),
+    optional(PS.getArchive(),     [], 'getArchive'),
   ]);
   state.picks=picks;
   Object.keys(BOT).forEach(k=>delete BOT[k]);
@@ -2048,6 +2134,9 @@ if(DEMO){
    outright until the app is on the Home Screen — and a declined
    permission is very hard to get back.
    ============================================================ */
+/* The pool every bare-domain visitor lands in. Used by onboarding AND by
+   boot()'s membership self-heal, so it lives in one place. */
+const DEFAULT_JOIN='REG26X';
 const POOL_NAME=POOL_LABEL;
 const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
 const installed=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
@@ -2299,7 +2388,6 @@ const obScreens=()=>[
         // Falls back to the one active pool so the bare domain works
         // on its own — update DEFAULT_JOIN here if you ever spin up
         // a second pool and need the code to matter again.
-        const DEFAULT_JOIN='REG26X';
         const join=new URLSearchParams(location.search).get('join')||DEFAULT_JOIN;
         if(join)await PS.joinPool(join);
         await PS.upsertRoster({name:obName.trim()});

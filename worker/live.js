@@ -27,7 +27,10 @@ const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scorebo
    Without this a preseason pool silently polls the regular-season
    scoreboard and never matches a game. */
 const seasonParts = sid => String(sid).toUpperCase().endsWith('PRE')
-  ? { sid: String(sid), year: +String(sid).slice(0, -3), stype: 1, weeks: 3 }
+  // ESPN numbers the Hall of Fame game as preseason week 1, so the three
+  // "real" preseason weeks are its weeks 2-4. import_schedule.py had the
+  // same off-by-one and silently dropped the final preseason week.
+  ? { sid: String(sid), year: +String(sid).slice(0, -3), stype: 1, weeks: 4 }
   : { sid: String(sid), year: +sid, stype: 2, weeks: 18 };
 const SCOPES = [
   'https://www.googleapis.com/auth/datastore',
@@ -37,8 +40,14 @@ const SCOPES = [
 export default {
   async scheduled(event, env, ctx) {
     // Two crons, one Worker. cron string tells us which fired.
-    if (event.cron.startsWith('*/5')) ctx.waitUntil(remind(env));
-    else ctx.waitUntil(scores(env));
+    /* Both of these used to run bare inside waitUntil, so any throw — a
+       failed query, a Firestore blip — became a silent unhandled rejection
+       and that cycle's reminders simply never went out, with nothing in the
+       log to say so. */
+    const guard = (name, p) => p.catch(e =>
+      console.log(name + ' cron failed:', (e && e.stack) || String(e)));
+    if (event.cron.startsWith('*/5')) ctx.waitUntil(guard('remind', remind(env)));
+    else ctx.waitUntil(guard('scores', scores(env)));
   },
   /* Manual triggers. All require ?key= matching the ADMIN_KEY secret,
      because /test sends real notifications to real phones.
@@ -174,7 +183,14 @@ async function fsGet(env, path) {
   const t = await token(env);
   const r = await fetch(`${base(env)}/${path}`, { headers: { Authorization: `Bearer ${t}` } });
   if (r.status === 404) return null;
-  return decDoc(await r.json());
+  // Anything other than a document — a 403, a 500, a rate limit — comes back
+  // as an error object with no `name`, and decDoc() would throw on
+  // d.name.split(). That turned a transient Firestore blip into a dead
+  // reminder run with nothing logged.
+  if (!r.ok) { console.log('fsGet failed', path, r.status, await r.text()); return null; }
+  const d = await r.json();
+  if (!d || !d.name) { console.log('fsGet: unexpected body for', path); return null; }
+  return decDoc(d);
 }
 
 /* ============================================================
@@ -188,44 +204,79 @@ async function scores(env) {
   // Cheap guard: only hit ESPN when something is actually in progress or
   // about to be. Saves ~1,300 pointless calls a day.
   const soon = new Date(now.getTime() + 30 * 60000);
+  /* 12 hours back, not 6. A game only gets its final score while it sits
+     inside this window, and there is no catch-up pass — so anything that
+     ran long (overtime, a weather delay, a late kickoff) or happened while
+     this Worker was erroring used to keep "FINAL · null" forever. Twelve
+     hours covers a full Sunday slate plus a delay and still skips ~1,300
+     pointless ESPN calls a day. */
   const live = await fsQuery(env, `/seasons/${season}`, 'games', [
     ['kickoff', 'LESS_THAN', soon],
-    ['kickoff', 'GREATER_THAN', new Date(now.getTime() - 6 * 3600000)]
-  ]).catch(() => []);
+    ['kickoff', 'GREATER_THAN', new Date(now.getTime() - 12 * 3600000)]
+  ]).catch(e => { console.log('games query failed', String(e)); return []; });
   if (!live.length) return { skipped: 'nothing live' };
 
   const weeks = [...new Set(live.map(g => g.wk))];
   let changed = 0;
+  const unmatched = [];
 
   for (const wk of weeks) {
-    const r = await fetch(`${ESPN}?seasontype=${stype}&week=${wk}&dates=${year}`);
-    if (!r.ok) continue;
-    const data = await r.json();
+    let data;
+    try {
+      const r = await fetch(`${ESPN}?seasontype=${stype}&week=${wk}&dates=${year}`);
+      // A skipped week used to be completely silent. If ESPN is down through
+      // the Sunday window, every score for that week quietly never lands.
+      if (!r.ok) { console.log('espn', r.status, 'week', wk); continue; }
+      data = await r.json();
+    } catch (e) { console.log('espn fetch failed week', wk, String(e)); continue; }
+
     const have = Object.fromEntries(
       live.filter(g => g.wk === wk).map(g => [g._id, g]));
 
     for (const ev of data.events || []) {
-      const c = ev.competitions[0];
-      const state = c.status.type.state;            // pre | in | post
-      const by = Object.fromEntries(c.competitors.map(t => [t.homeAway, t]));
-      const away = by.away.team.abbreviation, home = by.home.team.abbreviation;
-      const gid = `${sid}_W${wk}_${away}_${home}`;
+      try {
+        const c = ev.competitions && ev.competitions[0];
+        const state = c && c.status && c.status.type && c.status.type.state;
+        if (!c || !state) continue;                 // pre | in | post
+        const by = Object.fromEntries((c.competitors || [])
+          .map(t => [t.homeAway, t]));
+        if (!by.away || !by.home) continue;         // a TBD or malformed entry
+        const away = by.away.team && by.away.team.abbreviation;
+        const home = by.home.team && by.home.team.abbreviation;
+        if (!away || !home) continue;
+        const gid = `${sid}_W${wk}_${away}_${home}`;
 
-      const patch = { status: { pre: 'scheduled', in: 'live', post: 'final' }[state] };
-      if (state !== 'pre') {
-        patch.awayScore = +(by.away.score || 0);
-        patch.homeScore = +(by.home.score || 0);
-        if (state === 'post') {
-          patch.winner = patch.homeScore > patch.awayScore ? home
-            : patch.awayScore > patch.homeScore ? away : null;
+        const old = have[gid];
+
+        /* NEVER create a game here. fsPatch is a PATCH, which Firestore
+           happily turns into an insert, so an abbreviation ESPN has renamed
+           (WAS -> WSH is the classic) would have written a SECOND, phantom
+           game document into the schedule: the week would show 17 games,
+           one of them with no spread, no network, nobody's picks against it,
+           and it would sit there for the rest of the season. The schedule is
+           import_schedule.py's job. If a game is unmatched, say so and move
+           on — a missing score is recoverable, a corrupted schedule is not. */
+        if (!old) { unmatched.push(gid); continue; }
+
+        const patch = { status: { pre: 'scheduled', in: 'live', post: 'final' }[state] };
+        if (state !== 'pre') {
+          patch.awayScore = +(by.away.score || 0);
+          patch.homeScore = +(by.home.score || 0);
+          if (state === 'post') {
+            patch.winner = patch.homeScore > patch.awayScore ? home
+              : patch.awayScore > patch.homeScore ? away : null;
+          }
         }
+        if (Object.entries(patch).every(([k, v]) => old[k] === v)) continue;
+        await fsPatch(env, `seasons/${season}/games/${gid}`, patch);
+        changed++;
+      } catch (e) {
+        // One bad event must not cost the rest of the slate its scores.
+        console.log('score event failed', wk, String(e));
       }
-      const old = have[gid];
-      if (old && Object.entries(patch).every(([k, v]) => old[k] === v)) continue;
-      await fsPatch(env, `seasons/${season}/games/${gid}`, patch);
-      changed++;
     }
   }
+  if (unmatched.length) console.log('NO MATCHING GAME:', unmatched.join(', '));
   // Phones hold onSnapshot listeners on these documents, so the Grid
   // updates within a second of this write. No snapshot job in between.
   return { weeks, changed };

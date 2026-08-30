@@ -83,6 +83,18 @@ def main():
     })
     ref.collection("private").document("roster").set({})
 
+    # The owner has to be a MEMBER, not just the ownerUid on the pool doc.
+    # firestore.rules gates the roster, standings, picks and tiebreaks on
+    # isMember(), which checks for pools/{id}/members/{uid}. Without this
+    # the pool's own creator can read the pool document and nothing else,
+    # and because the app finds a pool it never offers the join screen
+    # that would fix it. Learned the hard way on the 2026 pool.
+    ref.collection("members").document(uid).set({
+        "name": a.owner_email.split("@")[0],
+        "photo": None,
+        "joinedAt": firestore.SERVER_TIMESTAMP,
+    })
+
     print(f"""
 Regular-season pool created.
 

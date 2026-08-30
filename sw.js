@@ -5,7 +5,7 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not
@@ -82,6 +82,63 @@ self.addEventListener('fetch', e => {
       }
     })());
   }
+});
+
+/* ============================================================
+   PUSH
+
+   This service worker had no push handler at all, and FCM is bound to
+   THIS worker — getToken() is passed the registration from
+   navigator.serviceWorker.ready, which is sw.js. firebase-messaging-sw.js
+   sits in the repo with the correct code and is never registered by
+   anything, so it has never run.
+
+   A Web Push message is only displayed if a service worker calls
+   showNotification() itself. With no handler, every reminder the system
+   sent — the tiered kickoff alerts, the weekly results, the whole alerts
+   feature — arrived and displayed nothing. That is why turning alerts on
+   said "Done" and then nothing ever happened.
+   ============================================================ */
+self.addEventListener('push', e => {
+  let p = {};
+  try { p = e.data ? e.data.json() : {}; }
+  catch { p = { notification: { body: (e.data && e.data.text()) || '' } }; }
+
+  // FCM v1 delivers webpush payloads as {notification, fcmOptions, data};
+  // be liberal, because a malformed payload showing nothing is the exact
+  // failure this handler exists to end.
+  const n = p.notification || p.data || {};
+  const link = (p.fcmOptions && p.fcmOptions.link) ||
+               (p.data && p.data.link) || './index.html';
+
+  e.waitUntil(self.registration.showNotification(
+    n.title || "Weekly NFL Pick'em",
+    {
+      body: n.body || '',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: n.tag || 'pickem',
+      renotify: n.renotify === true || n.renotify === 'true',
+      data: { link }
+    }));
+});
+
+/* Tapping a reminder should land you in the app, on the tab you already
+   had open if there is one, rather than opening a second copy. */
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const link = (e.notification.data && e.notification.data.link) || './index.html';
+  e.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of open) {
+      if ('focus' in c) {
+        await c.focus();
+        if ('navigate' in c) { try { await c.navigate(link); } catch (_) {} }
+        return;
+      }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(link);
+  })());
 });
 
 // Lets the page force an immediate swap when the user taps "Update now".
