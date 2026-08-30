@@ -1,16 +1,33 @@
 name: Live
 
-# The live loop. Order matters and is not arbitrary:
+# This job's three steps, in order (order is not arbitrary):
 #   1. scores    pull finals from ESPN into the game documents
-#   2. snapshots rebuild what the app reads, from those scores
-#   3. reminders read the progress document step 2 writes
+#   2. snapshots recompute pools/{p}/snapshots/* from those scores — NOT
+#                read by the app (index.html queries picks/ directly; see
+#                build_snapshot.py's own header for the full story)
+#   3. reminders read the progress document step 2 writes — but only
+#                scripts/remind.py does; worker/live.js's own reminder
+#                cron computes "missing" itself and ignores this entirely
 
+# SCHEDULE DISABLED — worker/live.js replaced this.
+#
+# That Worker runs scores every minute and reminders every five, on the
+# minute, which is the whole reason it was written (see its header: GitHub
+# cron fires up to 15-20 minutes late, which is fine for scores and useless
+# for a "last call, 30 minutes out" alert).
+#
+# It was never turned off here, so BOTH pipelines were sending reminders on
+# the same five-minute cadence with separate dedupe stores — the Worker
+# marks sent reminders in Cloudflare KV, remind.py marks them in Firestore,
+# and neither can see the other. Every player would have received every
+# kickoff reminder TWICE, all season.
+#
+# Left runnable by hand (workflow_dispatch) because build_snapshot.py and
+# remind.py are still useful as a manual fallback if the Worker is down.
 on:
-  schedule:
-    # Every 5 min Thu/Fri/Sun/Mon — the windows games actually fall in.
-    - cron: '*/5 * * * 4,5,0,1'
-    # Hourly the rest of the week so early picks still show progress.
-    - cron: '17 * * * 2,3,6'
+  # schedule:
+  #   - cron: '*/5 * * * 4,5,0,1'
+  #   - cron: '17 * * * 2,3,6'
   workflow_dispatch:
     inputs:
       dry_run:
