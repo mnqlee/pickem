@@ -1,0 +1,44 @@
+{
+  "//": [
+    "Composite indexes. WITHOUT THESE THE GRID IS PERMANENTLY EMPTY.",
+    "",
+    "getRevealed() and getTiebreaks() both filter on an equality (wk) plus",
+    "an inequality on a different field (revealAt). Firestore refuses that",
+    "combination unless a composite index exists, with FAILED_PRECONDITION.",
+    "The app catches the rejection and degrades to an empty list, so the",
+    "symptom is a Grid and a tiebreak panel that stay blank forever with",
+    "nothing on screen to explain why — the failure only appears in the",
+    "browser console, which nobody looks at.",
+    "",
+    "Deploy with:  firebase deploy --only firestore:indexes --project <id>",
+    "Building them takes a minute or two; queries fail until they finish."
+  ],
+  "indexes": [
+    {
+      "collectionGroup": "picks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "wk", "order": "ASCENDING" },
+        { "fieldPath": "revealAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tiebreaks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "wk", "order": "ASCENDING" },
+        { "fieldPath": "revealAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "myPicks(): two equalities. Firestore can usually merge single-field indexes for this, but declaring it removes the doubt.",
+      "collectionGroup": "picks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "wk", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

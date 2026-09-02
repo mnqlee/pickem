@@ -27,8 +27,23 @@ function makeKV() {
     async delete(k) { store.delete(k); } };
 }
 let PINS, SESSIONS;
+/* Rate-limiter bindings, injected per test. Empty by default, which is
+   also the shape of a Cloudflare account that does not have the Rate
+   Limiting API — the fail-open path. */
+let LIMITS = {};
+/* A limiter that says no to everything, or throws. `seen` records the
+   keys it was asked about, which is how we tell an address-keyed check
+   from an IP-keyed one. */
+const denier = () => { const seen = []; return { seen,
+  limit: async ({ key }) => { seen.push(key); return { success: false }; } }; };
+const denierFor = pre => { const seen = []; return { seen,
+  limit: async ({ key }) => { seen.push(key);
+    return { success: !key.startsWith(pre) }; } }; };
+const thrower = () => ({ limit: async () => { throw new Error('limiter down'); } });
+
 const env = () => ({ PINS, SESSIONS, SA_JSON: SA, RESEND_KEY: 'k',
-                     FROM_EMAIL: 'a@b.com', APP_ORIGIN: 'https://x.com' });
+                     FROM_EMAIL: 'a@b.com', APP_ORIGIN: 'https://x.com',
+                     ...LIMITS });
 
 const call = (path, body, hdr = {}) => worker.fetch(new Request('https://x.com' + path, {
   method: 'POST', headers: { 'Content-Type': 'application/json', ...hdr },
@@ -37,7 +52,8 @@ const call = (path, body, hdr = {}) => worker.fetch(new Request('https://x.com' 
 let pass = 0, fail = 0; const fails = [];
 const ok = (n, c, x = '') => { if (c) { pass++; console.log('  ok   ' + n); }
   else { fail++; fails.push(n + (x ? ' -> ' + x : '')); console.log('  FAIL ' + n + (x ? '  -> ' + x : '')); } };
-const reset = () => { PINS = makeKV(); SESSIONS = makeKV(); sent = []; resendFails = false; };
+const reset = () => { PINS = makeKV(); SESSIONS = makeKV(); sent = [];
+                      resendFails = false; LIMITS = {}; };
 const E = 'anconalee@yahoo.com';
 const getPin = () => sent[sent.length - 1].pin;
 
@@ -192,8 +208,14 @@ reset();
   for (let i = 0; i < 5; i++) await call('/api/verify-code', { email: E, code: wrong });
   ok('five sequential wrong guesses lock the address',
      (await call('/api/verify-code', { email: E, code: wrong })).status === 429);
-  ok('and the right code is refused while locked',
-     (await call('/api/verify-code', { email: E, code: p })).status === 429);
+  /* The lockout stops GUESSING; it must never strand the account's owner.
+     Checking the counter before comparing the code — and clearing it only
+     on success — made a permanent, remotely-triggered lock: guesses aimed
+     at an address locked out the person who actually holds that inbox,
+     with no path back in. A correct PIN is proof of inbox access and now
+     always wins. */
+  ok('the RIGHT code is still accepted while locked (no owner deadlock)',
+     (await call('/api/verify-code', { email: E, code: p })).status === 200);
 
   // Documented limit: KV cannot increment atomically, so parallel guesses
   // all read the same count. Asserted so that if it ever silently changes,
@@ -292,6 +314,118 @@ reset();
   ok('the code appears in the text part', b.text.includes(getPin()));
   ok('no unsubscribe/marketing language that would trip filters',
      !/unsubscribe|newsletter|offer/i.test(b.html));
+}
+
+console.log('\nK. The atomic rate limiter (the binding, not the KV counters)');
+{
+  /* Nothing exercised this path. The KV-counter tests above all run with
+     no limiter binding at all, so `rateOk` returned true before touching
+     anything — an inverted check, a wrong key, or a limiter that blocked
+     legitimate sign-ins would have passed the whole suite green. The
+     bindings are the layer the deploy actually relies on, so they get
+     tested like one. */
+
+  // 1. It blocks a wrong guess.
+  reset();
+  await call('/api/request-code', { email: E });
+  const pin = getPin();
+  const wrong = String((+pin + 7) % 1000000).padStart(6, '0');
+  LIMITS = { PINS_LIMITER: denier() };
+  const blocked = await call('/api/verify-code', { email: E, code: wrong });
+  ok('a wrong guess is refused when the limiter says no', blocked.status === 429,
+     String(blocked.status));
+
+  /* 2. THE ONE THAT MATTERS. A limiter keyed on the victim's address must
+     never stand in front of their own correct code — that is the remote
+     lockout the KV ordering fix removed, and adding the atomic limiter
+     above the comparison had quietly rebuilt it, cheaper. Eight wrong
+     guesses a minute at a known address is nothing to send. */
+  reset();
+  await call('/api/request-code', { email: E });
+  const good = getPin();
+  LIMITS = { PINS_LIMITER: denierFor('pin:') };
+  const owner = await call('/api/verify-code', { email: E, code: good });
+  ok('the RIGHT code still wins while the ADDRESS is rate-limited',
+     owner.status === 200, String(owner.status));
+
+  /* 3. THE WATCH-PARTY CASE. The IP limit must throttle guessing without
+     refusing a correct code, because an IP is not a person: four players
+     on one living-room WiFi, or anyone behind carrier-grade NAT, share
+     it. Checked up front, the fifth person to sign in on game day was
+     told "too many attempts" while holding the right code. */
+  reset();
+  await call('/api/request-code', { email: E });
+  const good2 = getPin();
+  LIMITS = { PINS_LIMITER: denierFor('pinip:') };
+  const shared = await call('/api/verify-code', { email: E, code: good2 });
+  ok('the RIGHT code still wins while the IP is rate-limited',
+     shared.status === 200, String(shared.status));
+
+  reset();
+  await call('/api/request-code', { email: E });
+  const p3b = getPin();
+  const wrong3 = String((+p3b + 11) % 1000000).padStart(6, '0');
+  LIMITS = { PINS_LIMITER: denierFor('pinip:') };
+  const guess3 = await call('/api/verify-code', { email: E, code: wrong3 });
+  ok('but a WRONG guess from that IP is still refused',
+     guess3.status === 429, String(guess3.status));
+
+  // 4. No binding at all — an older Cloudflare account — must behave
+  //    exactly as before rather than locking everyone out.
+  reset();
+  await call('/api/request-code', { email: E });
+  const p4 = getPin();
+  const openR = await call('/api/verify-code', { email: E, code: p4 });
+  ok('with no limiter binding, sign-in still works (fails open)',
+     openR.status === 200, String(openR.status));
+
+  // 5. A limiter that throws must fail open too, not 500 the sign-in.
+  reset();
+  await call('/api/request-code', { email: E });
+  const p5 = getPin();
+  LIMITS = { PINS_LIMITER: thrower() };
+  const thrown = await call('/api/verify-code', { email: E, code: p5 });
+  ok('a broken limiter fails open rather than breaking sign-in',
+     thrown.status === 200, String(thrown.status));
+
+  /* 6a. THE REMOTE LOCKOUT. The 45s "we just sent you one" cooldown was
+     keyed on the delivery MAILBOX while the PIN is derived from the
+     IDENTITY, and outside Gmail those differ. So a stranger asking for
+     a code for lee+x@yahoo.com set the cooldown on lee@yahoo.com — and
+     Lee's own request was then answered "already sent" with no email,
+     while the code sitting in his inbox belonged to a different
+     identity and could never verify. One request every 40 seconds locks
+     a named player out of the pool for as long as the attacker cares to
+     keep going. */
+  reset();
+  const VICTIM = 'lee@yahoo.com';
+  await call('/api/request-code', { email: 'lee+attacker@yahoo.com' });
+  sent = [];
+  const own = await call('/api/request-code', { email: VICTIM });
+  const body = await own.json();
+  ok('a +tag request cannot suppress the real address\'s code',
+     body.throttled !== true && sent.length === 1,
+     JSON.stringify(body) + ' sent=' + sent.length);
+  ok('and the code that arrives actually verifies',
+     (await call('/api/verify-code', { email: VICTIM, code: getPin() })).status === 200);
+
+  /* 6b. The mailbox limiter must still fold Gmail's dots, or one inbox
+     has 2^(n-1) distinct send budgets. */
+  reset();
+  LIMITS = { SEND_LIMITER: denierFor('send:') };
+  const dotted = await call('/api/request-code', { email: 'l.e.e+x@gmail.com' });
+  ok('gmail dot- and tag-variants share one send budget',
+     dotted.status === 429 && sent.length === 0,
+     dotted.status + ' sent=' + sent.length);
+
+  // 6. The send limiter stops the mailer being used to flood an inbox,
+  //    and stops it BEFORE the email goes out.
+  reset();
+  LIMITS = { SEND_LIMITER: denier() };
+  const noSend = await call('/api/request-code', { email: E });
+  ok('a rate-limited request sends no email', sent.length === 0, String(sent.length));
+  ok('and says so rather than pretending it worked',
+     noSend.status === 429, String(noSend.status));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

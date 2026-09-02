@@ -58,13 +58,27 @@ function buildGames(){
   return out;
 }
 const GAMES = buildGames();
-const MEMBERS = (P.members || ['Lee','Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus'])
-  .map((n,i) => ({ uid: 'u_'+i, name: n }));
+const NAMES = ['Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus','Jo','Tay','Ali',
+  'Rob','Kim','Nate','Ines','Gus','Val','Otis','Rae','Dex','Mira','Cy','Wren','Bo','Ivy','Zed',
+  'Hal','Fern','Ada','Ora','Sol','Tam','Uri','Vex','Wyn','Xan','Yao','Zia','Ari','Bex','Cal'];
+function makeRoster() {
+  if (!P.playerCount) return P.members || ['Lee','Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus'];
+  const out = ['Lee'];
+  for (let i = 1; i < P.playerCount; i++) {
+    out.push(P.longNames
+      ? 'Bartholomew Fitzgerald-Wentworth ' + i
+      : NAMES[(i - 1) % NAMES.length] + (i > NAMES.length ? ' ' + i : ''));
+  }
+  return out;
+}
+const ROSTER = makeRoster();
+const MEMBERS = ROSTER.map((n,i) => ({ uid: 'u_'+i, name: n }));
 
 window.PS = {
   SEASON: '2026', user: { uid: 'u_0' }, poolId: 'p_test',
   async signInWithToken(t){ await call('signInWithToken'); return this.user; },
-  async joinPool(c){ await call('joinPool'); return { id:'p_test', name:"Weekly NFL Pick'em" }; },
+  async joinPool(c){ await call('joinPool'); window.__joined = true;
+    return { id:'p_test', name:"Weekly NFL Pick'em" }; },
   async upsertRoster(x){ await call('upsertRoster'); },
   async ensureCurrentPool(){ await call('ensureCurrentPool');
     return P.noPool ? null : { id:'p_test', name:"Weekly NFL Pick'em", season:'2026' }; },
@@ -75,7 +89,9 @@ window.PS = {
     return Object.keys(by).map(Number).sort((a,b)=>a-b)
       .map(wk => ({ wk, games: by[wk].sort((a,b)=>a.kickoff.toMillis()-b.kickoff.toMillis()) }));
   },
-  async getMembers(){ await call('getMembers'); return MEMBERS; },
+  async getMembers(){ await call('getMembers');
+    if (P.notAMember && !window.__joined) { const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied'; throw e; }
+    return MEMBERS; },
   async getStandings(){ await call('getStandings');
     // Shape score_week.py actually writes: a per-week map plus the sums.
     const done = [...new Set(GAMES.filter(g => g.status === 'final').map(g => g.wk))];
@@ -100,14 +116,20 @@ window.PS = {
       if (i < (P.myPickCount == null ? 16 : P.myPickCount))
         o[g.id] = { winner: i%2 ? g.home : g.away, weight: i+1 };
     }); return o; },
+  /* Rows carry uid AND name, exactly as firebase-init.js returns them.
+     The stub used to omit uid, which started mattering the moment the app
+     keyed players by uid instead of by display name: a stub answering in a
+     shape the real data layer never produces makes the whole suite agree
+     with itself about something untrue. */
   async getRevealed(wk){ await call('getRevealed');
     if (P.noRevealed) return [];
     const rows = []; GAMES.filter(g=>g.wk===wk).forEach((g,i) =>
       MEMBERS.forEach((m,mi) => { if (g.kickoff.toMillis() < Date.now())
-        rows.push({ name:m.name, gameId:g.id, winner: (i+mi)%2 ? g.home : g.away, weight:(i+mi)%16+1 }); }));
+        rows.push({ uid:m.uid, name:m.name, gameId:g.id,
+                    winner: (i+mi)%2 ? g.home : g.away, weight:(i+mi)%16+1 }); }));
     return rows; },
   async getTiebreaks(wk){ await call('getTiebreaks');
-    return MEMBERS.map((m,i) => ({ name:m.name, total: 44 + i*3, mine: i===0 })); },
+    return MEMBERS.map((m,i) => ({ uid:m.uid, name:m.name, total: 44 + i*3, mine: i===0 })); },
   async getArchive(){ await call('getArchive'); return P.archive || []; },
   async savePicks(){ await call('savePicks'); },
   async saveTiebreak(){ await call('saveTiebreak'); },

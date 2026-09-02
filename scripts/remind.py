@@ -36,6 +36,9 @@ TIERS = [
 
 QUIET_START, QUIET_END = 22, 7      # local hours; urgent tier ignores these
 
+# FCM rejects a relative link outright, so this has to be a real origin.
+APP_ORIGIN = os.environ.get("APP_ORIGIN", "https://nflweeklypickem.com").rstrip("/")
+
 
 def get_db():
     key = os.environ.get("FIREBASE_SERVICE_ACCOUNT_FILE", "serviceAccount.json")
@@ -151,6 +154,7 @@ def run(season, dry):
                         continue
 
                     flat = [(uid, t, mid) for uid, tokens, mid in fresh for t in tokens]
+                    delivered = set()
                     for i in range(0, len(flat), 500):
                         chunk = flat[i:i + 500]
                         resp = messaging.send_each_for_multicast(
@@ -158,17 +162,31 @@ def run(season, dry):
                                 tokens=[c[1] for c in chunk],
                                 notification=messaging.Notification(title=title, body=body),
                                 webpush=messaging.WebpushConfig(
-                                    fcm_options=messaging.WebpushFCMOptions(link="/index.html"),
+                                    # ABSOLUTE, or FCM rejects the whole
+                                    # message with 400 INVALID_ARGUMENT and
+                                    # nobody is reminded of anything. See the
+                                    # same fix in worker/live.js's push().
+                                    fcm_options=messaging.WebpushFCMOptions(
+                                        link=f"{APP_ORIGIN}/index.html"),
                                     notification={"tag": f"ps-{wk}-{slot_key}",
                                                   "renotify": urgent})))
+                        # Mark ONLY the people FCM actually accepted.
+                        # This used to mark everyone in `fresh` regardless,
+                        # so a rejected send was permanently recorded as
+                        # delivered and never retried — the reason a fixed
+                        # push bug would still have left that week's
+                        # reminders missing for good.
                         for c, r in zip(chunk, resp.responses):
                             if r.success:
+                                delivered.add(c[0])
                                 continue
                             code = getattr(r.exception, "code", "")
                             if "not-registered" in str(code) or "invalid" in str(code):
                                 prune_token(pref, c[0], c[1])
 
                     for uid, _, mid in fresh:
+                        if uid not in delivered:
+                            continue
                         sent_marks.append((mid, {"sentAt": now, "uid": uid,
                                                  "tier": tier, "wk": wk, "missing": n}))
 
@@ -207,7 +225,13 @@ def prune_token(pref, uid, token):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--season", type=int, required=True)
+    # NOT type=int. A preseason season id is "2026PRE", and argparse
+    # rejected it before the script ever started — so the preseason
+    # shakedown PRESEASON.md tells you to run could never send a single
+    # reminder, which is the one thing it exists to prove. score_week.py
+    # already takes this as a string; these two disagreed with it.
+    ap.add_argument("--season", required=True,
+                    help="Season id: 2026, or 2026PRE for the preseason pool")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     run(a.season, a.dry_run)

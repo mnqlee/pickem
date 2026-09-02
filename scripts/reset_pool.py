@@ -80,6 +80,30 @@ def main():
         print("That looks like a real season. Add --force if you mean it.")
         return 1
 
+    # CONFIRM BEFORE DESTROYING ANYTHING, not after.
+    #
+    # The wipe below ran unconditionally; only deletion of the POOL
+    # DOCUMENT was gated on --yes. So `reset_pool.py --pool REALPOOL
+    # --force` irreversibly destroyed every pick, standing, member and
+    # tiebreak of a live season and then printed "Pool document itself
+    # left in place. Add --yes to remove it too." — which reads like not
+    # much happened. There was no interactive confirmation anywhere in
+    # this file, and nothing made the operator name the pool first.
+    if not a.dry_run and not a.yes:
+        print("About to DELETE every pick, standing, member and tiebreak in:")
+        print(f"    pool   {a.pool}   \"{data.get('name')}\"")
+        if a.season:
+            print(f"    season {a.season}   (its games too)")
+        print("\nThis cannot be undone. Type the pool id to confirm.")
+        try:
+            typed = input("pool id: ").strip()
+        except EOFError:
+            print("REFUSED: nothing to read from. Re-run with --yes if you mean it.")
+            return 1
+        if typed != a.pool:
+            print("REFUSED: that did not match. Nothing was deleted.")
+            return 1
+
     total = 0
     for name in SUBS:
         c = wipe(ref.collection(name), a.dry_run, name)

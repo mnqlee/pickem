@@ -1,22 +1,39 @@
 #!/usr/bin/env python3
 """
-Build the read-optimised snapshots the app serves from.
+Build the read-optimised snapshots this job WAS meant to have the app
+serve from. It does not, currently — read this before relying on it.
 
-Clients never query raw picks. This job reads them, computes what is
-revealed and what everything scores, and writes a handful of documents
-that the app reads directly. Two reads to render the Grid instead of
-several thousand.
+STATUS: not wired to the live app. This was written so clients would
+never query raw picks directly; instead they'd read the handful of
+documents below. That migration never happened on the client — index.html
+calls getRevealed()/watchRevealed(), which query the picks collection
+directly, and nothing in the app calls the getBoard()/watchBoard()/
+getShard() functions in firebase-init.js that read these snapshot docs.
+The Grid was instead fixed by widening the picks read rule in
+firestore.rules (see the comment there). worker/live.js writes score
+updates straight to the game documents and says so explicitly ("No
+snapshot job in between") — it does not call this either. The
+.github/workflows/live.yml schedule that used to run this every 5
+minutes is disabled for the same reason (see that file's header); it is
+left as a manual workflow_dispatch fallback only.
+
+So right now this script computes real, correct output that nothing
+reads. Either wire the client to it (swap getRevealed()/watchRevealed()
+for getBoard()/watchBoard()/getShard()) or stop running it — as-is it is
+pure wasted Firestore writes every time it's invoked.
 
     python scripts/build_snapshot.py --season 2026
 
-Runs every 5 minutes during game windows. Cheap, because it only reads
-picks that changed since the last run.
-
-WHAT IT WRITES
+WHAT IT WRITES (if you decide to use it)
   pools/{p}/private/agg_w{n}      every pick, admin only, the working set
-  pools/{p}/private/progress_w{n} who is missing what, for remind.py
-  pools/{p}/snapshots/w{n}_board  standings + the top rows, members read this
-  pools/{p}/snapshots/w{n}_s{k}   full pick rows, 100 players per shard
+  pools/{p}/private/progress_w{n} who is missing what. scripts/remind.py
+                                   (the Python fallback, workflow_dispatch
+                                   only) reads this — but worker/live.js,
+                                   the reminder path that actually runs on
+                                   a schedule, computes "missing" itself
+                                   straight from picks and never reads it.
+  pools/{p}/snapshots/w{n}_board  standings + the top rows — currently unread
+  pools/{p}/snapshots/w{n}_s{k}   full pick rows, 100/shard — currently unread
 """
 
 import argparse, os, sys
@@ -32,10 +49,14 @@ TOP_ROWS = 25        # full pick rows carried inside the board doc
 
 
 def pay(rank, n):
-    """`n` is that week's game count. Bye weeks are not sixteen games."""
+    """`n` is that week's game count. Bye weeks are not sixteen games.
+
+    Floored at zero, exactly as in score_week.py: a rank made against a
+    16-game slate that is later scored as 14 games would otherwise pay
+    minus one for a CORRECT pick. Keep the two in step."""
     if not rank:
         return 1
-    return (n + 1 - rank) if RANK_ONE_IS_BEST else rank
+    return max(0, (n + 1 - rank)) if RANK_ONE_IS_BEST else max(0, rank)
 
 
 def get_db():
@@ -46,7 +67,9 @@ def get_db():
 
 
 def scoring_mode(pool, week):
-    mode = "straight"
+    # "confidence", to match score_week.py and firebase-init.js. This
+    # said "straight" and was a third opinion on the same question.
+    mode = "confidence"
     for h in sorted(pool.get("scoringHistory") or [], key=lambda x: x["week"]):
         if h["week"] <= week:
             mode = h["mode"]
@@ -76,6 +99,17 @@ def build_week(db, season, pool_ref, pool, week, now):
     fetched = 0
     for d in q.stream():
         v = d.to_dict()
+        # A cleared pick is a tombstone (winner: null), because picks can
+        # never be deleted. Storing it as [None, None] made it a truthy
+        # entry that survived the `if not p: continue` guard below and was
+        # published as a pick that LOST — and, worse, made progress_w{n}
+        # report the player as complete, so remind.py sent them nothing.
+        # pop(), not skip: the tombstone must also evict a pick already
+        # cached in agg_w{n} from an earlier run.
+        if v.get("winner") is None:
+            picks[v["uid"]].pop(v["gameId"], None)
+            fetched += 1
+            continue
         picks[v["uid"]][v["gameId"]] = [v["winner"], v.get("weight")]
         fetched += 1
 
@@ -193,7 +227,9 @@ def active_weeks(db, season, now):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--season", type=int, required=True)
+    # NOT type=int — see remind.py. A preseason id is "2026PRE".
+    ap.add_argument("--season", required=True,
+                    help="Season id: 2026, or 2026PRE for the preseason pool")
     ap.add_argument("--week", type=int)
     a = ap.parse_args()
 

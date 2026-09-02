@@ -258,10 +258,36 @@ async function scores(env) {
            on — a missing score is recoverable, a corrupted schedule is not. */
         if (!old) { unmatched.push(gid); continue; }
 
+        /* ESPN reports state 'post' for games that never happened —
+           postponed, cancelled, suspended — and their competitors carry no
+           score. `+(undefined || 0)` turned that into a real-looking 0-0
+           FINAL with winner null: on the Grid every player's pick went red
+           and their confidence stake was lost, for a game that had not been
+           played. When it was rescheduled and actually finished, the guard
+           below ("skip if nothing changed") saw status already 'final' and
+           the true result was never written.
+
+           A completed NFL game cannot end 0-0, so the combination of
+           post + no score is decisive, not a heuristic. Postponements are
+           left alone for import_schedule.py to re-import with the new
+           kickoff time. */
+        const rawAway = by.away.score, rawHome = by.home.score;
+        const noScore = rawAway == null || rawHome == null ||
+                        rawAway === '' || rawHome === '';
+        const st = (c.status && c.status.type) || {};
+        const abandoned = /postponed|canceled|cancelled|suspended/i
+          .test(`${st.name || ''} ${st.description || ''} ${st.detail || ''}`);
+
+        if (state === 'post' && (abandoned || (noScore && +rawAway === 0 && +rawHome === 0))) {
+          console.log(`skipping ${gid}: reported final with no score `
+            + `(${st.description || st.name || 'no status'}) — not a played game`);
+          continue;
+        }
+
         const patch = { status: { pre: 'scheduled', in: 'live', post: 'final' }[state] };
         if (state !== 'pre') {
-          patch.awayScore = +(by.away.score || 0);
-          patch.homeScore = +(by.home.score || 0);
+          patch.awayScore = +(rawAway || 0);
+          patch.homeScore = +(rawHome || 0);
           if (state === 'post') {
             patch.winner = patch.homeScore > patch.awayScore ? home
               : patch.awayScore > patch.homeScore ? away : null;
@@ -301,17 +327,54 @@ async function testPush(env, params) {
       const name = info.name || uid;
       if (only && name.toLowerCase() !== only) continue;
       const tokens = info.tokens || [];
-      if (!tokens.length) { out.push({ name, sent: 0, note: 'no token' }); continue; }
-      for (const t of tokens) {
-        await push(env, t, 'Test alert',
-          `If you can read this, ${name}, your reminders are working. ` +
-          `Nothing to do.`, true);
+      if (!tokens.length) {
+        out.push({ name, sent: 0, delivered: 0, note: 'NO TOKEN — this person gets nothing' });
+        continue;
       }
-      out.push({ name, sent: tokens.length });
+      /* Report what actually happened per device.
+
+         This used to count the tokens it looped over and call that
+         "sent", while push() returned nothing and swallowed every error.
+         So the one endpoint whose entire job is answering "do
+         notifications work?" replied `{sent: 2}` with total confidence
+         while Google had rejected both messages. A diagnostic that cannot
+         report failure is worse than no diagnostic: it ends the
+         investigation at the exact point it should have started it. */
+      const dead = [];
+      let delivered = 0, failed = 0;
+      for (const t of tokens) {
+        const res = await push(env, t, 'Test alert',
+          `If you can read this, ${name}, your reminders are working. Nothing to do.`,
+          true, { tag: 'pickem-test' });
+        if (res === 'ok') delivered++;
+        else if (res === 'dead') dead.push(t);
+        else failed++;
+      }
+      await pruneTokens(env, pid_of(pool), uid, info, dead);
+      out.push({
+        name, devices: tokens.length, delivered,
+        dead: dead.length, failed,
+        ok: delivered > 0,
+        note: delivered > 0 ? 'delivered to at least one device'
+            : dead.length ? 'all tokens dead — this person must re-open the app and re-enable alerts'
+            : 'FCM rejected every send — check the Worker log'
+      });
     }
   }
-  return { season, tested: out.length, results: out };
+  const reachable = out.filter(r => r.ok).length;
+  return {
+    season,
+    people: out.length,
+    reachable,
+    unreachable: out.length - reachable,
+    ok: out.length > 0 && reachable === out.length,
+    results: out
+  };
 }
+
+// pool objects carry their id as _id; kept as a helper so testPush reads
+// the same way as the reminder loop.
+const pid_of = pool => pool._id;
 
 /* ============================================================
    REMINDERS — every 5 minutes, on time
@@ -348,6 +411,14 @@ async function remind(env, dry = false) {
     const picks = {};
     for (const w of weeks) {
       for (const p of await fsQuery(env, `/pools/${pid}`, 'picks', [['wk', 'EQUAL', w]])) {
+        /* A cleared pick is stored as a tombstone (winner: null) because
+           picks can never be deleted. Counting one as a pick meant the
+           person who un-picked a game to think again was recorded as
+           already done: no "last call" reminder for it, no reminder at
+           all if the whole slot was cleared, and a zero on Sunday for
+           the exact case these alerts exist to prevent. The client and
+           score_week.py both filter these; this path did not. */
+        if (p.winner == null) continue;
         (picks[p.uid] ||= new Set()).add(p.gameId);
       }
     }
@@ -382,10 +453,38 @@ async function remind(env, dry = false) {
 
           const n = missing.length;
           const { title, body } = compose(tier, wk, n, when(+slot, tz), mins);
-          sent.push({ uid, tier, n, title });
-          if (dry) continue;
+          if (dry) { sent.push({ uid, tier, n, title }); continue; }
 
-          for (const tk of tokens) await push(env, tk, title, body, urgent);
+          /* Only record a reminder as sent if it ACTUALLY reached a
+             device. The marker used to be written unconditionally, right
+             after a push() that reported nothing — so a reminder that
+             Google rejected (which, per push()'s note, was all of them)
+             was permanently marked delivered for that person, that week,
+             that slot, and could never be retried. A silent failure that
+             also suppresses its own retry is the worst shape a bug can
+             take: the logs say "sent", the phone stays quiet, and no
+             later fix can recover the notification.
+
+             A dead token is a real answer too — it means "this device is
+             gone", not "try again in five minutes" — so it counts as
+             delivered for dedupe purposes while the token is pruned. */
+          const dead = [];
+          let delivered = 0, failed = 0;
+          for (const tk of tokens) {
+            const res = await push(env, tk, title, body, urgent);
+            if (res === 'ok') delivered++;
+            else if (res === 'dead') dead.push(tk);
+            else failed++;
+          }
+          await pruneTokens(env, pid, uid, info, dead);
+
+          sent.push({ uid, tier, n, title, delivered, dead: dead.length, failed });
+          if (delivered === 0 && failed > 0) {
+            // Nothing landed and the reason was transient. Leave the
+            // marker unwritten so the next run tries again.
+            console.log(`reminder NOT delivered to ${info.name || uid} (${tier}) — will retry`);
+            continue;
+          }
           // 3-day TTL: long enough to prevent a repeat, short enough
           // that KV never accumulates.
           await env.SESSIONS.put(key, '1', { expirationTtl: 259200 });
@@ -420,18 +519,92 @@ function compose(tier, wk, n, w, mins) {
   return { title: `Last call, ${n} ${g}`, body: `Kickoff in ${mins} minutes. Unpicked games score zero.` };
 }
 
-async function push(env, tk, title, body, urgent) {
-  const t = await token(env);
-  const r = await fetch(
-    `https://fcm.googleapis.com/v1/projects/${env.GCP_PROJECT}/messages:send`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: {
-        token: tk,
-        notification: { title, body },
-        webpush: { fcm_options: { link: '/index.html' },
-                   notification: { renotify: urgent, tag: title } }
-      } })
-    });
-  if (!r.ok) console.log('push failed', r.status, await r.text());
+/* Send one notification. Returns 'ok' | 'dead' | 'fail' — the CALLER has
+   to know, and it used to be told nothing at all.
+
+   Three faults lived in the twelve lines this replaces, and together they
+   are why a "sent" reminder could reach nobody while every log looked fine:
+
+   1. `fcm_options.link` was the RELATIVE string '/index.html'. FCM requires
+      an absolute HTTPS URL and rejects the whole message with 400
+      INVALID_ARGUMENT — so every web push this Worker ever sent was
+      refused by Google before it reached a single device.
+   2. The failure went to a console line nobody reads, and the caller then
+      wrote its "already reminded" marker anyway — permanently marking the
+      reminder as delivered for that person, that week, that slot. It would
+      never be retried, so even after the bug above was fixed the missed
+      ones would stay missed.
+   3. `tag: title` collapses notifications that share a title. Two slates
+      both producing "Last call, 2 games" replaced one another on the
+      phone, so the second silently overwrote the first.
+
+   UNREGISTERED / INVALID_ARGUMENT against the token means that token is
+   dead — app deleted, browser data cleared — and it gets pruned. */
+async function push(env, tk, title, body, urgent, opts = {}) {
+  let t;
+  try { t = await token(env); }
+  catch (e) { console.log('push: no access token', String(e)); return 'fail'; }
+
+  const origin = (env.APP_ORIGIN || 'https://nflweeklypickem.com').replace(/\/+$/, '');
+  let r;
+  try {
+    r = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${env.GCP_PROJECT}/messages:send`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: {
+          token: tk,
+          notification: { title, body },
+          webpush: {
+            fcm_options: { link: origin + '/index.html' },   // must be absolute
+            headers: { Urgency: urgent ? 'high' : 'normal', TTL: String(opts.ttl ?? 3600) },
+            notification: {
+              renotify: !!urgent,
+              // Unique per message unless a caller deliberately groups.
+              tag: opts.tag || `${title}|${Date.now()}`,
+              requireInteraction: !!urgent,
+              icon: origin + '/icons/icon-192.png',
+              badge: origin + '/icons/icon-192.png'
+            }
+          }
+        } })
+      });
+  } catch (e) {
+    console.log('push: network failure', String(e));
+    return 'fail';
+  }
+
+  if (r.ok) return 'ok';
+
+  const txt = await r.text().catch(() => '');
+  console.log('push failed', r.status, txt.slice(0, 300));
+  if (r.status === 404 || /UNREGISTERED|INVALID_ARGUMENT/i.test(txt)) return 'dead';
+  return 'fail';
+}
+
+/* Drop tokens FCM has told us are dead.
+
+   Without this a stale token rides along for the rest of the season:
+   every run retries it, every run logs the same failure, and someone
+   whose only remaining token is dead still counts as "reachable" in the
+   report that is supposed to name the people getting nothing. */
+async function pruneTokens(env, pid, uid, info, dead) {
+  if (!dead.length || !info || !Array.isArray(info.tokens)) return;
+  const keep = info.tokens.filter(t => !dead.includes(t));
+  if (keep.length === info.tokens.length) return;
+  try {
+    /* Patch the tokens LEAF, not the whole member entry.
+
+       Writing `{[uid]: {...info, tokens: keep}}` replaces that member's
+       entire map with a copy read at the top of the run — so a player
+       tapping "Turn alerts on" on a new laptop while this cron was
+       running had their brand-new token written straight back out again,
+       silently, and never got a reminder on that device. Same for a
+       preference toggle. The client uses dotted leaf paths for exactly
+       this reason; this is the matching form. */
+    await fsPatch(env, `pools/${pid}/private/roster`, { [`${uid}.tokens`]: keep });
+    console.log(`pruned ${dead.length} dead token(s) for ${info.name || uid}`);
+  } catch (e) {
+    console.log('token prune failed (non-fatal)', String(e));
+  }
 }

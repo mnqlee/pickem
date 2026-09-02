@@ -5,7 +5,7 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.3.0';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not
@@ -20,11 +20,31 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  // Take over immediately instead of waiting for every tab to close.
-  self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})
-  );
+  /* Deliberately NOT calling self.skipWaiting() here.
+
+     It used to, which quietly defeated the whole update mechanism: a new
+     worker activated the instant it installed and claimed every client,
+     firing `controllerchange`, and firebase-init.js reloads the page on
+     that event. So a deploy while somebody was mid-week ranking their
+     confidence picks reloaded the page underneath them and threw away
+     anything not yet written. The "Update now" prompt was decorative —
+     the swap had already happened before the button could be tapped, and
+     the new worker never sat in `waiting` for it to act on.
+
+     The page now decides when to swap, by posting SKIP_WAITING (see the
+     message handler at the bottom). */
+  /* One entry at a time, not addAll().
+
+     addAll() is all-or-nothing: if any single URL 404s — a renamed
+     icon, a file not yet live on a fresh Pages deploy — the whole
+     thing rejects, the .catch() below swallowed it, and install
+     "succeeded" with an EMPTY cache. The offline fallback then matched
+     nothing and respondWith(undefined) gave the browser's network
+     error page. Better to cache the five that worked. */
+  e.waitUntil((async () => {
+    const c = await caches.open(CACHE);
+    await Promise.all(SHELL.map(u => c.add(u).catch(() => {})));
+  })());
 });
 
 self.addEventListener('activate', e => {
@@ -41,16 +61,71 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
 
-  // Never cache Firebase / Google APIs — always live.
+  /* ---- NEVER CACHED ------------------------------------------------
+     Anything that carries identity or live state. This list is the
+     first thing to check when something "won't log out" or "won't
+     refresh".
+
+     /api/* was NOT here, and it was the worst bug in this file.
+     `/api/session` is a GET whose path ends in neither .html nor .js
+     nor a slash, so it fell through to the cache-first branch below and
+     was stored PERMANENTLY — response body `{token, uid}`, where token
+     is a Firebase custom token that expires in one hour.
+
+     Three things followed, none of them obvious from the symptom:
+
+       1. Signing out did not sign you out. Sign out deletes the server
+          session and reloads; boot() then re-fetched /api/session, got
+          the cached 200 with the OLD token, and signed the same person
+          straight back in. On a shared iPad the next person to open the
+          app was signed in as the previous player, with their picks and
+          their standings row.
+       2. Every returning player was sent back to the PIN screen every
+          week, forever. The whole point of /api/session is to survive
+          Safari evicting IndexedDB after 7 days — but the cached token
+          was minted weeks ago, signInWithCustomToken rejected it, the
+          error was swallowed, and the worker would never re-fetch.
+       3. A 401 from the very first visit (before anyone had signed in)
+          was cached too, so automatic session restore was dead from
+          the first launch and never recovered.
+
+     None of this is visible in a normal deploy, because bumping VERSION
+     does not help: the new worker never activates (see the update
+     prompt in firebase-init.js). */
+  if (sameOrigin && url.pathname.startsWith('/api/')) return;
+
+  // Firebase / Google live endpoints — always the network.
   if (url.hostname.includes('googleapis.com') ||
-      url.hostname.includes('firebaseio.com') ||
-      url.hostname.includes('gstatic.com')) return;
+      url.hostname.includes('firebaseio.com')) return;
 
-  const isShell = req.mode === 'navigate' ||
-                  url.pathname.endsWith('.html') ||
-                  url.pathname.endsWith('.js') ||
-                  url.pathname.endsWith('/');
+  /* ---- IMMUTABLE VENDOR CODE ---------------------------------------
+     The Firebase SDK is imported from a VERSIONED gstatic URL, so its
+     bytes can never change under us. It used to be excluded from the
+     cache entirely, which is why "offline support" did not exist: with
+     no SDK the module import fails, window.PS is never created, and the
+     app dies on boot with no network. Caching it by URL is safe
+     precisely because the version is in the path. */
+  const immutable = url.hostname.includes('gstatic.com') &&
+                    /\/firebasejs\/\d/.test(url.pathname);
+
+  const isShell = sameOrigin &&
+                  (req.mode === 'navigate' ||
+                   url.pathname.endsWith('.html') ||
+                   url.pathname.endsWith('.js') ||
+                   url.pathname.endsWith('/'));
+
+  /* Only cache what we should still be serving in a week's time. A
+     `fetch()` promise RESOLVES for 404 and 503 — it only rejects when
+     the network itself fails — and neither branch used to check, so a
+     momentary 404 during a Cloudflare Pages deploy could be stored as
+     the permanent answer for an icon, and a Cloudflare 5xx error page
+     could become the offline fallback for the whole app. */
+  const store = async (res) => {
+    if (!res || !res.ok || res.type === 'opaque') return;
+    try { (await caches.open(CACHE)).put(req, res.clone()); } catch (_) {}
+  };
 
   if (isShell) {
     /* NETWORK FIRST for app code.
@@ -59,29 +134,34 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       try {
         const fresh = await fetch(req);
-        const c = await caches.open(CACHE);
-        c.put(req, fresh.clone());
+        await store(fresh);
         return fresh;
       } catch {
-        return (await caches.match(req)) || (await caches.match('./index.html'));
+        return (await caches.match(req)) ||
+               (await caches.match('./index.html')) ||
+               new Response('Offline', { status: 503,
+                 headers: { 'Content-Type': 'text/plain' } });
       }
     })());
-  } else {
-    /* CACHE FIRST for icons, fonts, images — they rarely change,
-       and when they do, the VERSION bump clears them. */
+    return;
+  }
+
+  if (immutable || sameOrigin) {
+    /* CACHE FIRST for icons, fonts, images and the pinned SDK — they
+       rarely change, and when they do, the VERSION bump clears them. */
     e.respondWith((async () => {
       const hit = await caches.match(req);
       if (hit) return hit;
       try {
         const fresh = await fetch(req);
-        const c = await caches.open(CACHE);
-        c.put(req, fresh.clone());
+        await store(fresh);
         return fresh;
       } catch {
         return new Response('', { status: 504 });
       }
     })());
   }
+  // Anything else third-party: left entirely alone.
 });
 
 /* ============================================================
@@ -108,7 +188,12 @@ self.addEventListener('push', e => {
   // be liberal, because a malformed payload showing nothing is the exact
   // failure this handler exists to end.
   const n = p.notification || p.data || {};
-  const link = (p.fcmOptions && p.fcmOptions.link) ||
+  /* FCM's raw wire payload uses snake_case `fcm_options`; only the JS SDK
+     camel-cases it to `fcmOptions`. Reading just the camel-case spelling
+     meant the link was always missing and every notification tap landed
+     on the fallback rather than where the message pointed. */
+  const link = (p.fcm_options && p.fcm_options.link) ||
+               (p.fcmOptions && p.fcmOptions.link) ||
                (p.data && p.data.link) || './index.html';
 
   e.waitUntil(self.registration.showNotification(

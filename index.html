@@ -21,24 +21,67 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --shell:#1A1917; --shell-2:#232120; --shell-3:#2C2926;
-  --paper:#FAF7F1; --paper-2:#EFEAE0;
-  --ink:#15171B; --ink-soft:#6B6862;
-  --rule:rgba(20,22,26,.10);
-  --stamp:#C8342A; --lock:#E0A32E; --live:#5FA855; --hit:#3E7D34;
-  --chalk:rgba(250,247,241,.55);
+  --shell:#141412; --shell-2:#1E1D1B; --shell-3:#2A2724;
+  --paper:#FAF7F1; --paper-2:#EDE8DE;
+  --ink:#15171B; --ink-soft:#5E5B55;
+  --rule:rgba(20,22,26,.12);
+  --stamp:#C8342A; --lock:#E0A32E; --live:#63B257; --hit:#2F6E26;
+  --chalk:rgba(250,247,241,.62);
+
+  /* CONTRAST-CHECKED SUBDUED INKS.
+
+     Every "faded" value in this file used to be an ad-hoc rgba alpha, and
+     thirteen of them measured under 4.5:1 against the surface they were
+     actually painted on. The worst were the ones carrying real
+     information: the team you did NOT pick (2.47), the team code on a
+     pick you got wrong (2.62), the sealed "•••" cells (1.98) and the
+     "used" rank chips (~1.3) — which are the only record anywhere of
+     which numbers you have already spent. These are measured, not
+     eyeballed; keep them that way. */
+  --ink-mute:rgba(21,23,27,.66);      /* ≈4.9:1 on --paper-2 */
+  --ink-faint:rgba(21,23,27,.55);     /* ≈4.6:1 */
+  --chalk-soft:rgba(250,247,241,.58); /* ≈5.1:1 on --shell */
+  --chalk-faint:rgba(250,247,241,.40);/* decoration only, never text */
+
   --r:10px; --pad:14px;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --bar-h:64px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-serif;
-  color:var(--paper);-webkit-font-smoothing:antialiased;padding-bottom:96px}
+  color:var(--paper);-webkit-font-smoothing:antialiased;
+  /* Clears the fixed bar AND the home indicator. This was a flat 96px
+     against a 61px bar plus a 34px inset — a one-pixel margin, so any
+     line-height change would have hidden content under the indicator. */
+  padding-bottom:calc(var(--bar-h) + 32px + var(--safe-b));
+  overflow-x:hidden}
 .mono{font-family:'Roboto Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
 
+/* Visible keyboard focus. There was none, anywhere in the app. */
+:focus-visible{outline:2.5px solid var(--lock);outline-offset:2px;border-radius:4px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
+
 .topbar{position:sticky;top:0;z-index:40;
-  background:linear-gradient(180deg,var(--shell) 72%,rgba(26,25,23,.95));
-  border-bottom:1px solid rgba(250,247,241,.09);padding:14px var(--pad) 0}
-.brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  background:linear-gradient(180deg,var(--shell) 74%,rgba(20,20,18,.97));
+  border-bottom:1px solid rgba(250,247,241,.09);
+  /* On a notched iPhone in standalone with black-translucent, the web view
+     starts at y=0 — so the wordmark and the clock rendered underneath the
+     status bar icons. The onboarding already handled this; the app did
+     not, so people saw a correct welcome flow and then a broken header. */
+  padding:calc(12px + var(--safe-t)) var(--pad) 0}
+/* min-width:0 on both children, or the nowrap clock forces the whole page
+   ~96px wider than the viewport at 200% zoom — WCAG reflow, and a
+   sideways-sliding page on every tab. */
+.brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.brandrow>*{min-width:0}
 .brand{display:flex;flex-direction:column;gap:2px;white-space:nowrap}
 .b1{font-size:9.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
   color:var(--chalk);line-height:1}
@@ -47,17 +90,34 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .pre{border-color:var(--lock)!important;color:var(--lock)!important}
 .b2 em{font-style:normal;color:var(--stamp);border:1.5px solid var(--stamp);border-radius:3px;
   font-size:9.5px;padding:1px 4px;letter-spacing:.08em;font-weight:800}
-.clock{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--lock);
-  font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.clock{font-size:11px;letter-spacing:.03em;text-transform:uppercase;color:var(--lock);
+  font-weight:700;display:flex;align-items:center;gap:5px;
+  /* Must be allowed to shrink AND to truncate. nowrap with no min-width
+     made this the widest thing on the page and slid every tab sideways
+     on a 320px phone (and at 200% zoom on any phone). */
+  min-width:0;overflow:hidden}
+/* The whole chain has to be allowed to shrink: a min-width:0 anywhere
+   above a nowrap child is what stops flex refusing to compress it. */
+.clock #countdown{min-width:0;overflow:hidden;display:block}
+.clock .txt{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* Below ~360px the matchup name cannot fit next to the wordmark; the
+   time is the part that matters, so cap the clock and let it truncate. */
+@media (max-width:379px){ .clock{max-width:46vw;font-size:10px} }
+.clock .dot{flex:0 0 auto}
 .clock .dot{width:5px;height:5px;border-radius:50%;background:var(--lock);animation:pulse 2.2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 
-.weeks{display:flex;gap:5px;overflow-x:auto;margin:12px -14px 0;padding:0 14px 12px;scrollbar-width:none}
+.weeks{display:flex;gap:6px;overflow-x:auto;margin:10px -14px 0;padding:0 14px 9px;scrollbar-width:none}
 .weeks::-webkit-scrollbar{display:none}
-.wk{flex:0 0 auto;min-width:42px;padding:6px 9px;border-radius:7px;background:var(--shell-2);
-  border:1px solid transparent;text-align:center;cursor:pointer;position:relative}
-.wk b{display:block;font-size:14px;font-weight:800;line-height:1.1}
-.wk span{display:block;font-size:8.5px;letter-spacing:.1em;color:var(--chalk);text-transform:uppercase;margin-top:1px}
+.wk{flex:0 0 auto;min-width:46px;min-height:44px;padding:7px 9px;border-radius:8px;
+  background:var(--shell-2);border:1px solid transparent;text-align:center;cursor:pointer;
+  position:relative;font-family:inherit;color:inherit;
+  display:flex;flex-direction:column;align-items:center;justify-content:center}
+/* Just the number. "WK" repeated under all eighteen chips was pure
+   noise, and it made the strip twice as tall as it needed to be — the
+   header was eating 320px before a single game was on screen. */
+.wk b{display:block;font-size:15.5px;font-weight:800;line-height:1}
+.wk span{display:none}
 .wk.on{background:var(--paper);border-color:var(--paper);color:var(--ink)}
 .wk.on span{color:var(--ink-soft)}
 .wk .live-d{position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;
@@ -66,40 +126,75 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .tabs{display:flex;align-items:center;gap:19px;border-top:1px solid rgba(250,247,241,.08);
   padding-top:2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tabs::-webkit-scrollbar{display:none}
-.tab{flex:0 0 auto}
-.tab{padding:11px 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+/* 37px tall with 19px gaps: the app's primary navigation was under the
+   44px minimum on every target, so a thumb on a moving train lands on
+   Standings when it meant Grid. Height and hit box both raised; the gap
+   comes down because the padding now provides the separation. */
+.tab{flex:0 0 auto;padding:13px 6px 12px;font-size:11px;font-weight:750;
+  letter-spacing:.055em;text-transform:uppercase;min-height:44px;
+  display:inline-flex;align-items:center;
+  background:none;border:0;font-family:inherit;
   color:var(--chalk);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1px}
 .tab.on{color:var(--paper);border-bottom-color:var(--stamp)}
+.tabs{gap:11px}
 
-.tray{padding:13px var(--pad) 0}
-.tray-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
-.tray-title{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;font-weight:700;color:var(--chalk)}
-.tray-count{font-size:10.5px;font-weight:700}
-.stamps{display:flex;gap:4px;flex-wrap:wrap}
-.stampchip{width:28px;height:28px;border-radius:5px;display:grid;place-items:center;
-  font-size:12px;font-weight:800;border:1.5px solid var(--stamp);color:var(--stamp);
+/* The rank tray used to be a 190px block of sixteen chips above the
+   slate — a secondary control taking a fifth of the screen before a
+   single game was visible. It is now one scrollable row: same
+   information, ~44px, and the chips stay big enough to read. */
+.tray{padding:10px var(--pad) 2px}
+.tray-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;gap:10px}
+.tray-title{font-size:10px;letter-spacing:.13em;text-transform:uppercase;font-weight:700;color:var(--chalk)}
+.tray-count{font-size:11px;font-weight:800;color:var(--paper);white-space:nowrap}
+/* WRAPS, and that is the point. As one scrolling row, sixteen 29px chips
+   need 544px and a phone gives them 366 — so five or six ranks, and on a
+   320px screen seven, sat off the right-hand edge. The tray exists to
+   answer one question at a glance ("which ranks have I still got?") and
+   it was hiding a third of the answer behind a sideways swipe nothing
+   signposted. Two rows cost ~34px and hide nothing. */
+.stamps{display:flex;flex-wrap:wrap;gap:5px;padding-bottom:2px}
+.stampchip{flex:0 0 auto;width:29px;height:29px;border-radius:6px;display:grid;place-items:center;
+  font-size:12.5px;font-weight:800;border:1.5px solid var(--stamp);color:var(--stamp);
   transition:transform .18s,opacity .18s}
-.stampchip.used{opacity:.16;border-style:dashed;transform:scale(.86)}
+/* Below ~340px even ten per row will not fit, so let them close up
+   rather than start a third row. */
+@media (max-width:339px){
+  .stamps{gap:4px}
+  .stampchip{width:27px;height:27px;font-size:11.5px}
+}
+/* .16 opacity made the only record of which ranks are spent invisible. */
+.stampchip.used{opacity:.5;border-style:dashed;transform:scale(.88)}
 .inplay{margin-top:10px;padding:9px 11px;border-radius:8px;background:var(--shell-2);
   font-size:11.5px;color:var(--chalk);line-height:1.4}
 .inplay b{color:var(--paper);font-family:'Roboto Mono',monospace;font-weight:700}
 .tray-legend{display:flex;justify-content:space-between;margin-top:7px;font-size:9px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--chalk)}
 
-.dayhead{display:flex;align-items:center;gap:10px;padding:22px var(--pad) 9px}
-.dayhead h2{margin:0;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
-.slatetag{font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--chalk);
-  border:1px solid rgba(250,247,241,.22);border-radius:3px;padding:1px 4px;font-weight:700}
-.tzchip{border:1px solid rgba(250,247,241,.22);border-radius:3px;padding:1px 5px;
-  font-size:9px;font-weight:800;letter-spacing:.05em;color:var(--chalk);
-  cursor:pointer;white-space:nowrap}
+/* Wraps rather than overflowing. Forcing this to one nowrap line made
+   the whole page 70px wider than a 320px phone — every tab slid
+   sideways. It stays one line wherever it fits and folds where it does
+   not, which is the behaviour we actually wanted. */
+.dayhead{display:flex;align-items:center;gap:9px;padding:14px var(--pad) 6px;
+  min-width:0;flex-wrap:wrap;row-gap:4px}
+.dayhead .line{min-width:12px}
+.dayhead h2{margin:0;font-size:12px;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;white-space:nowrap}
+.slatenote{padding:0 var(--pad) 6px}
+.slatetag{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--chalk);
+  font-weight:700;opacity:.85}
+.tzab{font-weight:800;letter-spacing:.04em;color:var(--chalk);opacity:.9}
 .tzsel{width:100%;margin-top:12px;padding:11px 12px;border-radius:8px;
   background:var(--shell-3);border:1.5px solid rgba(250,247,241,.16);color:var(--paper);
-  font-family:inherit;font-size:13px;font-weight:600;-webkit-appearance:none;appearance:none}
+  font-family:inherit;font-size:16px;font-weight:600;-webkit-appearance:none;appearance:none;
+  min-height:44px}
 .tznote{margin-top:9px;font-size:11px;line-height:1.55;color:var(--chalk)}
 .tznote b{color:var(--lock)}
 .dayhead .line{flex:1;height:1px;background:rgba(250,247,241,.14)}
-.dayhead .n{font-size:11px;color:var(--chalk);font-weight:600}
+.dayhead .n{font-size:10.5px;color:var(--chalk);font-weight:600;
+  white-space:nowrap;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* The US-slate pill is a footnote for people in another timezone, not a
+   heading — it was competing with the day name beside it. */
+.dayhead .slatetag{opacity:.75;flex:0 0 auto}
 
 .card{margin:0 var(--pad) 9px;border-radius:var(--r);background:var(--paper);color:var(--ink);
   box-shadow:0 6px 18px rgba(0,0,0,.30);position:relative;overflow:hidden}
@@ -112,27 +207,36 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .meta .cd{margin-left:auto;font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:9.5px}
 .meta .cd.soon{color:var(--lock)}
 .meta .cd.urgent{color:var(--stamp)}
-.meta .cd.live{color:var(--live)}
+/* --live on paper is 2.43:1; --hit is 5.6:1 and reads as the same idea. */
+.meta .cd.live{color:var(--hit)}
 .meta .cd.live::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;
   background:var(--live);margin-right:5px;vertical-align:1px;animation:pulse 1.6s infinite}
 
-.match{display:flex;height:82px;overflow:hidden}
+/* 82px -> 72px. One game occupied roughly 300px of an 844px screen once
+   the meta row and the stake bar were counted, so barely two and a half
+   fitted above the fold; a sports app should show five or six. Every
+   band on this card is tightened, not removed. */
+.match{display:flex;height:72px;overflow:hidden}
 .side{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:0 10px;
   background:var(--paper);border:0;font:inherit;color:inherit;cursor:pointer;text-align:left;
   transition:flex-grow .3s cubic-bezier(.4,0,.2,1),background-color .22s,color .22s}
 .side.r{flex-direction:row-reverse;text-align:right}
-.side.won{flex-grow:1.1;color:#fff}
-.side.lost{flex-grow:.95;background:var(--paper-2);color:rgba(21,23,27,.4)}
-.side.lost .mark{filter:grayscale(1) contrast(.5);opacity:.45;width:34px;height:34px;border-radius:9px;font-size:11px}
-/* The unpicked side steps back a notch — also stops Buccaneers and
-   Commanders from truncating on a narrow phone. */
-.side.lost .team{font-size:14.5px;letter-spacing:-.03em}
-.side.lost .city{font-size:9px}
+.side.won{flex-grow:1.12;color:#fff}
+/* The team you did NOT pick was rgba(...,.4) — 2.47:1, the least readable
+   text on the screen, and the thing you must read in order to change your
+   mind. It is de-emphasised now by weight and by the flat backdrop, not
+   by making it unreadable. */
+.side.lost{flex-grow:.94;background:var(--paper-2);color:var(--ink-mute)}
+.side.lost .mark{filter:grayscale(1) contrast(.62);opacity:.66;width:34px;height:34px;border-radius:9px;font-size:11px}
+.side.lost .team{font-size:14.5px;letter-spacing:-.03em;font-weight:700}
+.side.lost .city{font-size:9px;opacity:.9}
+/* A pressed state, so a tap is acknowledged before any data moves. */
+.side:active{filter:brightness(.94)}
 .gutter{flex:0 0 42px;position:relative;z-index:2;background:var(--paper-2);
   transform:skewX(-9deg);display:grid;place-items:center;
   box-shadow:1px 0 0 var(--rule),-1px 0 0 var(--rule)}
 .gutter span{transform:skewX(9deg);font-family:'Roboto Mono',monospace;
-  font-size:15px;font-weight:700;color:rgba(21,23,27,.42)}
+  font-size:15px;font-weight:700;color:var(--ink-faint)}
 .mark{width:42px;height:42px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
   position:relative;overflow:hidden;font-weight:900;font-size:13px;letter-spacing:-.03em;color:#fff;
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
@@ -155,11 +259,12 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    twice the height of the filled one. Both states are now the same
    40px strip — only the color and the circle change. */
 .stakebar{display:flex;align-items:center;justify-content:space-between;gap:10px;
-  height:40px;padding:0 12px;box-sizing:border-box;
+  width:100%;height:44px;padding:0 12px;box-sizing:border-box;
+  font-family:inherit;border:0;text-align:left;
   background:var(--paper-2);border-top:1px solid var(--rule);
   line-height:1;color:var(--ink);cursor:pointer;
   -webkit-user-select:none;user-select:none}
-.sb-l{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+.sb-l{font-size:11.5px;font-weight:650;letter-spacing:.005em;text-transform:none;
   color:var(--ink-soft);white-space:nowrap}
 .sb-r{display:flex;align-items:center;gap:9px}
 .sb-num{width:26px;height:26px;flex:0 0 26px;border-radius:50%;display:grid;place-items:center;
@@ -168,7 +273,8 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .sb-num.set{animation:slam .28s cubic-bezier(.2,1.5,.4,1)}
 .sb-num.blank{border-style:dashed;border-color:rgba(200,52,42,.55);
   color:rgba(200,52,42,.6);transform:none;font-size:14px}
-.sb-pts{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--stamp)}
+.sb-pts{font-size:12px;font-weight:800;letter-spacing:.01em;color:var(--stamp);
+  font-family:'Roboto Mono',monospace}
 .stakebar.empty{border-top:1px dashed rgba(200,52,42,.45)}
 .stakebar.empty .sb-l{color:var(--stamp)}
 @keyframes slam{0%{transform:rotate(-26deg) scale(2.1);opacity:0}
@@ -221,7 +327,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .tbrow .gs{font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px}
 .tbrow .df{font-size:10px;color:var(--chalk);min-width:52px;text-align:right;font-weight:600}
 .tbrow.win .gs{color:var(--live)}
-.tbrow.over .gs{color:rgba(250,247,241,.32);text-decoration:line-through}
+.tbrow.over .gs{color:rgba(250,247,241,.6);text-decoration:line-through}
 .tbrow.me{color:var(--paper)}
 .tbrow.me .nm::after{content:' · you';font-size:9.5px;color:var(--stamp);
   letter-spacing:.06em;text-transform:uppercase;font-weight:800}
@@ -231,7 +337,39 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .gridhead span{font-size:10.5px;color:var(--chalk);font-weight:600}
 .gridmine{padding:0 var(--pad) 12px;font-size:12px;line-height:1.5;color:var(--chalk)}
 .gridmine b{color:var(--paper);font-family:'Roboto Mono',monospace;font-weight:700}
-.gridscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+/* The Grid tab fills the screen under the sticky topbar and scrolls
+   INSIDE itself, so the page behind it does not move. That is what makes
+   the sticky column headers actually stick: they hold against their own
+   scroll box, and the box no longer slides up out of the viewport when
+   the page scrolls. Bounding the box alone was not enough — the 69px of
+   heading above it still scrolled away and took the box's top edge, and
+   with it the header, 64px past the top of the screen. */
+#v-grid:not(.hide){display:flex;flex-direction:column;
+  height:calc(100vh - var(--topbar-h, 155px));
+  height:calc(100dvh - var(--topbar-h, 155px))}
+#gridBody{display:flex;flex-direction:column;flex:1;min-height:0}
+/* min-height keeps a very small screen from squeezing the table to
+   nothing; if it cannot fit, the page scrolls again, which is the right
+   fallback. */
+.gridscroll{flex:1 1 auto;min-height:200px}
+
+/* This box is the scrollport the sticky header sticks to, and it only
+   becomes one if it has a height limit.
+
+   It did not. `overflow-x:auto` alone makes the browser treat the box as
+   scrollable on both axes, so `thead th{position:sticky;top:0}` bound
+   itself to THIS element rather than the page — and with no height, the
+   element simply grew to 2,458px, the page did all the scrolling, and the
+   header left the screen with everything else. Measured at 50 players:
+   900px down, the header sat at top:-900. So from about row 12 on you
+   were reading a wall of three-letter team codes with no way to tell
+   which column was which game. The rule looked right in the stylesheet
+   and did nothing on screen, which is why reading the CSS never caught
+   it — only scrolling a full-size pool does.
+
+   The height is set in sizeGrid() rather than here because it depends on
+   the sticky topbar's real height, which changes with the week strip. */
+.gridscroll{overflow:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
 .gridscroll::-webkit-scrollbar{height:5px}
 .gridscroll::-webkit-scrollbar-thumb{background:rgba(250,247,241,.2);border-radius:3px}
 table.pool{border-collapse:separate;border-spacing:0;font-size:11px}
@@ -239,7 +377,13 @@ table.pool th,table.pool td{padding:0}
 th.pl,td.pl{position:sticky;left:0;z-index:3;background:var(--shell);
   min-width:112px;max-width:112px;text-align:left;padding:0 10px 0 var(--pad);
   box-shadow:6px 0 8px -6px rgba(0,0,0,.65)}
-thead th{height:54px;vertical-align:bottom;padding-bottom:6px}
+/* Sticky, so the matchup stays on screen while you scroll a 40-row pool.
+   The player column was already pinned horizontally; the game identity
+   was not, so past about row 25 you were reading a wall of team codes
+   with no way to tell which column was which without scrolling back. */
+thead th{height:54px;vertical-align:bottom;padding-bottom:6px;
+  position:sticky;top:0;z-index:5;background:var(--shell-2)}
+th.pl{z-index:6}
 th.gm{min-width:50px;width:50px;text-align:center;font-weight:700;line-height:1.25}
 th.gm .aw{color:var(--chalk);font-size:10px;letter-spacing:.02em}
 th.gm .hm{color:var(--paper);font-size:10px;letter-spacing:.02em}
@@ -276,13 +420,13 @@ tbody tr.me .plrank{color:var(--stamp)}
 .cell b{font-size:11px;font-weight:800;letter-spacing:-.02em;line-height:1}
 .cell i{font-style:normal;font-size:8.5px;font-weight:700;opacity:.65;
   font-family:'Roboto Mono',monospace}
-.cell.hidden{border-style:dashed;border-color:rgba(250,247,241,.16);background:transparent;color:rgba(250,247,241,.22)}
+.cell.hidden{border-style:dashed;border-color:rgba(250,247,241,.16);background:transparent;color:var(--chalk-soft)}
 .cell.hidden b{font-size:13px;letter-spacing:.06em}
 .cell.pend{background:var(--shell-3);color:var(--paper)}
 .cell.hit{background:var(--hit);border-color:var(--hit);color:#fff}
-.cell.miss{background:transparent;border-color:rgba(250,247,241,.1);color:rgba(250,247,241,.3)}
+.cell.miss{background:transparent;border-color:rgba(250,247,241,.1);color:rgba(250,247,241,.62)}
 .cell.miss b{text-decoration:line-through;text-decoration-thickness:1.5px}
-.cell.none{background:transparent;border-color:rgba(200,52,42,.3);color:rgba(200,52,42,.7)}
+.cell.none{background:transparent;border-color:rgba(200,52,42,.3);color:#E0645A}
 
 td.tot{position:sticky;right:0;z-index:3;background:var(--shell);min-width:52px;text-align:center;
   box-shadow:-6px 0 8px -6px rgba(0,0,0,.65)}
@@ -318,7 +462,7 @@ tbody tr.me td.tot{background:#241F1E}
   margin-bottom:5px;font-weight:600}
 .submit{flex:0 0 auto;border:0;border-radius:8px;padding:12px 20px;background:var(--stamp);color:#fff;
   font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;cursor:pointer}
-.submit:disabled{background:var(--shell-2);color:rgba(250,247,241,.3);cursor:not-allowed}
+.submit:disabled{background:var(--shell-2);color:rgba(250,247,241,.62);cursor:not-allowed}
 
 .scrim{position:fixed;inset:0;z-index:60;background:rgba(10,10,9,.62);opacity:0;
   pointer-events:none;transition:opacity .22s}
@@ -327,7 +471,17 @@ tbody tr.me td.tot{background:#241F1E}
   border-radius:18px 18px 0 0;padding:16px var(--pad) calc(20px + env(safe-area-inset-bottom));
   transform:translateY(102%);transition:transform .28s cubic-bezier(.3,0,.2,1);max-height:82vh;overflow:auto}
 .sheet.on{transform:translateY(0)}
+/* [hidden] must actually hide: the sheet has display:block and only
+   translated itself off-screen, so while "closed" it still intercepted
+   taps over the middle of the viewport and still held a focusable
+   button in the tab order. */
+.sheet[hidden]{display:none}
 .grab{width:34px;height:4px;border-radius:2px;background:rgba(21,23,27,.18);margin:0 auto 13px}
+/* An explicit close, because the scrim above a 560px sheet is a sliver. */
+.sheet-x{position:absolute;top:10px;right:10px;width:44px;height:44px;border:0;
+  background:none;color:var(--ink-soft);font-size:16px;cursor:pointer;
+  display:grid;place-items:center;border-radius:50%;font-family:inherit}
+.sheet-x:hover{background:rgba(21,23,27,.06)}
 .sheet h3{margin:0 0 3px;font-size:16px;font-weight:800;letter-spacing:-.02em}
 .sheet .sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:14px;line-height:1.45}
 .numgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
@@ -422,7 +576,7 @@ tbody tr.me td.tot{background:#241F1E}
 .ob-btn{width:100%;padding:16px;border-radius:11px;border:0;background:var(--stamp);color:#fff;
   font-family:inherit;font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
   cursor:pointer;-webkit-appearance:none}
-.ob-btn:disabled{background:var(--shell-2);color:rgba(250,247,241,.3)}
+.ob-btn:disabled{background:var(--shell-2);color:rgba(250,247,241,.62)}
 .ob-skip{width:100%;margin-top:11px;padding:13px;background:none;border:0;color:var(--chalk);
   font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.07em;
   text-transform:uppercase;cursor:pointer}
@@ -470,6 +624,25 @@ tbody tr.me td.tot{background:#241F1E}
   font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.09em;
   text-transform:uppercase;cursor:pointer}
 .saved{color:var(--live)!important}
+/* A failed save has to look like a problem, not like a status. */
+.savefail{color:var(--stamp)!important;font-weight:800}
+
+/* ---------- TOAST ----------
+   Sits above the bottom bar on every tab, clear of the home indicator. */
+.toast{position:fixed;left:50%;transform:translateX(-50%) translateY(8px);
+  bottom:calc(84px + env(safe-area-inset-bottom));z-index:60;
+  max-width:calc(100% - 32px);padding:11px 16px;border-radius:11px;
+  background:#26251F;color:var(--paper);border:1px solid rgba(250,247,241,.16);
+  box-shadow:0 10px 28px rgba(0,0,0,.45);
+  font-size:13.5px;font-weight:650;letter-spacing:.01em;line-height:1.35;
+  text-align:center;opacity:0;pointer-events:none;
+  transition:opacity .18s ease,transform .18s ease}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.ok{background:#1F3A1C;border-color:rgba(110,190,100,.45);color:#C9EFC2}
+.toast.fail{background:#3B1714;border-color:rgba(210,90,80,.5);color:#FFD9D4;
+  pointer-events:auto}
+.toast.wait{background:#26251F;color:var(--chalk)}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
 
 /* ---------- sign-in hero: the product demonstrating itself ---------- */
 .mc{position:relative;background:var(--paper);border-radius:11px;overflow:hidden;
@@ -567,7 +740,7 @@ tbody tr.me td.tot{background:#241F1E}
   border-radius:10px;background:none;color:var(--chalk);font-family:inherit;font-size:11px;
   font-weight:800;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;-webkit-appearance:none}
 .boot-out.hide{display:none}
-.boot-why{margin-top:18px;font-size:10.5px;line-height:1.5;color:rgba(250,247,241,.34);
+.boot-why{margin-top:18px;font-size:10.5px;line-height:1.5;color:rgba(250,247,241,.62);
   font-family:ui-monospace,Menlo,monospace;word-break:break-word}
 .boot-why.hide{display:none}
 @media(prefers-reduced-motion:reduce){.boot-bar i{animation:none;width:100%}}
@@ -695,6 +868,21 @@ tbody tr.me td.tot{background:#241F1E}
   color:#231F16;font-family:inherit;font-size:11px;font-weight:800;letter-spacing:.07em;
   text-transform:uppercase;cursor:pointer}
 
+/* The update prompt. Deliberately the same shape as the alert bar
+   rather than a modal: a new version being ready is information, not an
+   interruption, and a dialog that steals focus mid-pick is worse than a
+   stale worker. Green rather than amber, because nothing is wrong. */
+.updbar{display:flex;align-items:center;gap:12px;margin:13px var(--pad) 0;
+  padding:11px 13px;border-radius:10px;background:rgba(74,155,94,.12);
+  border:1px solid rgba(74,155,94,.45)}
+.upd-t{flex:1;min-width:0}
+.upd-t b{display:block;font-size:12.5px;font-weight:800;color:var(--go,#7FC894)}
+.upd-t span{display:block;font-size:11px;line-height:1.45;color:#BFE0C8;margin-top:2px}
+.upd-b{flex:0 0 auto;border:0;border-radius:7px;padding:9px 14px;
+  background:var(--go,#4A9B5E);color:#0E1711;font-family:inherit;font-size:11px;
+  font-weight:800;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;
+  min-height:36px}
+
 .hide{display:none}
 :focus-visible{outline:2.5px solid var(--lock);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -717,13 +905,13 @@ tbody tr.me td.tot{background:#241F1E}
     <div class="clock"><span class="dot"></span><span id="countdown">—</span></div>
   </div>
   <div class="weeks" id="weeks"></div>
-  <div class="tabs">
-    <div class="tab on" data-tab="picks">Picks</div>
-    <div class="tab" data-tab="grid">Grid</div>
-    <div class="tab" data-tab="standings">Standings</div>
-    <div class="tab hide" data-tab="archive" id="tabArchive">Archive</div>
-    <div class="tab" data-tab="help">Help</div>
-    <div class="tab" data-tab="settings">Settings</div>
+  <div class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab on" type="button" role="tab" aria-selected="true" data-tab="picks">Picks</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-tab="grid">Grid</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-tab="standings">Standings</button>
+    <button class="tab hide" type="button" role="tab" aria-selected="false" data-tab="archive" id="tabArchive">Archive</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-tab="help">Help</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-tab="settings">Settings</button>
   </div>
 </div>
 
@@ -733,6 +921,11 @@ tbody tr.me td.tot{background:#241F1E}
       <span id="abWhy">You will not be warned before games lock.</span></div>
     <button class="ab-b" id="abFix">Turn on</button>
   </div>
+  <div class="updbar hide" id="updbar" role="status">
+    <div class="upd-t"><b>A new version is ready</b>
+      <span>Your picks are already saved. This takes a second.</span></div>
+    <button class="upd-b" id="updGo">Update</button>
+  </div>
   <div class="tray" id="tray">
     <div class="tray-head">
       <div class="tray-title">Confidence ranks</div>
@@ -740,8 +933,7 @@ tbody tr.me td.tot{background:#241F1E}
     </div>
     <div class="stamps" id="stamps"></div>
     <div class="inplay" id="inplay"></div>
-    <div class="tray-legend"><span>1 · lock of the week</span>
-      <span>coin flip · <i id="trayMax">16</i></span></div>
+    <div class="tray-legend"><span>1 pays most · <i id="trayMax">16</i> pays least</span></div>
   </div>
   <div id="slate"></div>
 </div>
@@ -887,7 +1079,13 @@ tbody tr.me td.tot{background:#241F1E}
         <button class="mbtn" data-mode="straight">Straight-up</button>
         <button class="mbtn on" data-mode="confidence">Confidence</button>
       </div>
-      <div class="notice"><b>Takes effect Week 2</b>
+      <!-- The week here is written by renderBar(). It used to be the
+           literal text "Takes effect Week 2", which was wrong for 17 of
+           the 18 weeks, on the only copy explaining the most
+           consequential setting in the app. renderBar already targeted
+           #modeWhen — an id that did not exist anywhere in the file, so
+           the fix was a no-op for as long as it has been there. -->
+      <div class="notice"><b>Takes effect <span id="modeWhen">next week</span></b>
         Changing scoring mid-week would rescore picks people already made. The new mode starts at the next week boundary.</div>
     </div>
     <div class="opt">
@@ -918,6 +1116,11 @@ tbody tr.me td.tot{background:#241F1E}
       <button class="mbtn" style="margin-top:12px;width:auto;padding:11px 16px" id="obReplay">Show me again</button></div>
   </div>
 </div>
+
+<!-- Save status. Outside #bar deliberately: #bar is hidden on every tab
+     but Picks, and the writes most likely to FAIL happen in Settings.
+     role=status so it is announced rather than only seen. -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="bar" id="bar">
   <div class="progress">
@@ -954,8 +1157,10 @@ tbody tr.me td.tot{background:#241F1E}
 </div>
 
 <div class="scrim" id="scrim"></div>
-<div class="sheet" id="sheet">
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"
+     aria-labelledby="sheetTitle" hidden>
   <div class="grab"></div>
+  <button class="sheet-x" id="sheetX" type="button" aria-label="Close">&#10005;</button>
   <h3 id="sheetTitle">Rank this pick</h3>
   <div class="sub" id="sheetSub"></div>
   <div class="numgrid" id="numgrid"></div>
@@ -992,10 +1197,32 @@ const T={
  SEA:['Seattle','Seahawks','#002244','#69BE28'],TB:['Tampa Bay','Buccaneers','#D50A0A','#FF7900'],
  TEN:['Tennessee','Titans','#0C2340','#4B92DB'],WSH:['Washington','Commanders','#5A1414','#FFB612']};
 
-let PLAYERS=['Lee','Monse','Eliana','Mateo','Sofia'];   // live: from the roster
+/* PLAYERS holds player KEYS, not names.
+
+   In the live app a key is the player's uid; in DEMO it is their name.
+   This distinction is the whole fix for a bug that made the app unusable
+   for a real pool: names are not unique and, with PIN sign-in, were not
+   even populated — every member document was written with the literal
+   name "Player". Keying by name then collapsed the entire pool into ONE
+   bucket, so five people saw five identical rows showing one person's
+   picks, and the standings merged into whichever row was read last.
+
+   NAMES maps key -> display name. Never render a key; never key off a
+   name. NAME() and esc() below are the only sanctioned way out. */
+let PLAYERS=['Lee','Monse','Eliana','Mateo','Sofia'];   // live: uids from the roster
+let NAMES={};                                            // key -> display name
 let RECORDS={};                                          // live: team W-L, optional
-let STANDINGS={};   // name -> {pts,hits,weekWins,weekSeconds,perfectWeeks}
-let TIEBREAKS={};   // name -> guessed total
+let STANDINGS={};   // key -> {pts,hits,weekWins,weekSeconds,perfectWeeks}
+let TIEBREAKS={};   // key|week -> guessed total
+
+/* Everything a player supplies about themselves reaches innerHTML, and a
+   member can set their own name to anything at all — the security rule
+   only checks WHO is writing, not WHAT. Without escaping, one member
+   could run script in every other member's session, on an origin holding
+   their sign-in cookie. */
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const NAME=k=>esc(NAMES[k]||k||'Player');
 
 /* ---------- RANK AND PAYOUT ----------
    Rank 1 is your strongest pick; rank 16 is the coin flip.
@@ -1006,10 +1233,21 @@ const RANK_ONE_IS_BEST=true;
 /* Games per week is NOT always 16. Bye weeks drop it to 13-15, so the
    rank ceiling and every payout move with the slate. */
 const nGames=w=>(WEEKS[w]||[]).length;
-const pay=(r,n)=>!r?1:(RANK_ONE_IS_BEST?(n+1-r):r);
+/* Floored at zero, and it must stay in step with pay() in
+   scripts/score_week.py. A rank can outlive the slate it was made
+   against — rank a 16-game week, have one game postponed into the next
+   week, and the 15-game payout for rank 16 is 0 and for a 14-game week
+   is MINUS ONE: a correct pick that took points off you. */
+const pay=(r,n)=>!r?1:Math.max(0,RANK_ONE_IS_BEST?(n+1-r):r);
 const perfectScore=n=>n*(n+1)/2;
 const hash=s=>{let x=2166136261;for(const c of s)x=Math.imul(x^c.charCodeAt(0),16777619);return x>>>0;};
-const ME='Lee';
+/* MY key. In DEMO this is a name; live it is set to the signed-in uid the
+   moment auth resolves. It used to be the hardcoded string 'Lee', so for
+   every other human being in the pool "is this row mine?" was permanently
+   false: their own picks showed as sealed dots, their banked points read
+   zero all season, and whoever was actually named Lee saw a stranger's
+   unsaved picks drawn over the grid. */
+let ME='Lee';
 
 /* four distinct weekly slates */
 const SLATES={
@@ -1092,7 +1330,19 @@ const scoreOf=g=>{
    a Week 12 game, so nothing should be shown. */
 const LINE_WINDOW=8*24*3600*1000;
 const lineOut=g=>(g.kick-Date.now())<=LINE_WINDOW;
-const isFinal=g=>Date.now()>=g.kick+200*60000;
+/* A game is final when the SERVER says so, not when the clock guesses.
+
+   This used to be "kickoff + 3h20m". An overtime game, a weather delay,
+   or one missed scoring run flipped the app to Final while `winner` was
+   still null — and a null winner matches nobody, so every single player
+   in the pool was marked with a red strikethrough miss on that game,
+   their points were moved out of "in play" into a permanent zero, and the
+   card printed the literal text "Final · null". The reverse was just as
+   wrong: a game that ended in 2h50m sat as "In progress" for half an hour
+   after the result was already stored and shown by the scoring job.
+
+   score_week.py and worker/live.js both write `status`; nothing read it. */
+const isFinal=g=>DEMO?(Date.now()>=g.kick+200*60000):(g.status==='final');
 /* winner of a finished game */
 const result=g=>DEMO?(hash(g.id+'res')%100<52?g.h:g.a):(g.winner||null);
 
@@ -1140,6 +1390,14 @@ const tbActual=g=>{
   if(!DEMO){const s=scoreOf(g);return s?s[0]+s[1]:null;}
   return 34+(hash(g.id+'total')%24);};
 let lockedSet=new Set(), finalSet=new Set();
+/* Which weeks this person has said they are finished with. Per device
+   and per week — "Lock in" is a completeness acknowledgement, not a save
+   (every pick is written the moment it is tapped), so localStorage is
+   the honest home for it. Declared up here because renderBar() reads it
+   and renderBar can run before the handler further down is reached. */
+const lockedWeeks=new Set((()=>{
+  try{ return JSON.parse(localStorage.getItem('ps_locked')||'[]'); }catch{ return []; }
+})());
 const $=s=>document.querySelector(s);
 const slate=()=>WEEKS[state.week];
 const myPick=id=>state.picks[id];
@@ -1162,10 +1420,21 @@ function renderWeeks(){
   const all=Object.keys(WEEKS).map(Number).sort((a,b)=>a-b);
   for(const w of all){
     const live=WEEKS[w].some(g=>isLive(g)&&!isFinal(g));
-    h+=`<div class="wk${w===state.week?' on':''}" data-wk="${w}">
-      ${live?'<span class="live-d"></span>':''}<b>${w}</b><span>Wk</span></div>`;}
+    h+=`<button type="button" class="wk${w===state.week?' on':''}" data-wk="${w}"
+      ${w===state.week?'aria-current="true"':''}
+      aria-label="Week ${w}${live?', games in progress':''}">
+      ${live?'<span class="live-d"></span>':''}<b>${w}</b></button>`;}
   const strip=$('#weeks');
+  /* Keep where they had scrolled to. innerHTML= resets scrollLeft, and
+     renderWeeks runs from render(), which runs from tick() every second
+     a game locks and from both live listeners. So on a Sunday, a player
+     scrolling the strip forward to look at Week 14 was snapped back to
+     the start every few seconds — and the re-centring below did not
+     bring it back, because it only fires when the SELECTED week is off
+     screen, which at scrollLeft 0 in Week 3 it is not. */
+  const keepLeft=strip.scrollLeft;
   strip.innerHTML=h;
+  if(keepLeft)strip.scrollLeft=keepLeft;
 
   /* Centre the selected week. The strip scrolls, and by about week 8 the
      current week sits off the right-hand edge — so from midseason on, the
@@ -1200,12 +1469,31 @@ const TEAM=c=>T[c]||[String(c||'?'),String(c||'?'),FALLBACK[2],FALLBACK[3]];
 
 function mark(c){const[,,p,s]=TEAM(c);
   return `<div class="mark" style="background:${p};--sec:${s}"><span>${c}</span></div>`;}
+/* Readable text for an arbitrary brand colour.
+   Relative luminance per WCAG, then whichever of ink/paper contrasts
+   better. Four NFL primaries are too light for white text. */
+function onColor(hex){
+  const h=String(hex||'').replace('#','');
+  if(h.length!==6)return '#fff';
+  const lin=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);};
+  const L=.2126*lin(parseInt(h.slice(0,2),16))
+         +.7152*lin(parseInt(h.slice(2,4),16))
+         +.0722*lin(parseInt(h.slice(4,6),16));
+  // Contrast against white vs against near-black; take the better one.
+  return (1.05/(L+.05)) >= ((L+.05)/.05) ? '#fff' : '#15171B';
+}
+
 function side(code,which,cls,bg,ha,sc){const[city,team]=TEAM(code);
   return `<button class="side ${which} ${cls}" data-side="${which==='l'?'a':'h'}" ${bg}>
     ${mark(code)}<div class="names"><div class="city">${city}</div>
     <div class="team">${team}</div>
     ${sc!=null?`<div class="scr mono">${sc}</div>`
-              :`<div class="rec mono">${ha} · ${rec(code)}</div>`}</div></button>`;}
+              /* RECORDS is only ever populated in DEMO, so on live data
+                 rec() returned '' and every one of the 32 sides on a
+                 slate printed a dangling "AWAY ·" — a separator with
+                 nothing after it. It reads as a rendering bug because it
+                 is one. */
+              :`<div class="rec mono">${ha}${rec(code)?' · '+rec(code):''}</div>`}</div></button>`;}
 
 /* How the pool picked. Only ever computed for games that have kicked
    off — before that, the picks are sealed and this would leak them. */
@@ -1239,6 +1527,21 @@ function consensusBar(g){
 }
 
 function renderSlate(){
+  /* A re-render replaces #tbin, which drops the keyboard mid-number.
+     render() fires from tick() on every lock and from both live
+     listeners, i.e. constantly on a Sunday evening — exactly when the
+     tiebreaker gets typed. Remember what they had and put it back. */
+  const _tb=document.getElementById('tbin');
+  const _tbFocused=_tb&&document.activeElement===_tb;
+  const _tbVal=_tb?_tb.value:null;
+  const _tbSel=_tbFocused?[_tb.selectionStart,_tb.selectionEnd]:null;
+  const _restoreTb=()=>{
+    if(_tbVal==null)return;
+    const el=document.getElementById('tbin'); if(!el)return;
+    if(_tbFocused||el.value!==_tbVal)el.value=_tbVal;
+    if(_tbFocused){ el.focus(); try{ el.setSelectionRange(_tbSel[0],_tbSel[1]); }catch{} }
+  };
+  queueMicrotask(_restoreTb);
   const gs=[...slate()].sort((a,b)=>a.show-b.show), N=gs.length;
   /* Group by the viewer's local date, not the US one. In Japan the
      Sunday 1pm slate lands on Monday, and the header should say so. */
@@ -1250,29 +1553,70 @@ function renderSlate(){
     if(k!==day){day=k;
       const grp=groups[k], local=fDay(g.show), us=usDay(g.show);
       const tag=local===us?'':`<span class="slatetag">${us} slate</span>`;
-      h+=`<div class="dayhead"><h2>${local}</h2>${tag}<div class="line"></div>
-        <div class="n mono">${k} · <span class="tzchip" id="tzchip">${tzAbbr()}</span> · ${grp.length} game${grp.length===1?'':'s'}</div></div>`;}
+      h+=`<div class="dayhead"><h2>${local}</h2><div class="line"></div>
+        <div class="n mono">${k} · <span class="tzab">${tzAbbr()}</span> · ${grp.length} game${grp.length===1?'':'s'}</div></div>`
+        +(tag?`<div class="slatenote">${tag}</div>`:'');}
     const p=myPick(g.id),L=isLive(g),sc=scoreOf(g);
     const aCls=p?(p.winner===g.a?'won':'lost'):'',hCls=p?(p.winner===g.h?'won':'lost'):'';
-    const aBg=p&&p.winner===g.a?`style="background:${TEAM(g.a)[2]}"`:'';
-    const hBg=p&&p.winner===g.h?`style="background:${TEAM(g.h)[2]}"`:'';
+    /* White on the team's own primary fails WCAG on four of the 32 clubs
+       — Cincinnati is 3.37:1, then Miami, Carolina and the Chargers — so
+       on those the selected team's own name was the hardest thing on the
+       card to read. Pick the text colour from the background's luminance
+       instead of assuming white always wins. */
+    const aBg=p&&p.winner===g.a?`style="background:${TEAM(g.a)[2]};color:${onColor(TEAM(g.a)[2])}"`:'';
+    const hBg=p&&p.winner===g.h?`style="background:${TEAM(g.h)[2]};color:${onColor(TEAM(g.h)[2])}"`:'';
     /* The stake gets its own row under the matchup. It used to float over
        the card corner, where it collided with the countdown and clipped
        the home team's name. */
     let stake='';
+    /* A real <button>, and quieter.
+
+       Every card repeated the shouted label "CONFIDENCE RANK" beside the
+       rank circle — sixteen times down the page, saying the same thing
+       the circle already says. The label is now only on the empty state,
+       where it is an instruction rather than a caption.
+
+       It was also a div with role="button" and a click-only handler, so
+       it advertised itself to keyboard users and then ignored Enter and
+       Space. As a real button it works, focuses and announces itself. */
     if(state.mode==='confidence'&&p&&!L)
       stake=p.weight
-        ? `<div class="stakebar" role="button" tabindex="0" data-stake="${g.id}">
-             <span class="sb-l">Confidence rank</span>
+        ? `<button type="button" class="stakebar" data-stake="${g.id}"
+             aria-label="Rank ${p.weight}, pays ${pay(p.weight,N)} points. Change it.">
+             <span class="sb-l">Your stake</span>
              <span class="sb-r"><span class="sb-num set">${p.weight}</span>
-             <span class="sb-pts">pays ${pay(p.weight,N)} points</span></span></div>`
-        : `<div class="stakebar empty" role="button" tabindex="0" data-stake="${g.id}">
-             <span class="sb-l">Tap to rank this pick</span>
-             <span class="sb-r"><span class="sb-num blank">?</span></span></div>`;
+             <span class="sb-pts">${pay(p.weight,N)} pts</span></span></button>`
+        : `<button type="button" class="stakebar empty" data-stake="${g.id}"
+             aria-label="Stake a confidence rank on this pick">
+             <span class="sb-l">Tap to stake a rank</span>
+             <span class="sb-r"><span class="sb-num blank">?</span></span></button>`;
     const band=L?`<div class="lockband"><span>${isFinal(g)
-      ?`Final · ${result(g)} ${sc?Math.max(sc[0],sc[1])+'-'+Math.min(sc[0],sc[1]):''}`
+      // A genuine tie is written with no winner, so say "tie" rather than
+      // printing the word "null" at people.
+      ?`Final · ${result(g)||'tie'} ${sc?Math.max(sc[0],sc[1])+'-'+Math.min(sc[0],sc[1]):''}`
       :'In progress · locked'}</span>${
-      p?`<span>You took ${p.winner}${p.weight?` · rank ${p.weight} · ${pay(p.weight,N)} pts`:''}</span>`
+      /* WHAT THE PICK ACTUALLY DID, not what it would have been worth.
+
+         This printed `pay(weight)` unconditionally, without ever
+         consulting isFinal() or result() — so a card could read
+         "Final · GB 13-10" on the left and "You took DET · rank 1 ·
+         16 pts" on the right. You backed the Lions, the Lions lost, and
+         the app told you it banked you 16 points, while the strip above
+         said 0 banked. Two numbers on one screen that cannot both be
+         true is the fastest way to make someone stop trusting a scoring
+         app. Now: earned if it won, a plain zero if it lost, and clearly
+         provisional while the game is still being played. */
+      p?(()=>{
+          const w=p.weight, pts=pay(w,N), R=result(g);
+          const rank=w?` · rank ${w}`:'';
+          if(isFinal(g)){
+            if(!R)          return `<span>You took ${p.winner}${rank} · no score (tie)</span>`;
+            return p.winner===R
+              ? `<span class="won-pts">You took ${p.winner}${rank}${w?` · +${pts} pts`:' · +1 pt'}</span>`
+              : `<span class="miss">You took ${p.winner}${rank} · 0 pts</span>`;
+          }
+          return `<span>You took ${p.winner}${rank}${w?` · ${pts} pts if it holds`:''}</span>`;
+        })()
        :`<span class="miss">No pick · 0 pts</span>`}</div>`:'';
     h+=`<div class="card${L?' locked':''}" data-game="${g.id}">
       <div class="meta"><span class="mono">${fT(g.show)}</span><span class="net">${g.net}</span>
@@ -1326,10 +1670,25 @@ function renderGrid(){
   $('#gridTitle').textContent=`Week ${state.week}`;
   $('#gridSub').textContent=`${finals} final · ${started-finals} live · ${gs.length-started} to come`;
   const mine=liveWeek(ME,state.week);
-  $('#gridMine').innerHTML=mine.live>0
-    ? `You have <b>${mine.got}</b> in the bank and <b>${mine.live}</b> still in play.
-       Best case this week: <b>${mine.max}</b>.`
-    : (finals?`Your week finished on <b>${mine.got}</b>.`:'');
+  /* Three cases, not two.
+
+     `liveWeek` returns live:0 for someone who has not picked, so an
+     unpicked week fell into the "finished" branch: a player with four
+     games still to come, at 3pm on Sunday, was told "Your week finished
+     on 0." That is both false and the most demotivating sentence the app
+     could produce, delivered at the exact moment it should be pushing
+     them to pick. */
+  const toCome=gs.filter(g=>!isLive(g)).length;
+  const upside=gs.filter(g=>!isLive(g)).reduce((a,_,i,arr)=>a+pay(arr.length-i,gs.length),0);
+  const unpicked=gs.filter(g=>!isLive(g)&&!pickOf(ME,g.id)).length;
+  $('#gridMine').innerHTML=
+      mine.live>0 ? `<b>${mine.got}</b> banked · <b>${mine.live}</b> in play ·
+                     best case <b>${mine.max}</b>`
+    : unpicked>0  ? `<b>${unpicked}</b> ${unpicked===1?'game':'games'} still to pick`
+                    +(mine.got?` · <b>${mine.got}</b> banked`:'')
+    : toCome>0    ? `<b>${mine.got}</b> banked · <b>${toCome}</b> still to come`
+    : finals      ? `Your week finished on <b>${mine.got}</b>.`
+    : '';
 
   if(!started){
     $('#gridBody').innerHTML=`<div class="empty"><h4>Nothing to show yet</h4>
@@ -1349,9 +1708,15 @@ function renderGrid(){
   head+=`<th class="tot">Pts</th></tr>`;
 
   let body='';
+  /* Nobody leads a week in which nobody has scored. The gold row used
+     to be unconditional, so the moment the first game merely KICKED OFF
+     — before a single result was in — the table sat on 0 points with
+     row one crowned, which is whoever happens to sort first. The
+     Standings tab already guards this; the Grid did not. */
+  const anyPts=rows.some(r=>r.pts>0);
   rows.forEach((r,i)=>{
-    body+=`<tr class="${r.p===ME?'me ':''}${i===0?'lead':''}"><td class="pl"><div class="plname">
-      <div class="plrank mono">${i+1}</div><div class="plmeta"><b>${r.p}</b>
+    body+=`<tr class="${r.p===ME?'me ':''}${i===0&&anyPts?'lead':''}"><td class="pl"><div class="plname">
+      <div class="plrank mono">${i+1}</div><div class="plmeta"><b>${NAME(r.p)}</b>
       <span class="mono">${r.hits} correct</span></div></div></td>`;
     gs.forEach(g=>{
       const shown=isLive(g)||r.p===ME;
@@ -1387,6 +1752,14 @@ function renderGrid(){
   body+=`<td class="tot"></td></tr>`;
 
   gridRank[state.week]=Object.fromEntries(rows.map((r,i)=>[r.p,i+1]));
+  /* Hold the horizontal scroll across the rebuild. The Grid is wider
+     than any phone, and this innerHTML= throws scrollLeft away — while
+     render() fires from both live listeners on every score write. A
+     player who scrolled across to game 12 to see who took the Chiefs
+     was snapped back to game 1 every few seconds, all afternoon. */
+  const gsOld=$('#gridBody .gridscroll');
+  const keepX=gsOld?gsOld.scrollLeft:0;
+  const keepY=gsOld?gsOld.scrollTop:0;
   $('#gridBody').innerHTML=`<div class="gridscroll"><table class="pool">
     <thead>${head}</thead><tbody>${body}</tbody></table></div>
     ${tbPanel()}
@@ -1395,7 +1768,26 @@ function renderGrid(){
       <span><i class="lg-miss"></i>Wrong</span>
       <span><i class="lg-pend"></i>In progress</span>
       <span><i class="lg-hid"></i>Sealed until kickoff</span></div>`;
+  if(keepX||keepY){
+    const gsNew=$('#gridBody .gridscroll');
+    if(gsNew){ gsNew.scrollLeft=keepX; gsNew.scrollTop=keepY; }
+  }
+  sizeGrid();
 }
+
+/* Publish the sticky topbar's real height, which is what the Grid tab
+   sizes itself against.
+
+   Measured rather than hardcoded: the topbar carries the week strip, and
+   a magic number in the stylesheet would be wrong on the first phone
+   that disagreed with it. */
+function sizeGrid(){
+  const top=document.querySelector('.topbar');
+  const h=top?Math.round(top.getBoundingClientRect().height):155;
+  if(h>0)document.documentElement.style.setProperty('--topbar-h',h+'px');
+}
+/* Rotating the phone changes the topbar's height. */
+addEventListener('resize',sizeGrid);
 
 function tbPanel(){
   const g=tbGame(state.week);
@@ -1422,7 +1814,7 @@ function tbPanel(){
     ${rows.map(r=>{
       const over=F&&r.guess>actual;
       const cls=[r.p===ME?'me':'',r.p===winner?'win':'',over?'over':''].filter(Boolean).join(' ');
-      return `<div class="tbrow ${cls}"><span class="nm">${r.p}</span>
+      return `<div class="tbrow ${cls}"><span class="nm">${NAME(r.p)}</span>
         <span class="gs">${r.guess}</span>
         <span class="df">${F?(over?'over':`${actual-r.guess} under`):''}</span></div>`;}).join('')}
   </div>`;
@@ -1448,11 +1840,19 @@ function renderTray(){
    stops hearing from the app and assumes it is broken. So check on every
    render and say so plainly, with a one-tap repair. */
 const ALERT_STATE = DEMO ? 'permission' : null;   // demo: force the banner
-async function renderAlerts(){
+let alertsChecked=false;
+/* Called from boot() and on resume — NOT from render().
+   render() runs on every tick and every Firestore snapshot, and each call
+   awaited a service-worker ready plus an FCM getToken(): dozens of network
+   round trips a minute on a live Sunday, with the banner flickering as
+   they raced. */
+async function renderAlerts(force){
   const bar=$('#alertbar'); if(!bar)return;
+  if(alertsChecked&&!force)return;
+  alertsChecked=true;
   let reason=ALERT_STATE;
   if(!DEMO){
-    const h=await PS.alertsHealthy();
+    const h=await PS.alertsHealthy()||{ok:false,reason:'no-token'};
     reason=h.ok?null:h.reason;
   }
   bar.classList.toggle('hide',!reason);
@@ -1460,22 +1860,109 @@ async function renderAlerts(){
   const why={
     permission:'Notifications are switched off for this app.',
     'no-token':'This device is not registered with the pool yet.',
+    'no-worker':'This browser could not start the background worker alerts need. A normal (not private) window is required.',
     unsupported:'This browser cannot send alerts. Add the app to your Home Screen.',
     'signed-out':'Sign in to get reminders.'
   }[reason]||'';
   $('#abWhy').textContent=why+' You will not be warned before games lock.';
 }
 
+/* Turning alerts on has three outcomes and used to report all of them as
+   "Done": granted, denied, and "the browser could not register at all".
+   Denied is the one that mattered — the warning banner stayed up with a
+   button underneath it reading Done, tapping it again did nothing
+   (browsers will not re-prompt after a refusal), and nothing on screen
+   said the fix now lives in the operating system's settings. */
 $('#abFix').addEventListener('click',async()=>{
-  if(!DEMO){
-    try{
-      await Notification.requestPermission();
-      await PS.refreshPushToken();
-      await renderAlerts();
-    }catch(e){ console.warn(e); }
+  const btn=$('#abFix'); if(!btn||btn.disabled)return;
+  const label=btn.textContent;
+  btn.disabled=true; btn.textContent='One moment';
+  try{
+    if(DEMO){ btn.textContent='Done'; return; }
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){
+      // Write into the text node, not the bar — replacing the bar's HTML
+      // would delete this very button along with it.
+      const w=$('#abWhy');
+      if(w)w.textContent="Alerts are blocked for this app. Turn notifications back on in "
+        +"your device settings — the app can't ask again once it has been refused.";
+      btn.style.display='none';
+      return;
+    }
+    await PS.enablePush();            // throws with a readable reason
+    await renderAlerts();
+    btn.textContent='Done';
+  }catch(e){
+    console.warn('enable alerts failed',e);
+    btn.textContent=label;
+    const w=$('#abWhy');
+    if(w)w.textContent=(e&&e.message)||"Alerts couldn't be turned on. Try again in a moment.";
+  }finally{
+    if(btn.textContent==='One moment')btn.textContent=label;
+    btn.disabled=false;
   }
-  $('#abFix').textContent='Done';
 });
+
+/* ---------- THE UPDATE PROMPT ----------
+
+   Without this, a deployed fix reached a phone only when every window of
+   the app was closed — on an iPhone home-screen install, days or weeks.
+   firebase-init.js had the whole mechanism (registerSW's onUpdateReady,
+   sw.js's SKIP_WAITING handler) and NOTHING ever passed a callback, so
+   the prompt did not exist and the handler was dead code.
+
+   Two halves, and both are needed. The button tells the waiting worker
+   to take over; `controllerchange` fires when it actually has, and only
+   then do we reload. Reloading without waiting reloads into the OLD
+   worker and changes nothing, which is the classic version of this bug.
+
+   The reload is guarded because Chrome fires controllerchange again on
+   some navigations, and a reload loop is a far worse bug than a stale
+   worker. */
+let updReloading=false;
+/* WAS THERE A CONTROLLER WHEN THIS PAGE LOADED?
+
+   This guard is the difference between an update prompt and a reload
+   that eats a first-time visitor's sign-up.
+
+   On a FIRST visit there is no controller, so the newly registered
+   worker activates straight away and sw.js's activate handler calls
+   clients.claim() — which claims this very page and fires
+   `controllerchange` on it. Without this check the listener treats that
+   as "the update you asked for has landed" and reloads, a second or two
+   after first paint: exactly while someone is typing their name and
+   email into the sign-in screen. obName/obEmail are module variables
+   and ps_name is only written once they submit, so the reload drops
+   them back to a blank screen 0 with nothing kept. If they had already
+   reached the PIN step, the emailed code is now useless too.
+
+   A controllerchange only means "the update swapped in" when something
+   was controlling the page to begin with. */
+const hadController='serviceWorker' in navigator
+  && !!navigator.serviceWorker.controller;
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(!hadController||updReloading)return;
+    updReloading=true;
+    location.reload();
+  });
+}
+function showUpdate(activate){
+  const bar=$('#updbar'), go=$('#updGo');
+  if(!bar||!go)return;
+  bar.classList.remove('hide');
+  go.onclick=()=>{
+    go.disabled=true; go.textContent='Updating';
+    activate();
+    /* If the worker never takes over — it was already discarded, or the
+       browser refuses — do not leave them staring at a dead button. */
+    setTimeout(()=>{ if(!updReloading){ updReloading=true; location.reload(); } },2500);
+  };
+}
+// Registering the callback is what arms all of the above. Safe to call
+// late: firebase-init keeps the callback in module state precisely so
+// the order of these two registrations cannot matter.
+if(!DEMO&&window.PS&&PS.registerSW)PS.registerSW(showUpdate);
 
 function renderInPlay(){
   const el=$('#inplay'); if(!el)return;
@@ -1499,10 +1986,27 @@ function renderBar(){
   $('#plabel').textContent=!open.length?'Every game is locked'
     :(conf&&picked===open.length&&staked<open.length)?`${open.length-staked} games still need a rank`
     :(picked===open.length&&tbNeeded&&!tbDone)?'Tiebreaker still needs a number'
-    :`${picked} of ${open.length} still open`;
-  $('#submitBtn').disabled=!ready;
-  $('#submitBtn').textContent='Lock in';
+    /* This read "${picked} of ${open.length} still open" — the count of
+       games DONE, described as the count still to do. Zero picks showed
+       "0 of 16 still open" (nothing left to do) and a finished sheet
+       showed "16 of 16 still open" (nothing done), with a full progress
+       bar beside it contradicting the words. */
+    :picked===open.length?`All ${open.length} picked`
+    :`${picked} of ${open.length} picked`;
+  /* "Locked in" has to survive a re-render, or it is a lie.
+     The click handler set the label and nothing else; renderBar reset it
+     unconditionally, and renderBar runs on every score update and every
+     save. So the confirmation lasted until the next Firestore event —
+     often under a second — and there was no way for the app to tell them
+     tomorrow that they had confirmed. It is per week, and it is a local
+     acknowledgement: every pick was already written when it was tapped. */
+  const locked=ready&&lockedWeeks.has(state.week);
+  $('#submitBtn').disabled=!ready||locked;
+  $('#submitBtn').textContent=locked?'Locked in':'Lock in';
   $('#plabel').classList.remove('saved');
+  // The scoring-change notice named a fixed week, so it was wrong for 17
+  // weeks out of 18. It takes effect NEXT week, whenever "now" is.
+  const nx=$('#modeWhen'); if(nx)nx.textContent='Week '+(state.week+1);
 }
 
 /* ONE SVG for the whole award cluster.
@@ -1577,10 +2081,45 @@ function scoredWeeks(){
    not scored yet — which in practice is the week currently being played,
    the one week BOT actually holds. No double counting: a week is either
    scored on the server or live here, never both. */
+/* The server's number for a week, EXCEPT while that week is still being
+   played.
+
+   score_week.py runs three times a week, and two of those runs happen
+   with games still in progress — the Sunday-evening one fires during
+   Sunday Night Football. It writes a `weeks[n]` record every time,
+   including those partial ones. This function preferred any record that
+   existed, so from 9pm Sunday the Standings tab froze at its 9pm values
+   while the Grid — which computes from live picks — kept moving. Two
+   tabs of the same app showing two different totals for four hours, on
+   the biggest night of the week, with no way to tell which was right.
+
+   Once every game in the week is final the two agree, and the server's
+   figure is the authority (it is what the money is settled on) because
+   it also carries the bad-weights demotion the client does not model. */
 function weekSum(pl,w){
   if(!DEMO){
     const rec=((STANDINGS[pl]||{}).weeks||{})[String(w)];
-    if(rec)return {pts:rec.pts||0, hits:rec.hits||0};
+    /* Live figures ONLY for the week currently loaded, and only while it
+       is still being played. Everything else comes from the server.
+
+       Both halves of that are load-bearing, and getting either wrong
+       breaks a different screen:
+
+       - Prefer the server record for a week still in progress and the
+         Standings tab freezes at whatever the last scoring run banked.
+         That run happens at 9pm Sunday, so all through Sunday Night
+         Football the Standings tab and the Grid showed two different
+         totals for the same players.
+       - Prefer the client calc for a week that is NOT loaded and the
+         week vanishes: loadWeek() wipes BOT and refills it for one week
+         only, so weekPoints finds no picks for anybody. Peeking ahead
+         at next week's slate mid-Sunday would wipe the live week's
+         points out of the season total for every player at once — and
+         permanently for any week that never fully finalises, such as
+         one holding a postponed game. */
+    const loaded=w===state.week;
+    const settled=(WEEKS[w]||[]).length>0&&WEEKS[w].every(isFinal);
+    if(rec&&(settled||!loaded))return {pts:rec.pts||0, hits:rec.hits||0};
   }
   return weekPoints(pl,w);
 }
@@ -1629,16 +2168,24 @@ let lastRank={}, gridRank={};
 /* Points still available to a player this week: every unfinished game
    they picked, at what it would pay. The number that tells you whether
    Sunday night still matters. */
+/* Points banked, points ACTUALLY in play, and points not yet started.
+
+   `live` used to mean "not final", which lumped Sunday's kickoffs in with
+   games four days away — so a week where nothing had begun reported
+   "0 banked · 136 in play" directly beneath a header reading "0 final ·
+   0 live · 16 to come". "In play" has to mean the ball is in the air, or
+   the number is fiction. */
 function liveWeek(pl,w){
   const gs=WEEKS[w], N=gs.length;
-  let got=0, live=0;
+  let got=0, live=0, pending=0;
   gs.forEach(g=>{
     const p=pickOf(pl,g.id); if(!p)return;
     const v=state.mode==='confidence'?pay(p.weight,N):1;
     if(isFinal(g)){ if(p.winner===result(g))got+=v; }
-    else live+=v;
+    else if(isLive(g)) live+=v;      // kicked off, not yet final
+    else pending+=v;                 // hasn't started
   });
-  return {got,live,max:got+live};
+  return {got,live,pending,max:got+live+pending};
 }
 
 function renderBoard(){
@@ -1649,6 +2196,21 @@ function renderBoard(){
     for(const w in WEEKS){const r=weekSum(p,w);pts+=r.pts;hits+=r.hits;
       gp+=WEEKS[w].filter(isFinal).length;}
     return{p,pts,hits,gp};}).sort((a,b)=>b.pts-a.pts);
+
+  /* Nobody leads a table where nothing has been scored.
+
+     Before the first Sunday every player sits on 0, sorted arbitrarily,
+     and the first row was rendered in gold with a LEADER ribbon and
+     "0 of 0 correct" — crowning someone for nothing, in a one-person
+     pool as readily as an eight-person one. */
+  const scored=rows.some(r=>r.pts>0||r.gp>0);
+  if(!scored){
+    $('#board').innerHTML=`<div class="empty"><h4>Nothing scored yet</h4>
+      <p>The table opens after the first game goes final. Get your picks in —
+      Week ${state.week} is what starts it.</p></div>`;
+    return;
+  }
+
   let any=false;
   $('#board').innerHTML=rows.map((r,i)=>{
     const tw=perfectWeeks(r.p); if(tw)any=true;
@@ -1663,10 +2225,10 @@ function renderBoard(){
       <div class="rank mono">${i+1}${mv?`<i class="arrow">${
         mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
       <div class="who">
-        <div class="nrow"><b>${r.p}</b>${badge}</div>
+        <div class="nrow"><b>${NAME(r.p)}</b>${badge}</div>
         <span class="mono">${sub}</span></div>
       <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>
-      ${i===0?'<span class="leadtag">Leader</span>':''}</div>`;}).join('')
+      ${i===0?'<span class="leadtag">Season leader</span>':''}</div>`;}).join('')
     + weekByWeek()
     + `<div class="trolegend">${TROPHY}<span>${any
         ? 'A perfect week. Every game called, all sixteen ranks paid out, 136 points.'
@@ -1684,7 +2246,7 @@ function weekByWeek(){
   return `<div class="wbw"><h4>Week by week</h4>
     ${ws.map(w=>{const L=weekLeaders(w);
       if(!L.winners.length)return '';
-      const who=L.winners.join(' & ');
+      const who=L.winners.map(NAME).join(' &amp; ');   // keys in, escaped names out
       return `<div class="wbw-r${L.winners.includes(ME)?' me':''}">
         <span class="wbw-w mono">Wk ${w}</span>
         <span class="wbw-n">${L.done?SEAL1:''}${who}</span>
@@ -1738,7 +2300,11 @@ const ARCHIVE_OF=()=>DEMO?ARCHIVE_DEMO:ARCHIVE_LIVE;
 
 const archiveVisible=()=>{const A=ARCHIVE_OF();return !!A && (
   A.state==='public' || (A.state==='owner' && IS_OWNER));};
-const IS_OWNER = DEMO;                  // production: pool.ownerUid === user.uid
+/* Set from the pool document once it loads. Hardcoding this to DEMO meant
+   it was permanently false in production, so an archive hidden with
+   --hide ("only you see it") was invisible to the owner too — the one
+   person it was kept visible for. */
+let IS_OWNER = DEMO;
 
 function renderArchive(){
   const on=archiveVisible();
@@ -1752,11 +2318,19 @@ function renderArchive(){
     return;
   }
   const el=$('#archBody'); const A=ARCHIVE_OF(); if(!el||!A)return;
+  /* ESCAPED, like every other surface that prints a member's name.
+     The Grid, Standings and the tiebreak panel were all fixed; this
+     renderer was missed. archive_pool.py copies members/{uid}.name
+     verbatim and the rules let any member set their own name to
+     anything, so one member could store markup, wait for the season to
+     be archived, and have it execute in every other member's browser on
+     the origin holding their sign-in cookie. The maxlength on the
+     onboarding input stops nobody — the write is a console call. */
   el.innerHTML=`
     <div class="arch-head">
-      <h2>${A.label}</h2>
+      <h2>${esc(A.label)}</h2>
       ${A.state==='owner'?'<span class="arch-hid">Hidden from everyone else</span>':''}
-      <p>${A.note||''}</p>
+      <p>${esc(A.note||'')}</p>
     </div>
     <div class="arch-final">Final standings</div>
     ${A.standings.map((r,i)=>{
@@ -1766,28 +2340,42 @@ function renderArchive(){
         r.seconds&&{kind:'2nd',n:r.seconds}]);
       return `<div class="row${i===0?' lead':''}">
         <div class="rank mono">${i+1}</div>
-        <div class="who"><div class="nrow"><b>${r.name}</b>${b}</div>
+        <div class="who"><div class="nrow"><b>${esc(r.name)}</b>${b}</div>
           <span class="mono">${r.hits} of ${r.of} correct</span></div>
         <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>
         ${i===0?'<span class="leadtag">Champion</span>':''}</div>`;}).join('')}
     <div class="wbw"><h4>Week by week</h4>
       ${A.weeks.map(w=>`<div class="wbw-r">
         <span class="wbw-w mono">Wk ${w.wk}</span>
-        <span class="wbw-n">${SEAL1}${w.winner}</span>
+        <span class="wbw-n">${SEAL1}${esc(w.winner)}</span>
         <span class="wbw-p mono">${w.pts}</span></div>`).join('')}</div>
     <div class="arch-foot">This pool is closed. Nothing here counts toward the
       current season.</div>`;
 }
 
 function render(){renderWeeks();renderSlate();renderTray();renderBar();renderGrid();
-  renderBoard();renderTZ();renderPayTable();renderInPlay();renderArchive();
-  renderAlerts();}
+  renderBoard();renderTZ();renderPayTable();renderInPlay();renderArchive();}
+/* renderAlerts() is deliberately NOT in render() — see its own comment.
+   It is a once-per-session question, and render() runs on every tick. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&!DEMO)renderAlerts(true);
+});
 
 function tick(){
   let changed=false;
   Object.values(WEEKS).flat().forEach(g=>{
     const L=isLive(g);
-    if(L&&!lockedSet.has(g.id)){lockedSet.add(g.id);changed=true;}
+    if(L&&!lockedSet.has(g.id)){
+      lockedSet.add(g.id);changed=true;
+      /* The sheet stayed open, and every rank button stayed enabled, after
+         its game kicked off — so a tap at 8:21 on an 8:20 game printed
+         "You took DET · rank 1 · 16 pts" and flashed "Saved" while writing
+         nothing at all. */
+      if(state.openGame===g.id){
+        closeSheet();
+        toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} kicked off — that pick is final.`,'fail');
+      }
+    }
     // A game going final is what actually moves the standings.
     if(isFinal(g)&&!finalSet.has(g.id)){finalSet.add(g.id);changed=true;}
     const el=document.querySelector(`[data-cd="${g.id}"]`);
@@ -1796,8 +2384,15 @@ function tick(){
   const tbg=tbGame(state.week), tbel=document.querySelector('[data-cd="tb"]');
   if(tbel&&!isLive(tbg)){tbel.textContent='Locks in '+fmt(tbg.kick-Date.now());
     tbel.className='cd '+cdClass(tbg.kick-Date.now());}
-  const next=Object.values(WEEKS).flat().filter(g=>!isLive(g)).sort((a,b)=>a.kick-b.kick)[0];
-  $('#countdown').textContent=next?'Locks in '+fmt(next.kick-Date.now()):'Season closed';
+  /* Scoped to the week ON SCREEN. Scanning the whole season meant the
+     header counted down to a game the user could not see — Week 18 showed
+     "Locks in 1d 23h" beside cards all reading "78d 23h", with nothing
+     saying which game either number belonged to. */
+  const next=(WEEKS[state.week]||[]).filter(g=>!isLive(g)).sort((a,b)=>a.kick-b.kick)[0];
+  $('#countdown').innerHTML='<span class="txt">'+esc(next
+    ? `${TEAM(next.a)[1]} @ ${TEAM(next.h)[1]} · ${fmt(next.kick-Date.now())}`
+    : (Object.values(WEEKS).flat().some(g=>!isLive(g))?`Week ${state.week} · all locked`:'Season closed'))
+    +'</span>';
   if(changed)render();
 }
 setInterval(tick,1000);
@@ -1805,25 +2400,129 @@ setInterval(tick,1000);
 $('#slate').addEventListener('input',e=>{
   if(e.target.id!=='tbin')return;
   const raw=e.target.value.trim();
-  if(raw===''){delete state.tb[state.week];}
-  else{const n=Math.max(0,Math.min(120,parseInt(raw,10)));
-       if(!isNaN(n))state.tb[state.week]=n;}
-  if(!DEMO)PS.saveTiebreak(state.week,state.tb[state.week],tbGame(state.week))
-             .catch(e=>console.warn('tb',e));
-  flashSaved();                      // don't re-render the slate mid-typing
+  /* Emptying the box cannot be saved: a tiebreak has to be a whole number
+     0-120, and the documents cannot be deleted. Clearing it locally while
+     telling the user "Saved" left the old guess live on the server —
+     scored against them, and reappearing on the next reload. Say plainly
+     that there is nothing to save yet instead of lying about it. */
+  if(raw===''){
+    // Ordinary editing — they are retyping. Not a failure, and not a
+    // reason to paint the status red.
+    delete state.tb[state.week];
+    return;
+  }
+  const n=parseInt(raw,10);
+  if(isNaN(n)){ toast('Tiebreaker must be a number.'); return; }
+  /* DEBOUNCED, AND CLAMPED ONLY ON COMMIT.
+
+     Clamping on every keystroke rewrote the box under the user's fingers:
+     the field arrives pre-filled with your existing guess, so tapping at
+     the end and typing one digit turned 44 into 445 into a silently saved
+     120 — a number they never chose, shown back to them as if they had.
+     It also fired a Firestore write per keystroke, persisting every
+     intermediate value along the way. */
+  clearTimeout(tbTimer);
+  tbTimer=setTimeout(()=>commitTiebreak(e.target),650);
 });
+
+let tbTimer=null;
+function commitTiebreak(el){
+  if(!el)return;
+  const raw=String(el.value).trim();
+  if(raw==='')return;                       // nothing to save yet; not an error
+  let n=parseInt(raw,10);
+  if(isNaN(n))return;
+  n=Math.max(0,Math.min(120,n));
+  if(String(n)!==raw)el.value=n;            // clamp once, at commit
+  state.tb[state.week]=n;
+  if(DEMO){ flashSaved(); return; }
+  saving();
+  PS.saveTiebreak(state.week,n,tbGame(state.week))
+    .then(flashSaved)
+    .catch(err=>{ console.warn('tb',err); saveFailed("Tiebreaker didn't save."); });
+}
+// Commit immediately when they leave the field, rather than waiting.
+document.addEventListener('focusout',e=>{
+  if(e.target&&e.target.id==='tbin'){ clearTimeout(tbTimer); commitTiebreak(e.target); }
+});
+
+/* One place that writes picks, so "did it save?" has one answer.
+
+   Every call site used to be `savePicks(...).catch(console.warn)` followed
+   by an unconditional, synchronous flashSaved() — the green "Saved" was
+   printed before the promise had even been scheduled. A denied write, a
+   dead connection, a device clock a minute slow: all of them showed
+   "Saved" and lost the picks. Someone could tap through all sixteen
+   games, be told sixteen times that it saved, and go to bed with nothing
+   written. */
+function commitPicks(){
+  if(DEMO){ flashSaved(); return; }
+  /* Show that something is happening. With no persistence configured, an
+     offline setDoc() neither resolves nor rejects — it just hangs — so
+     the old then/catch pair produced NO feedback at all on a bad
+     connection. The user tapped through sixteen games in total silence,
+     the cards coloured in from local state, and whether any of it reached
+     the server was unknowable from the screen. */
+  saving();
+  // `cleared` carries the games whose pick was removed, so savePicks can
+  // write a tombstone — picks cannot be deleted, so without this an
+  // un-picked game stayed picked in the database and kept being scored.
+  const wk=state.week;
+  const payload={...state.picks};
+  /* Tombstones are tracked PER WEEK. A flat list was emptied by the next
+     successful save in any week, so a clear that failed offline in Week 3
+     was silently forgotten the moment a Week 4 pick saved — the removed
+     pick stayed in Firestore and went on being scored, while the UI showed
+     the game as unpicked. */
+  ((state.cleared||{})[wk]||[]).forEach(id=>{ if(!(id in payload))payload[id]=null; });
+  PS.savePicks(state.week,payload,slate())
+    .then(()=>{ if(state.cleared)delete state.cleared[wk]; flashSaved(); })
+    .catch(err=>{
+      console.warn('save failed',err);
+      /* Show OUR message, never the exception's. A raw throw here could
+         be a Firestore internal assertion or a permission dump — text
+         that means nothing to a player and looks like the app is broken
+         beyond use. savePicks() attaches `failed` to the errors it raises
+         itself; anything else is unknown and gets the generic line. */
+      const code=String((err&&err.code)||'');
+      saveFailed(
+        err&&err.failed          ? err.message :
+        /permission/i.test(code) ? "That game is locked — picks are final at kickoff." :
+        /unavailable|network/i.test(code) ? "No connection — your picks aren't saved yet." :
+        "Your picks didn't save. Check your connection.");
+    });
+}
 
 $('#slate').addEventListener('click',e=>{
   const st=e.target.closest('[data-stake]');
-  if(st){const g=slate().find(x=>x.id===st.dataset.stake);if(isLive(g))return;openSheet(g.id);return;}
+  /* `find` returns undefined while a week switch is in flight — the new
+     week's slate is live but the old week's cards are still on screen and
+     still tappable. isLive(undefined) then threw, the handler died, and
+     the tap was silently discarded with nothing shown to the user. */
+  if(st){
+    const g=slate().find(x=>x.id===st.dataset.stake);
+    if(!g)return;
+    /* renderSlate is up to a second stale, so a card can still look live
+       when it is not. Silently dropping the tap made the app look broken
+       at the moment of highest stakes; the user just taps harder. */
+    if(isLive(g)){ render(); toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} has kicked off — that pick is final.`,'fail'); return; }
+    openSheet(g.id);return;
+  }
   const s=e.target.closest('.side');if(!s)return;
   const card=s.closest('.card'),g=slate().find(x=>x.id===card.dataset.game);
-  if(isLive(g))return;
+  if(!g)return;
+  if(isLive(g)){ render(); toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} has kicked off — that pick is final.`,'fail'); return; }
   const w=s.dataset.side==='a'?g.a:g.h,prev=state.picks[g.id];
-  if(prev&&prev.winner===w)delete state.picks[g.id];
-  else state.picks[g.id]={winner:w,weight:prev?prev.weight:null};
-  if(!DEMO)PS.savePicks(state.week,state.picks,slate()).catch(e=>console.warn('save',e));
-  renderSlate();renderTray();renderGrid();flashSaved();});
+  if(prev&&prev.winner===w){
+    delete state.picks[g.id];
+    ((state.cleared||={})[state.week]||=[]).push(g.id);   // tombstone it
+  } else {
+    state.picks[g.id]={winner:w,weight:prev?prev.weight:null};
+    if(state.cleared&&state.cleared[state.week])
+      state.cleared[state.week]=state.cleared[state.week].filter(id=>id!==g.id);
+  }
+  commitPicks();
+  renderSlate();renderTray();renderGrid();});
 
 function openSheet(gid){
   state.openGame=gid;
@@ -1843,25 +2542,101 @@ function openSheet(gid){
   $('#heatLo').textContent=`1 · surest, pays ${NN}`;
   $('#heatHi').textContent=`${NN} · coin flip, pays 1`;
   $('#clearw').style.display=p.weight?'block':'none';
-  $('#scrim').classList.add('on');$('#sheet').classList.add('on');}
-const closeSheet=()=>{$('#scrim').classList.remove('on');$('#sheet').classList.remove('on');state.openGame=null;};
+  sheetOpener=document.activeElement;
+  const sh=$('#sheet');
+  sh.hidden=false;
+  $('#scrim').classList.add('on');
+  // Next frame, so the transition still runs from the hidden state.
+  requestAnimationFrame(()=>{
+    sh.classList.add('on');
+    document.body.style.overflow='hidden';       // stop the page scrolling behind
+    const first=sh.querySelector('.num:not([disabled])');
+    if(first)try{ first.focus(); }catch{}
+  });}
+/* Close: restore the page's scroll, hide the sheet from the tab order,
+   and put focus back where it came from.
+
+   Closed, the sheet stayed display:block and translated off-screen, so it
+   still swallowed pointer events over the middle of the viewport and still
+   held a focusable button — Tab dropped focus into an invisible control.
+   And because the sheet is ~560px of an 844px screen, the "tap outside to
+   dismiss" scrim was a narrow strip at the very top: a tap in the middle
+   of what looked like empty space hit the sheet instead. */
+let sheetOpener=null;
+const closeSheet=()=>{
+  $('#scrim').classList.remove('on');
+  const sh=$('#sheet');
+  sh.classList.remove('on');
+  sh.hidden=true;
+  document.body.style.overflow='';
+  state.openGame=null;
+  if(sheetOpener&&document.contains(sheetOpener)){ try{ sheetOpener.focus(); }catch{} }
+  sheetOpener=null;
+};
+// Escape closes it, as every dialog must.
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&$('#sheet')&&!$('#sheet').hidden)closeSheet();
+});
 $('#scrim').addEventListener('click',closeSheet);
+$('#sheetX').addEventListener('click',closeSheet);
+/* Both handlers guard on state.openGame still being a real, picked game.
+   The sheet slides out over 280ms and stayed hit-testable the whole time,
+   so an impatient second tap ran against `state.picks[null]` and threw —
+   killing the render chain, so the card kept showing a stale stake. */
 $('#numgrid').addEventListener('click',e=>{const b=e.target.closest('.num');if(!b||b.disabled)return;
+  if(!state.openGame||!state.picks[state.openGame])return;
   state.picks[state.openGame].weight=+b.dataset.w;closeSheet();
-  if(!DEMO)PS.savePicks(state.week,state.picks,slate()).catch(e=>console.warn('save',e));
-  renderSlate();renderTray();renderGrid();flashSaved();});
-$('#clearw').addEventListener('click',()=>{state.picks[state.openGame].weight=null;closeSheet();
+  commitPicks();
+  renderSlate();renderTray();renderGrid();});
+/* "Take the stamp back" cleared the rank on screen and never wrote it.
+   The freed rank could then be assigned to another game, giving that week
+   TWO picks with the same weight — which is exactly the condition that
+   made the scoring job throw out confidence scoring for the whole pool. */
+$('#clearw').addEventListener('click',()=>{
+  if(!state.openGame||!state.picks[state.openGame])return;
+  state.picks[state.openGame].weight=null;closeSheet();
+  commitPicks();
   renderSlate();renderTray();renderBar();renderGrid();});
 
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(x=>{
+    x.classList.remove('on'); x.setAttribute('aria-selected','false'); });
+  t.setAttribute('aria-selected','true');
   t.classList.add('on');state.tab=t.dataset.tab;
   ['picks','grid','standings','archive','help','settings'].forEach(v=>$('#v-'+v).classList.toggle('hide',v!==state.tab));
-  $('#bar').style.display=state.tab==='picks'?'flex':'none';}));
+  $('#bar').style.display=state.tab==='picks'?'flex':'none';
+  /* A hidden element has no scrollHeight, so the height renderGrid tried
+     to set while the tab was closed was computed from zero and thrown
+     away. Size it at the moment it becomes visible. */
+  if(state.tab==='grid')sizeGrid();}));
 
-document.querySelectorAll('.mbtn').forEach(b=>b.addEventListener('click',()=>{
-  document.querySelectorAll('.mbtn').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');state.mode=b.dataset.mode;render();}));
+/* Changing the scoring mode is a POOL decision, not a per-device one.
+
+   This used to flip `state.mode` in memory and re-render. Nothing was
+   written anywhere, so the change contradicted the "Takes effect Week 2"
+   note beside it, reverted on the next reload, and left the person
+   convinced they had switched the pool over when the scorer knew nothing
+   about it. Only the owner may write it — the pool document's rule
+   enforces that regardless of what this button does. */
+document.querySelectorAll('.mbtn[data-mode]').forEach(b=>b.addEventListener('click',async()=>{
+  const mode=b.dataset.mode;
+  if(mode===state.mode)return;
+  if(DEMO){ state.mode=mode; syncModeButtons(); render(); return; }
+  const from=state.week+1;                      // never mid-week
+  const prev=state.mode;
+  state.mode=mode; syncModeButtons();
+  try{
+    await PS.setScoringMode(mode,from);
+    flashSaved();
+  }catch(err){
+    console.warn('setScoringMode failed',err);
+    state.mode=prev; syncModeButtons();
+    saveFailed(err&&/permission/i.test(String(err.code||err.message||''))
+      ? 'Only the pool owner can change the scoring mode.'
+      : "Couldn't change the scoring mode.");
+  }
+  render();
+}));
 
 $('#weeks').addEventListener('click',async e=>{
   const w=e.target.closest('.wk');if(!w)return;
@@ -1874,14 +2649,36 @@ $('#weeks').addEventListener('click',async e=>{
   // Wrapped in try/catch so a failed fetch (e.g. a permissions hiccup
   // on an old week) can't silently swallow the tab switch entirely —
   // the games themselves should still show even if picks/reveals don't.
+  /* Move the highlight FIRST, and say when it fails.
+
+     state.week was set and then the load was awaited, with nothing
+     repainted until it resolved — so on a slow connection the strip
+     still showed the old week, the Grid still said the old week, and
+     the cards were still the old week's, for the whole round trip. It
+     looked like the tap had missed, so people tapped again. And if the
+     read rejected, the catch only wrote to a console nobody has open:
+     an unchanged screen and no explanation. */
+  renderWeeks();
   if(!DEMO){
+    const strip=$('#weeks'); if(strip)strip.setAttribute('aria-busy','true');
     try{ await loadWeek(n); }
-    catch(err){ console.error('loadWeek failed for week',n,err); }
+    catch(err){
+      console.error('loadWeek failed for week',n,err);
+      toast(`Week ${n} didn't load — check your connection.`,'fail');
+    }
+    if(strip)strip.removeAttribute('aria-busy');
+    // Re-point the live listeners at the week now on screen. Without this
+    // they stayed bound to the boot week forever.
+    watchLive();
   }
   render();window.scrollTo({top:0,behavior:'smooth'});});
 
 $('#submitBtn').addEventListener('click',()=>{
-  $('#submitBtn').textContent='Locked in';$('#submitBtn').disabled=true;});
+  lockedWeeks.add(state.week);
+  try{ localStorage.setItem('ps_locked',JSON.stringify([...lockedWeeks])); }catch{}
+  renderBar();
+  toast(`Week ${state.week} locked in. You can still change a pick until it kicks off.`,'ok');
+});
 
 /* ---------- timezone controls ---------- */
 $('#tzsel').innerHTML=TZS.map(([v,l])=>
@@ -1897,11 +2694,11 @@ function renderTZ(){
     +(drift?` That is the ${usDay(first.show)} game in the US. Your calendar day runs ahead, `
       +`so a game can lock while you are asleep. Reminders follow this zone too.`:'');
 }
-/* Tapping the chip in the header jumps to the setting. */
-document.addEventListener('click',e=>{
-  if(!e.target.closest('.tzchip'))return;
-  document.querySelector('[data-tab="settings"]').click();
-  setTimeout(()=>$('#tzsel').scrollIntoView({behavior:'smooth',block:'center'}),80);});
+/* The timezone shortcut that used to live in the day header is gone. It
+   was a 19px tap target — too small to hit deliberately, easy to hit by
+   accident while scrolling — and giving it a legitimate 36px pushed the
+   header onto two lines on every phone. The zone is still SHOWN beside
+   each day; changing it lives in Settings, which has the full picker. */
 
 
 /* ============================================================
@@ -1962,12 +2759,20 @@ async function boot(){
       // earlier/different season gets cleared instead of silently loading
       // stale data — see firebase-init.js's SEASON HANDOVER note.
       const pool=await PS.ensureCurrentPool();
-      if(!pool){ bootHide(); showOnboarding(); return; }
+      if(!pool){
+        /* Do NOT rewind: this fires mid-sign-in, before joinPool() has
+           returned, and rewinding threw the user back to a blank PIN
+           screen. See showOnboarding(). */
+        bootHide(); showOnboarding(false); return;
+      }
+      // Owner-only affordances (hidden archives, the scoring-mode switch)
+      // need to know who the owner actually is.
+      IS_OWNER = !!(pool.ownerUid && u && pool.ownerUid===u.uid);
 
       await ensureJoined();
       await loadSeason();
       await loadWeek(state.week);
-      render(); tick();
+      render(); tick(); renderAlerts(true);
       watchLive();
       // Only now is there an app worth showing. Hiding onboarding any
       // earlier meant a failed load left the user staring at nothing,
@@ -2019,9 +2824,15 @@ async function ensureJoined(){
    and render() aborts silently mid-chain — and g.net renders the literal
    word "undefined" in the meta row of every card on the Picks tab.
    One place, so the season load and the live listener cannot drift. */
-const mapGames=games=>games.map(g=>({...g,
-  a:g.away, h:g.home, sp:g.spread, net:g.network||'',
-  kick:g.kickoff.toMillis(), show:g.kickoff.toMillis()}));
+/* Firestore shape -> the short keys the render layer uses.
+   `status` and `winner` pass through untouched (spread first) — isFinal()
+   and result() both read them now. Anything without a usable kickoff is
+   dropped rather than throwing: one malformed game document used to take
+   the whole app down with "We couldn't load your week." */
+const mapGames=games=>games.filter(g=>g&&g.kickoff&&typeof g.kickoff.toMillis==='function')
+  .map(g=>({...g,
+    a:g.away, h:g.home, sp:g.spread, net:g.network||'',
+    kick:g.kickoff.toMillis(), show:g.kickoff.toMillis()}));
 
 /* Not every read is equally important, and treating them as if they were
    is how one hiccup takes down a whole app. The schedule is the app: with
@@ -2050,21 +2861,36 @@ async function loadSeason(){
   const cur=weeks.map(w=>w.wk).find(w=>WEEKS[w].some(g=>!isLive(g)));
   state.week=cur||weeks[weeks.length-1]?.wk||1;
 
+  /* Identity first: everything below keys off uid, so ME has to be the
+     signed-in uid before any of it is built. */
+  ME=PS.user?.uid||ME;
+
   // Fall back to just me so the sheet still works in a pool whose roster
   // could not be read — a solo view beats no view.
-  PLAYERS=members.length?members.map(m=>m.name).sort():[ME];
+  NAMES={};
+  members.forEach(m=>{ NAMES[m.uid]=m.name||'Player'; });
+  if(!NAMES[ME])NAMES[ME]=(localStorage.getItem('ps_name')||'You');
+  // Sort by DISPLAY name, key by uid.
+  PLAYERS=members.length?members.map(m=>m.uid).sort((a,b)=>
+    String(NAMES[a]||'').localeCompare(String(NAMES[b]||''))):[ME];
+
   STANDINGS={};
-  // getStandings() returns every doc in the collection, including the
-  // "_weeks" summary score_week.py writes, which has no name. Skip it
-  // rather than filing it under STANDINGS[undefined].
-  st.forEach(r=>{ if(r.name) STANDINGS[r.name]=r; });
+  /* getStandings() returns every doc in the collection, including the
+     "_weeks" summary score_week.py writes, which is not a player. Its doc
+     id is the uid, which is what we key on now — filing by name meant two
+     players called "Player" overwrote each other. */
+  st.forEach(r=>{ if(r.uid&&!String(r.uid).startsWith('_'))STANDINGS[r.uid]=r; });
 
   // Depends on state.week, so it cannot join the batch above.
   state.mode=await optional(PS.getScoringMode(state.week),'confidence','getScoringMode');
+  syncModeButtons();
 }
 
-/* One week: my picks, everyone's revealed picks, tiebreakers. */
+/* One week: my picks, everyone's revealed picks, tiebreakers.
+   `loadSeq` makes a slow load that finishes late a no-op — see below. */
+let loadSeq=0;
 async function loadWeek(wk){
+  const seq=++loadSeq;
   // Four independent reads — in series they were four more round trips on
   // top of loadSeason's, all before the first paint.
   // All four degrade: an unreadable tiebreak list or archive is a missing
@@ -2076,32 +2902,119 @@ async function loadWeek(wk){
     optional(PS.getTiebreaks(wk), [], 'getTiebreaks'),
     optional(PS.getArchive(),     [], 'getArchive'),
   ]);
+  /* A later tap can land while this is still in flight. Without the token
+     check below, tapping Week 3 then Week 4 on a slow connection let
+     Week 3's response resolve last and write its picks into the Week 4
+     view — Week 4's games with Week 3's selections attached to game ids
+     that no longer match anything. */
+  if(seq!==loadSeq)return;
+
   state.picks=picks;
   Object.keys(BOT).forEach(k=>delete BOT[k]);
   PLAYERS.forEach(p=>BOT[p]={});
-  revealed.forEach(p=>{ if(BOT[p.name]) BOT[p.name][p.gameId]={winner:p.winner,weight:p.weight}; });
-  tbs.forEach(t=>{ TIEBREAKS[t.name+'|'+wk]=t.total; if(t.mine)state.tb[wk]=t.total; });
+  // Rows are keyed by uid; p.name is display only.
+  revealed.forEach(p=>{
+    if(p.uid&&!NAMES[p.uid])NAMES[p.uid]=p.name||'Player';
+    (BOT[p.uid]||=({}))[p.gameId]={winner:p.winner,weight:p.weight};
+  });
+  tbs.forEach(t=>{
+    if(t.uid&&!NAMES[t.uid])NAMES[t.uid]=t.name||'Player';
+    TIEBREAKS[(t.uid||ME)+'|'+wk]=t.total;
+    if(t.mine||t.uid===ME)state.tb[wk]=t.total;
+  });
   ARCHIVE_LIVE=archive;
 }
 let ARCHIVE_LIVE=null;
 
-/* Scores and newly revealed picks push themselves in. */
-function watchLive(){
-  PS.watchWeek(state.week, games=>{
-    WEEKS[state.week]=mapGames(games);
-    render();
-  });
-  PS.watchRevealed(state.week, rows=>{
-    PLAYERS.forEach(p=>BOT[p]=BOT[p]||{});
-    rows.forEach(p=>{ if(BOT[p.name]) BOT[p.name][p.gameId]={winner:p.winner,weight:p.weight}; });
-    render();
-  });
+/* Scores and newly revealed picks push themselves in.
+
+   Both listeners are torn down and re-opened whenever the week changes.
+   They used to be opened exactly once, at boot, bound to the boot week —
+   but their callbacks wrote into whatever week was on SCREEN when they
+   fired. Browse ahead to Week 12 during a live Sunday and a Week 5 score
+   update overwrote WEEKS[12] with Week 5's games: the Picks tab showed
+   the wrong matchups under the right header, saved picks against game ids
+   from another week, and Week 12 never received a real update because
+   nothing was subscribed to it. */
+let liveUnsubs=[], revealTimer=null;
+function stopLive(){
+  liveUnsubs.forEach(f=>{ try{ f&&f(); }catch(e){} });
+  liveUnsubs=[];
+  clearTimeout(revealTimer); revealTimer=null;
 }
 
-function showOnboarding(){
+/* Re-open the reveal listener just after the next kickoff.
+
+   onSnapshot re-runs the query it was GIVEN, and that query carries a
+   `revealAt <= <the instant the page loaded>` bound baked into it. So a
+   pick that reveals after you opened the app can never enter the result
+   set: leave the app open from 12:30, and at 13:00 the scores update
+   live beside a Grid whose opponent cells stay sealed dots all
+   afternoon. Only a reload or a week switch fixed it.
+
+   Re-subscribing a few seconds past each kickoff makes the bound fresh
+   again, and costs one query per kickoff rather than one per minute. */
+function scheduleRevealRefresh(){
+  clearTimeout(revealTimer);
+  const now=Date.now();
+  const next=(WEEKS[state.week]||[])
+    .map(g=>g.kick).filter(k=>k>now).sort((a,b)=>a-b)[0];
+  if(!next)return;
+  // +5s past the kickoff, and never a timeout so long it overflows setTimeout.
+  const wait=Math.min(next-now+5000, 2147483000);
+  revealTimer=setTimeout(()=>{ if(!DEMO)watchLive(); },wait);
+}
+
+function watchLive(){
+  stopLive();
+  const wk=state.week;
+  liveUnsubs.push(PS.watchWeek(wk, (games,forWk)=>{
+    if((forWk??wk)!==state.week)return;          // a stale week's listener
+    WEEKS[state.week]=mapGames(games);
+    render();
+  }));
+  liveUnsubs.push(PS.watchRevealed(wk, (rows,forWk)=>{
+    if((forWk??wk)!==state.week)return;
+    rows.forEach(p=>{
+      /* Let a real name WIN over a placeholder. `!NAMES[uid]` only wrote
+         when the key was absent, so if the first snapshot arrived before
+         watchRevealed's member lookup resolved, that row's fallback
+         "Player" was cached permanently and no later, correct name could
+         replace it — reintroducing the exact bug the uid migration
+         exists to kill, for anyone who joined after you loaded. */
+      if(p.uid&&p.name&&p.name!=='Player')NAMES[p.uid]=p.name;
+      else if(p.uid&&!NAMES[p.uid])NAMES[p.uid]='Player';
+      (BOT[p.uid]||=({}))[p.gameId]={winner:p.winner,weight:p.weight};
+    });
+    render();
+  }));
+  scheduleRevealRefresh();   // see above: the reveal bound goes stale
+}
+
+/* Show the onboarding. `rewind` decides whether the wizard restarts.
+
+   THE BUG THIS FIXES, which broke sign-in outright: Firebase fires
+   onAuthStateChanged the instant signInWithToken() resolves — while the
+   PIN screen's own go() is still awaiting joinPool(). boot()'s callback
+   ran, found no pool yet (joinPool had not returned), and called
+   showOnboarding(), which unconditionally did obStep=0. The wizard
+   snapped back to step 0 mid-flight, and when go() finally returned true
+   the handler advanced from THAT step — landing the user back on the PIN
+   screen with six empty boxes and no code left to type. The session and
+   the membership had both been created; only the screen was lost. Nothing
+   fired onAuthStateChanged again, so the app never recovered without a
+   manual reload, and nothing said so.
+
+   While the wizard is on screen and mid-flight, leave it exactly where it
+   is. Restarting is only right when the app is falling BACK to onboarding
+   from a signed-in state. */
+function showOnboarding(rewind=true){
   const ob=document.getElementById('ob');
+  const wasHidden=!ob||ob.classList.contains('hide');
   if(ob)ob.classList.remove('hide');
-  obStep=0; obRender();
+  // Never rewind a wizard the user is actively working through.
+  if(rewind&&wasHidden&&!obBusy){ obStep=0; }
+  obRender();
 }
 
 Object.values(WEEKS).flat().forEach(g=>{
@@ -2570,12 +3483,80 @@ function obAdvance(sc){
 /* ---------- autosave indicator ----------
    Every tap writes immediately. "Lock in" is a completeness check, not
    a save. */
-let savedTimer=null;
+/* ---------- SAVE STATUS ----------
+
+   One toast, visible on every tab, announced to screen readers.
+
+   All of this used to be written into #plabel, which lives inside #bar —
+   and #bar is display:none on every tab except Picks. So the two places
+   most likely to fail wrote their result into an invisible element:
+   changing the scoring mode (which only the owner is allowed to do, so
+   every other member got a silent permission error and a button that
+   un-highlighted itself for no visible reason) and the alert preference
+   switches (whose failures were swallowed entirely — the switch stayed
+   on, the server never heard, and the reminders never came).
+
+   Three states, because "did it save" has three honest answers, and the
+   old code could only express two. */
+let toastTimer=null, slowTimer=null;
+
+/* `sticky` is now opt-in, and that is the fix.
+
+   Persistence used to be decided by KIND: anything 'fail' or 'wait'
+   stayed up until some later save happened to replace it. That is right
+   for a save that did not go through — nobody should walk away
+   believing their picks are in — but the same 'fail' kind carries the
+   "that game has already kicked off" notices, which are transient
+   information about one tap. So a single late tap parked a red bar
+   across the bottom of the Picks tab indefinitely. Worse, .toast.fail
+   sets pointer-events:auto and nothing listened for a click on it, so
+   it silently swallowed every tap landing in that strip and the cards
+   behind it stopped responding.
+
+   Now only a genuine save failure holds, and even that can be tapped
+   away. */
+function toast(msg, kind, sticky){
+  const el=$('#toast'); if(!el)return;
+  clearTimeout(toastTimer);
+  el.textContent=msg;
+  el.className='toast on '+(kind||'');
+  if(sticky!==true)toastTimer=setTimeout(()=>el.classList.remove('on'),
+                                         kind==='fail'?4200:1600);
+}
+// Tapping dismisses, so a stuck bar can never block the screen.
+$('#toast')?.addEventListener('click',e=>e.currentTarget.classList.remove('on'));
+
+function saving(){
+  clearTimeout(slowTimer);
+  toast('Saving…','wait',true);
+  // If it has not settled in 8s the connection is gone. Say so, rather
+  // than spinning forever: an offline write never resolves OR rejects.
+  slowTimer=setTimeout(()=>toast("Still trying — you may be offline. Your picks are on this phone only.",'fail',true),8000);
+}
+
 function flashSaved(){
-  const el=$('#plabel'); if(!el)return;
-  el.textContent='Saved'; el.classList.add('saved');
-  clearTimeout(savedTimer);
-  savedTimer=setTimeout(()=>{el.classList.remove('saved');renderBar();},1400);
+  clearTimeout(slowTimer);
+  toast('Saved','ok');
+  renderBar();                       // keep the progress bar honest
+}
+
+/* A failed write has to be visible and has to STAY visible — it is not a
+   flash, because the person needs to know their sheet is not in yet. */
+function saveFailed(msg){
+  clearTimeout(slowTimer);
+  // Sticky: a write that did not land is the one message that must not
+  // fade before it has been read.
+  toast(msg||"Not saved — check your connection",'fail',true);
+  renderBar();
+}
+
+/* Keep the Settings mode buttons showing the mode the pool is ACTUALLY
+   scored in. "Confidence" was hardcoded as the selected button in the
+   markup and nothing ever updated it, so a straight-up pool showed
+   Confidence highlighted for the whole season. */
+function syncModeButtons(){
+  document.querySelectorAll('.mbtn[data-mode]').forEach(b=>
+    b.classList.toggle('on', b.dataset.mode===state.mode));
 }
 
 /* ---------- notification preferences ----------
@@ -2587,42 +3568,95 @@ const PREFS=[
   ['hours','Kickoff approaching','A couple of hours before each slate'],
   ['final','Last call','30 minutes out. The one that saves you.'],
   ['results','Results','Sunday night and Tuesday final standings']];
-let prefs=JSON.parse(localStorage.getItem('ps_prefs')||'null')
-  ||Object.fromEntries(PREFS.map(([k])=>[k,true]));
+/* Guarded: this is top-level module code, so a throw here aborted
+   everything below it — the preference switches, the SIGN-OUT button and
+   the first-run bootstrap all silently never got wired up. */
+let prefs;
+try{ prefs=JSON.parse(localStorage.getItem('ps_prefs')||'null'); }catch{ prefs=null; }
+if(!prefs||typeof prefs!=='object')prefs=Object.fromEntries(PREFS.map(([k])=>[k,true]));
 
 function renderPrefs(){
   const el=$('#prefs'); if(!el)return;
+  /* Real switches, not decorated divs: these were bare <div>s, so they
+     could not be reached by keyboard at all and a screen reader
+     announced no state. */
   el.innerHTML=PREFS.map(([k,t,d])=>
-    `<div class="pref${prefs[k]?' on':''}" data-pref="${k}">
+    `<button type="button" class="pref${prefs[k]?' on':''}" data-pref="${k}"
+       role="switch" aria-checked="${prefs[k]?'true':'false'}">
       <div class="pref-t"><b>${t}</b><span>${d}</span></div>
-      <div class="sw"></div></div>`).join('');
+      <div class="sw"></div></button>`).join('');
 }
-$('#prefs').addEventListener('click',e=>{
+$('#prefs').addEventListener('click',async e=>{
   const el=e.target.closest('[data-pref]'); if(!el)return;
-  const k=el.dataset.pref; prefs[k]=!prefs[k];
-  localStorage.setItem('ps_prefs',JSON.stringify(prefs));
-  if(!DEMO)PS.upsertRoster({prefs}).catch(()=>{});
+  const k=el.dataset.pref, was=prefs[k];
+  prefs[k]=!was;
   renderPrefs();
+  if(DEMO)return;
+  /* SAY SO WHEN IT DOES NOT SAVE.
+     This was fire-and-forget with an empty catch. A denied or dropped
+     write left the switch showing "on", localStorage agreeing, and the
+     roster — which is the only thing remind.py and worker/live.js
+     read — never updated. The player is then certain they enabled the
+     last-call reminder, and it never comes. Revert the switch and use
+     the toast that already exists a few functions up. */
+  try{
+    await PS.upsertRoster({prefs});
+  }catch(err){
+    console.warn('pref write failed',err);
+    prefs[k]=was;
+    renderPrefs();
+    toast("That didn't save — check your connection and try again.",'fail');
+    return;
+  }
+  localStorage.setItem('ps_prefs',JSON.stringify(prefs));
 });
 renderPrefs();
 
 /* ---------- sign out ----------
    Nothing is lost: picks live in Firestore against the account, not the
    device. This exists mainly for a shared iPad. */
-$('#logout').addEventListener('click',()=>{
+$('#logout').addEventListener('click',async()=>{
   if(!confirm('Sign out? Your picks are saved to your account and will be here when you sign back in.'))return;
+  const btn=$('#logout');
+  if(btn){ btn.disabled=true; btn.textContent='Signing out'; }
+  /* WAIT FOR THE TEARDOWN, THEN RELOAD.
+     Both calls used to be fire-and-forget with location.reload() on the
+     same tick, and Firebase's sign-out is an async IndexedDB write. The
+     reload cancelled it, onAuthStateChanged came back with the PREVIOUS
+     user, ensureCurrentPool() re-derived the pool from that, and the
+     next person on the family iPad was signed in as the last one —
+     their picks, their standings row, their account. Clearing ps_pool
+     does not help, because auth state is the source of truth.
+     allSettled, not all: a failed /api/logout must not strand someone
+     on a screen that will not sign out. */
   if(!DEMO){
-    fetch('/api/logout',{method:'POST',credentials:'include'}).catch(()=>{});
-    PS.signOut().catch(()=>{});
+    try{
+      await Promise.allSettled([
+        fetch('/api/logout',{method:'POST',credentials:'include'}),
+        PS.signOut(),
+      ]);
+    }catch(e){ console.warn('sign out',e); }
   }
-  ['ps_onboarded','ps_name','ps_pool'].forEach(k=>localStorage.removeItem(k));
+  // ps_prefs too: they belong to the person who just left, and the next
+  // person's first toggle would otherwise write the previous player's
+  // whole preference set into their own roster entry.
+  ['ps_onboarded','ps_name','ps_pool','ps_prefs','ps_locked']
+    .forEach(k=>localStorage.removeItem(k));
   location.reload();
 });
 
-/* ---------- replay the walkthrough ---------- */
+/* ---------- replay the walkthrough ----------
+   NEVER starts at screen 0 for someone already signed in. Screen 0 is
+   the name-and-email sign-in form, so "Show me again" — offered in
+   Settings to owners walking a relative through the app — put an
+   already-signed-in player through a real /api/request-code, then
+   waited for a six-digit code they had to go and fetch from their
+   inbox, to watch a tour. Skip past the sign-in screens; there is
+   nothing in them for someone who is already in. */
 function replayOnboarding(toHowTo){
   const sc=obScreens();
-  obStep=toHowTo?Math.max(0,sc.findIndex(x=>x.howto)):0;
+  const firstTour=Math.max(0,sc.findIndex(x=>x.howto));
+  obStep=toHowTo?firstTour:(PS&&PS.user?firstTour:0);
   if(obStep<0)obStep=sc.length-1;
   localStorage.removeItem('ps_onboarded');
   $('#ob').classList.remove('hide');

@@ -112,17 +112,42 @@ def main():
     # nothing with it. Nothing to unwind later.
     season_id = f"{args.season}PRE" if args.preseason else str(args.season)
     col = db.collection("seasons").document(season_id).collection("games")
-    batch, n = db.batch(), 0
+    # What is already stored, so a re-import cannot walk over results.
+    existing = {d.id: (d.to_dict() or {}) for d in col.stream()}
+
+    batch, n, kept = db.batch(), 0, 0
     for g in games:
         gid = g.pop("id")
-        # merge=True so re-running after a flex updates the time
-        # without wiping any scores already recorded.
+        prev = existing.get(gid)
+
+        # merge=True protects fields we DON'T send. It does not protect
+        # fields we DO send — and this payload always carries
+        # status="scheduled", awayScore=None, homeScore=None, winner=None.
+        #
+        # So re-running this mid-season (the documented fix for a flexed
+        # kickoff time) reset every finished game to "scheduled" with no
+        # score and no winner. The Grid emptied, every player's points
+        # dropped to zero, and the app would not put them back: score_week
+        # only looks at games that are not already final, and the client's
+        # isFinal() reads `status`. One routine re-import erased the
+        # season's results, on purpose, quietly.
+        #
+        # A game already carrying a result keeps it. Only the schedule
+        # fields — kickoff, network, spread — are refreshed, which is the
+        # only reason to re-import in the first place.
+        if prev and (prev.get("status") == "final" or prev.get("winner")):
+            for f in ("status", "awayScore", "homeScore", "winner"):
+                g.pop(f, None)
+            kept += 1
+
         batch.set(col.document(gid), g, merge=True)
         n += 1
         if n % 400 == 0:
             batch.commit(); batch = db.batch()
     batch.commit()
     print(f"Wrote {n} games to seasons/{season_id}/games")
+    if kept:
+        print(f"  ({kept} already final — kept their scores, refreshed only the schedule)")
 
 
 if __name__ == "__main__":

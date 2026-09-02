@@ -2,10 +2,26 @@ name: Score the week
 
 on:
   schedule:
-    # Times are UTC. GitHub cron can run up to ~15 min late — fine here.
-    - cron: '0 1 * * 1'    # Sun 9:00 PM ET  — after the late window
-    - cron: '0 5 * * 1'    # Mon 1:00 AM ET  — after Sunday night
-    - cron: '0 5 * * 2'    # Tue 1:00 AM ET  — after Monday night, final
+    # Times are UTC. GitHub cron can run up to ~15 min late.
+    #
+    # THE CLOCKS MOVE AND THE CRON DOES NOT. These were written against
+    # EDT (UTC-4). From the first Sunday in November the US is on EST
+    # (UTC-5) and every one of these lands an hour earlier in ET — which
+    # for the last run means 00:00 ET Tuesday, roughly half an hour after
+    # a Monday night game ends and BEFORE overtime or a long one has
+    # finished. If Monday's game is not final when the last run fires,
+    # the week never completes: no weekly winner is recorded, no badges
+    # are awarded, the Monday-night tiebreak never applies, and nobody
+    # can have a perfect week — permanently, because nothing runs again.
+    # That is weeks 9 through 18, most of the season.
+    #
+    # Fixed by running the final pass later and twice, so a long game or
+    # a late correction still gets picked up. Extra runs are cheap: the
+    # scorer recomputes from scratch and is idempotent.
+    - cron: '0 1 * * 1'    # Sun 8/9 PM ET  — after the late window
+    - cron: '0 7 * * 1'    # Mon 2/3 AM ET  — after Sunday night football
+    - cron: '0 8 * * 2'    # Tue 3/4 AM ET  — after Monday night, final
+    - cron: '0 16 * * 2'   # Tue 11 AM/noon ET — catches a corrected result
   workflow_dispatch:
     inputs:
       week:
@@ -16,9 +32,17 @@ on:
         type: boolean
         default: false
 
+# Two runs must never interleave: every standings write is a
+# read-modify-write, so a manual dispatch landing on top of a scheduled
+# run can lose a week from the totals.
+concurrency:
+  group: score-week
+  cancel-in-progress: false
+
 jobs:
   score:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -35,13 +59,26 @@ jobs:
         run: echo "$SA" > /tmp/sa.json
 
       - name: Score
+        # Inputs go through the environment, never straight into the
+        # shell. `${{ inputs.week }}` interpolated into a run: block is
+        # executed as shell text, and this job has the Firebase admin key
+        # sitting at /tmp/sa.json — a dispatch input of `1; cat
+        # /tmp/sa.json` would print the credential into the run log.
         env:
           FIREBASE_SERVICE_ACCOUNT_FILE: /tmp/sa.json
+          SEASON: ${{ vars.SEASON || '2026' }}
+          IN_WEEK: ${{ inputs.week }}
+          IN_NOPUSH: ${{ inputs.no_push }}
+          APP_ORIGIN: ${{ vars.APP_ORIGIN || 'https://nflweeklypickem.com' }}
         run: |
-          ARGS="--season ${{ vars.SEASON || '2026' }}"
-          [ -n "${{ inputs.week }}" ] && ARGS="$ARGS --week ${{ inputs.week }}"
-          [ "${{ inputs.no_push }}" = "true" ] && ARGS="$ARGS --no-push"
-          python scripts/score_week.py $ARGS
+          set -u
+          case "${IN_WEEK:-}" in
+            ''|*[!0-9]*) WEEK_ARG="" ;;
+            *)           WEEK_ARG="--week ${IN_WEEK}" ;;
+          esac
+          PUSH_ARG=""
+          [ "${IN_NOPUSH:-}" = "true" ] && PUSH_ARG="--no-push"
+          python scripts/score_week.py --season "$SEASON" $WEEK_ARG $PUSH_ARG
 
       - name: Shred the key
         if: always()

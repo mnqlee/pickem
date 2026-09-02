@@ -108,8 +108,23 @@ reset();
   for (let i = 0; i < 4; i++) await call('/api/verify-code', { email: EMAIL, code: bad });
   const locked = await call('/api/verify-code', { email: EMAIL, code: bad });
   ok('locks out after 5 wrong tries', locked.status === 429, String(locked.status));
-  const stillLocked = await call('/api/verify-code', { email: EMAIL, code: real });
-  ok('and the lockout holds even for the right code', stillLocked.status === 429);
+  /* A CORRECT code is always honoured, even while the address is locked.
+
+     This assertion used to demand the opposite, and the behaviour it was
+     protecting was an account-lockout hole: the counter was checked before
+     the code was compared, and only a successful sign-in cleared it — so
+     five wrong guesses aimed at someone else's address locked the real
+     owner out, and because they could never reach the success branch, no
+     correct code could ever unlock it. One request every fourteen minutes
+     held it open indefinitely, for about a hundred requests a day.
+
+     A correct PIN proves inbox access, which is the entire authentication
+     factor here; refusing it protects nobody. The counters still stop
+     GUESSING — asserted directly above — and the atomic rate limiter is
+     what stops a flood. */
+  const rightCode = await call('/api/verify-code', { email: EMAIL, code: real });
+  ok('but the RIGHT code still works — a lockout must not deadlock its owner',
+     rightCode.status === 200, String(rightCode.status));
 }
 
 console.log('\n5. A correct code clears the failure counter');

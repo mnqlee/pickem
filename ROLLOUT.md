@@ -9,9 +9,13 @@ plan for your first real season with a couple dozen players.
 
 **Doesn't:** you don't strictly need the snapshot layer. 25 players is
 400 documents per Grid open — well inside the free tier and fast enough
-on cellular. Deploy it anyway, because it's already written and it means
-no migration later, but if you're short on time before Week 1 it can
-wait.
+on cellular. It can wait — and for now, "wait" means indefinitely: the
+snapshot builder (`build_snapshot.py`) isn't wired to the client (the
+Grid reads `picks/` directly, and always has — see that script's own
+header) and its live-refresh piece doesn't exist yet either (see
+SCALE.md Part 1's note at the top). Adopting it later is a real
+migration, not a flag flip; SCALE.md walks through it when you're
+actually past ~100 players.
 
 **Does:** you can no longer walk everyone through installation in
 person. The app has to do it. That's what the onboarding screens are
@@ -159,8 +163,13 @@ the app. People skim.
 
 ## Week 1
 
-- Watch Actions on Thursday afternoon. A green Live run means snapshots
-  built and reminders sent.
+- Live scores and reminders run on the `pickem-live` Cloudflare Worker
+  now, not a GitHub Actions schedule — there is nothing to watch in the
+  Actions tab on Thursday afternoon; that workflow is manual-only (see
+  BUILD.md Part 9.4). Instead, `cd worker && wrangler tail -c
+  wrangler-live.toml` while a game is live, or hit
+  `https://YOURWORKER.workers.dev/__live/test?key=YOUR_ADMIN_KEY` once
+  to confirm a real push lands.
 - Check the roster document has 25 keys with `tokens` arrays. Anyone
   missing tokens gets no alerts and won't know why.
 - After Monday night, verify standings against a manual count of one
@@ -177,10 +186,13 @@ so plainly.
 **Someone will lose their account** by clearing Safari data. That's what
 account linking is for; push the prompt.
 
-**A snapshot job will fail silently on a Sunday.** The Grid freezes, no
+**The live Worker will fail silently on a Sunday.** The Grid freezes, no
 reminders go out, and nobody tells you because they assume it's their
-phone. Turn on GitHub's workflow-failure emails, and glance at Actions
-on Sunday morning.
+phone. GitHub's workflow-failure emails won't catch this — the live path
+is `worker/live.js` now, not an Actions job (that one only fires for the
+Sunday/Monday/Tuesday `score_week.py` scoring run). Glance at `wrangler
+tail -c wrangler-live.toml` or the Cloudflare dashboard's Worker logs on
+Sunday morning instead.
 
 **Somebody will rank two games the same number** if you ever write a
 client that permits it. The scoring job catches it and scores that week

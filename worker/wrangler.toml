@@ -14,6 +14,28 @@ id = "56aa4bf7ae2244ef97000e51d0e0c4e5"
 binding = "SESSIONS"
 id = "15a1d88c2a5045fcacae2f207d09b401"
 
+# ---------- RATE LIMITING ----------
+# KV cannot do this job. Its counters are a read-modify-write, so guesses
+# fired in parallel all read the same value and land on 1 instead of N —
+# which caps a person retrying by hand but does nothing about a script.
+# These bindings are atomic and evaluated at the edge, and because they
+# live here they deploy WITH the Worker instead of waiting on a dashboard
+# rule somebody has to remember to create.
+#
+# PINS_LIMITER guards PIN guessing; SEND_LIMITER stops the mailer being
+# used to flood an inbox.
+[[unsafe.bindings]]
+name = "PINS_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 8, period = 60 }
+
+[[unsafe.bindings]]
+name = "SEND_LIMITER"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 6, period = 60 }
+
 # secrets, set with `wrangler secret put NAME`:
 #   SA_JSON      the Firebase service account JSON, pasted whole
 #   RESEND_KEY   your Resend API key

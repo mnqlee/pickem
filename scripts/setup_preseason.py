@@ -49,6 +49,13 @@ def main():
     })
     ref.collection("private").document("roster").set({})
 
+    # Code -> pool lookup; see setup_season.py and the JOIN CODES block in
+    # firestore.rules. Without this the join link cannot resolve.
+    db.collection("joinCodes").document(code).set({
+        "poolId": ref.id,
+        "season": pre,
+    })
+
     print(f"""
 Preseason pool created.
 

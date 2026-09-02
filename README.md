@@ -30,7 +30,7 @@ scripts/archive_pool.py        flatten a finished pool into one doc, hide/show i
 scripts/check_roster.py        who will silently get no notifications
 scripts/make_icons.py          regenerate the PWA icons
 icons/                         generated, committed
-scripts/build_snapshot.py      every 5 min — what the app reads
+scripts/build_snapshot.py      NOT wired to anything live — see its own header
 scripts/remind.py              pre-kickoff notifications
 scripts/score_week.py          scores and final standings
 scripts/check.sh               preflight config check

@@ -398,19 +398,61 @@ Repo → Settings → Secrets and variables → **Actions**
 1. Firebase → Project settings → **Cloud Messaging** tab
 2. Web Push certificates → **Generate key pair**
 3. Copy it into `VAPID_KEY` in `firebase-init.js`
-4. Create `firebase-messaging-sw.js` in the project root:
+4. `firebase-messaging-sw.js` is already in the repo — you do NOT need to
+   create it or register it. It used to be step 4 here, and the file is
+   still checked in with the right code, but `getToken()` in
+   `firebase-init.js` passes `serviceWorkerRegistration: reg` explicitly
+   (`reg` = `sw.js`'s own registration), which is what actually receives
+   pushes — see the PUSH comment near the top of `sw.js`. Nothing ever
+   registers `firebase-messaging-sw.js`, and nothing needs to.
 
-```js
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
-firebase.initializeApp({ /* the same config as firebase-init.js */ });
-firebase.messaging();
+## 9.3 Deploy the live Worker
+
+This is the part that actually keeps the Grid live. It's easy to miss
+because nothing earlier in this guide points here — Part 6 deploys the
+**auth** Worker (`worker/auth.js`, `wrangler.toml`); this is a second,
+separate Worker (`worker/live.js`, `wrangler-live.toml`) that polls ESPN
+and sends kickoff reminders on Cloudflare Cron Triggers. Skip this step
+and the site still works, but scores never update and nobody gets
+reminded of anything.
+
+`wrangler-live.toml` already reuses the `SESSIONS` KV namespace id from
+Part 6.2 and has `SEASON` set — no KV namespace to create here, just
+secrets and deploy:
+
+```bash
+cd worker
+wrangler secret put SA_JSON -c wrangler-live.toml
+# paste the ENTIRE contents of serviceAccount.json, then Ctrl-D
+
+wrangler secret put ADMIN_KEY -c wrangler-live.toml
+# any long random string — guards the /__live/ endpoints below, one of
+# which sends a real push to a real phone
+
+wrangler deploy -c wrangler-live.toml
+cd ..
 ```
 
-Yes, that's a second service worker. Firebase requires this exact
-filename at the root. It doesn't conflict with `sw.js`.
+Confirm `SEASON` in `wrangler-live.toml` matches `SEASON` in
+`index.html` and `firebase-init.js` — `bash scripts/check.sh` checks
+this for you. A mismatch means the Worker polls the wrong season's
+schedule and nothing it does ever shows up in the app.
 
-## 9.3 Test the jobs
+**Test it**, once alerts are turned on in a real (non-InPrivate) browser
+tab so there's a token to receive it:
+
+```
+https://YOURWORKER.workers.dev/__live/test?key=YOUR_ADMIN_KEY
+```
+
+A real notification should appear within a few seconds. That's the one
+piece of this whole guide that can't be verified from a terminal —
+it has to land on an actual phone or browser.
+
+You do **not** need to redeploy the auth Worker (Part 6) for anything
+in this part — they're independent.
+
+## 9.4 Test the GitHub Actions jobs
 
 ```
 Actions → Live → Run workflow → dry_run = true
@@ -420,8 +462,14 @@ Snapshots get built for real; no notifications go out. Read the log.
 
 Then `Actions → Score the week → Run workflow`.
 
-Both green: the schedule is running. `Live` fires every 5 minutes on
-game days; `Score the week` runs Sunday night, Monday night, Tuesday
+Both green tells you the code in each job runs — it does NOT mean a
+schedule is now ticking. `Live`'s `schedule:` trigger is commented out
+(see the file's own header): the Cloudflare Worker at `worker/live.js`
+is what actually runs on a timer now — scores every minute, reminders
+every five — deployed with `wrangler deploy -c wrangler-live.toml`, not
+by anything in this Actions tab. `Live` here is a manual fallback only.
+`Score the week` **is** still schedule-driven and runs Sunday night,
+Monday night, Tuesday
 morning.
 
 ---
@@ -618,44 +666,63 @@ audience.
 
 # How live data actually flows
 
-Four moving parts. Nothing polls from the phone.
+*(Updated — this section originally described a GitHub-Actions-driven
+snapshot pipeline. That pipeline is now superseded by the Cloudflare
+Worker below; the old design is kept nowhere else, so the corrected
+version is here instead of a separate changelog.)*
+
+Three moving parts. Nothing polls from the phone.
 
 ```
 ESPN scoreboard
-      |  every 5 min on game days (Live workflow)
+      |  every minute, game windows only (Cloudflare Worker: pickem-live)
       v
 seasons/2026/games/*          scores, status, winner
-      |  same run, immediately after
-      v
-pools/{id}/snapshots/*        prebuilt Grid + standings
       |  Firestore onSnapshot listener
       v
 every phone, instantly
 ```
 
-## The 5-minute loop
+Reminders run on their own cron in the same Worker, every five minutes,
+computed straight from `picks/*` — no intermediate document, nothing
+that can go stale between runs.
 
-`.github/workflows/live.yml`, Thursday through Monday. Three steps, and
-the order is load-bearing:
+## The live Worker
 
-1. **Refresh scores.** `score_week.py --scores-only` pulls the current
-   and next week from ESPN and writes any game whose score or status
-   moved. Only changed documents are written, so a quiet run costs
-   nothing.
-2. **Build snapshots.** `build_snapshot.py` recomputes the Grid and
-   standings from those scores and publishes them.
-3. **Send reminders.** `remind.py` reads the progress document step 2
-   just wrote.
+`worker/live.js`, deployed on its own with `wrangler deploy -c
+wrangler-live.toml` (this is separate from `.github/workflows/live.yml`
+below — same name, different mechanism). One Worker, two Cloudflare Cron
+Triggers:
 
-Skip step 1 and the Grid rebuilds from stale results. That was the
-original bug: `Live` never pulled scores, so nothing turned green until
-the Sunday-night scoring run.
+1. **Every minute**, `* * * * *` — pull the current and next week from
+   ESPN and write any game whose score or status moved. Exits
+   immediately, at no cost, when nothing is live.
+2. **Every five minutes**, `*/5 * * * *` — send kickoff reminders to
+   anyone still missing a pick, checked directly against `picks/*`.
+
+Cloudflare Cron Triggers fire on the minute, which is the whole reason
+this runs on a Worker instead of GitHub Actions — see "Be honest about
+the lag" below for the problem that led here.
+
+## `.github/workflows/live.yml` — manual fallback only now
+
+This used to be the live loop: `score_week.py --scores-only` →
+`build_snapshot.py` → `remind.py`, on a 5-minute GitHub Actions
+schedule. Its `schedule:` trigger is commented out now — running it
+alongside the Worker sent every kickoff reminder twice, from two dedupe
+stores that can't see each other (Cloudflare KV vs. Firestore; see the
+file's own header). It's kept as `workflow_dispatch` only, for a manual
+run if the Worker is ever down. Note that `build_snapshot.py`'s output
+(`pools/{id}/snapshots/*`) isn't read by the client — see that script's
+own header — so what running this workflow by hand is actually useful
+for is its `score_week.py --scores-only` step.
 
 ## How phones find out
 
-They don't poll. `watchBoard()` and `watchWeek()` open Firestore
-`onSnapshot` listeners, so when a snapshot document changes every open
-app updates within a second or two. No refresh, no pull-to-reload.
+They don't poll. `watchWeek()` and `watchRevealed()` open Firestore
+`onSnapshot` listeners directly on the game and pick documents, so when
+one changes every open app updates within a second or two. No refresh,
+no pull-to-reload.
 
 Countdown timers are the exception: those tick locally every second,
 because a duration doesn't need a server.
@@ -666,23 +733,22 @@ because a duration doesn't need a server.
 |---|---|---|
 | Kickoff lock | instant | Server-side rule. No job involved. |
 | Countdown | 1 sec, local | Ticks in the browser |
-| Scores | ~5 min | ESPN into Firestore |
-| Grid + standings | ~5 min | Rebuilt after scores |
-| Reminders | ~5 min | Only to people missing picks |
+| Scores | 1 min, game windows only | ESPN into Firestore (`pickem-live` Worker) |
+| Grid + standings | instant | Client listens on games/picks directly, no rebuild step |
+| Reminders | 5 min | Only to people missing picks (`pickem-live` Worker) |
 | Final scoring, badges, push | 3x weekly | Sun night, Mon night, Tue morning |
 
 ## Be honest about the lag
 
 **GitHub's cron is best-effort and routinely fires 10 to 20 minutes
-late.** So "live" here means *a few minutes behind*, not play-by-play.
-For a pick 'em that is fine: people watch the game on television and
-check the Grid between drives.
-
-If you ever want it tighter, move step 1 to a **Cloudflare Cron
-Trigger** on the Worker you already have. Those fire on time at
-one-minute granularity. It is more work, because the Worker has to
-write Firestore over the REST API instead of using the Admin SDK, and
-it is not worth doing until somebody complains.
+late.** That's fine for a Sunday-night scoring run, but useless for a
+"last call, 30 minutes out" reminder — which is exactly why scores and
+reminders moved off GitHub Actions and onto the Cloudflare Worker above:
+Cloudflare Cron Triggers fire on time, at one-minute granularity.
+`Score the week` (Part 9's other workflow) is still on GitHub's
+schedule, and still subject to this lag — fine there, since it only
+needs to land sometime Sunday night through Tuesday morning, not to the
+minute.
 
 ## Load
 

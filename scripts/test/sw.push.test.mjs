@@ -57,5 +57,62 @@ console.log('\nService worker push handling');
   handlers.notificationclick(ev);
   ok('tapping closes the notification', closed);
 }
+/* ------------------------------------------------------------------ */
+console.log('\nWhat the worker is allowed to cache');
+
+function boot(fetchStub){
+  const put=[]; const handlers={};
+  const self={ addEventListener:(t,f)=>{handlers[t]=f}, skipWaiting(){},
+    location:{origin:'https://x.com'},
+    clients:{claim(){},matchAll:async()=>[],openWindow:async()=>{}},
+    registration:{showNotification:async()=>{}} };
+  const caches={ open:async()=>({ add:async()=>{},
+      put:async(req)=>{ put.push(String(req&&req.url||req)); } }),
+    keys:async()=>[], delete:async()=>{}, match:async()=>null };
+  new Function('self','caches','fetch','Response','URL',src)
+    (self, caches, fetchStub, class{constructor(){}}, URL);
+  const hit=(url,mode='cors')=>{ let p=null;
+    handlers.fetch({ request:{url,method:'GET',mode}, respondWith:x=>{p=x;} });
+    return p; };
+  return {put,handlers,hit};
+}
+
+{
+  /* THE BUG THIS LOCKS OUT. /api/session is a GET whose path ends in
+     neither .html nor .js nor a slash, so it fell through to the
+     cache-first branch and was stored PERMANENTLY. Its body is a
+     Firebase custom token that expires in an hour.
+
+     Three consequences, none of them obvious from the symptom:
+       - Signing out did not sign you out. The reload re-fetched
+         /api/session, got the cached 200 with the OLD token, and signed
+         the same person straight back in. On a shared iPad, the next
+         person was signed in as the previous player.
+       - Every returning player was sent back to the PIN screen every
+         week, forever: the cached token was weeks old, Firebase
+         rejected it, the error was swallowed, and the worker would
+         never re-fetch.
+       - A 401 from the first-ever visit was cached too, so automatic
+         session restore was dead from day one.
+
+     Bumping VERSION does not help, because the new worker does not
+     activate until every window of the app is closed. */
+  const t = boot(async () => ({ ok:true, clone:()=>({}) }));
+  ok('the fetch handler exists', typeof t.handlers.fetch === 'function');
+  ok('/api/session is never intercepted', t.hit('https://x.com/api/session') === null);
+  ok('/api/logout is never intercepted', t.hit('https://x.com/api/logout') === null);
+  ok('nor any other /api/ route', t.hit('https://x.com/api/verify-code') === null);
+  ok('the page itself is still handled', t.hit('https://x.com/','navigate') !== null);
+}
+{
+  /* A fetch() promise RESOLVES for 404 and 503 — it only rejects when
+     the network itself fails. Neither branch checked, so a momentary
+     404 during a Pages deploy could become the permanent answer for an
+     icon, recoverable only by a VERSION bump AND a full worker swap. */
+  const t = boot(async () => ({ ok:false, status:404, clone:()=>({}) }));
+  await t.hit('https://x.com/icons/icon-192.png');
+  ok('a 404 is never written to the cache', t.put.length === 0, t.put.join(','));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

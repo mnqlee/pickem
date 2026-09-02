@@ -108,20 +108,15 @@ const firebaseConfig = {
 const VAPID_KEY = "PASTE_ME";
 ```
 
-**2.15** Create a new file `firebase-messaging-sw.js` in the project
-root — same folder as `index.html`:
+**2.15** Nothing to do here — `firebase-messaging-sw.js` is already
+checked into the repo, but you don't need to register it or even look at
+it. `getToken()` in `firebase-init.js` passes `serviceWorkerRegistration:
+reg` explicitly (`reg` is `sw.js`'s own registration), which is what
+actually receives pushes — see the PUSH comment near the top of `sw.js`.
+Nothing ever registers `firebase-messaging-sw.js`.
 
-```js
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
-firebase.initializeApp({
-  // paste the SAME firebaseConfig object here
-});
-firebase.messaging();
-```
-
-> Yes, a second service worker. Firebase requires this exact filename at
-> the root. It does not conflict with `sw.js`.
+> This step used to say to create that file yourself. Skip it — see
+> `sw.js`'s own header for the full story of why that file is unused.
 
 **2.16** Project settings → **Service accounts** tab → **Generate new
 private key** → **Generate key**. Save the downloaded file as

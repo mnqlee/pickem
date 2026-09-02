@@ -33,10 +33,31 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    /* ---------- JOIN CODES ----------
+       code -> poolId, and nothing else. This exists so the pool documents
+       themselves do not have to be world-readable.
+
+       They used to be: `pools/{poolId}` allowed `read: if signedIn()`,
+       which permits LISTING the collection. Since the sign-in Worker will
+       mint a token for any address that can receive an email, anyone at
+       all could sign up, list every pool, read its `joinCode` and
+       `ownerUid`, and then write their own membership document — which
+       the members rule allowed with no proof of invitation whatsoever.
+       They would then be a full member: reading everyone's revealed
+       picks, appearing in the standings, and having their picks folded
+       into the pool's scoring.
+
+       Knowing a code still gets you in — that is what a code is for — but
+       you must now KNOW it. You cannot go looking for one. */
+    match /joinCodes/{code} {
+      allow read:  if signedIn();       // one document, by exact code
+      allow write: if false;            // written by setup_season.py only
+    }
+
     // ---------- POOLS ----------
     match /pools/{poolId} {
-      // Readable so joinPool() can look up a code.
-      allow read:   if signedIn();
+      // Members only. Codes are resolved through /joinCodes above.
+      allow read:   if isMember(poolId);
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow update, delete: if isOwner(poolId);
 
@@ -48,8 +69,29 @@ service cloud.firestore {
         // The second clause lets someone read only their OWN doc before
         // it exists; it does not let them read anyone else's.
         allow read:  if isMember(poolId) || (signedIn() && request.auth.uid == uid);
-        // You may only create or edit your own membership record.
-        allow write: if signedIn() && request.auth.uid == uid;
+
+        /* You may only create or edit your OWN membership record, and the
+           shape is constrained.
+
+           `name` needs bounding for two independent reasons. It is
+           rendered into the page by every other member's browser, so
+           before this it was a stored-XSS hole: a member could set their
+           name to markup and run script inside everyone else's session,
+           on the origin that holds the sign-in cookie. (The client escapes
+           it now too — both halves matter; neither alone is enough.) And
+           the app shows it next to real people's scores, so a 10KB "name"
+           is a griefing tool. `hasOnly` also stops arbitrary junk being
+           stashed in a document every member can read. */
+        allow write: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['name', 'photo', 'joinedAt', 'code'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 40
+          /* Creating a membership requires the pool's join code. Editing
+             an existing one (a rename) does not — you are already in. */
+          && (resource != null ||
+              request.resource.data.code ==
+                get(/databases/$(database)/documents/pools/$(poolId)).data.joinCode);
       }
 
       // ---------- CONFIG ----------
@@ -124,7 +166,14 @@ service cloud.firestore {
             $(request.resource.data.gameId)).data;
         }
 
-        allow read: if isMember(poolId) && (
+        /* `resource != null` first: on a get() of a document that does not
+           exist, `resource` is null and dereferencing `.data` is an
+           evaluation error, which rules treat as a DENIAL. Reading your
+           own not-yet-written tiebreak therefore failed, and because the
+           client caught that rejection for the whole function, the
+           tiebreak panel was blank for everyone who had not personally
+           entered a guess for that week. */
+        allow read: if isMember(poolId) && resource != null && (
           resource.data.uid == request.auth.uid ||
           resource.data.revealAt <= request.time
         );
@@ -132,6 +181,14 @@ service cloud.firestore {
         allow create, update: if isMember(poolId)
           && tbId == request.auth.uid + '_' + string(request.resource.data.wk)
           && request.resource.data.uid == request.auth.uid
+          // The guessed game must BELONG to the week being guessed.
+          // Without this, `wk` and `gameId` were unrelated: you could wait
+          // until week 3's Monday nighter had finished, then write a
+          // week-3 tiebreak naming a week-18 game — the kickoff lock was
+          // checked against week 18, so it passed — and submit the exact
+          // final total days after the fact. Pinning revealAt to a week-18
+          // kickoff also hid the winning guess from everyone else.
+          && tbGame().wk == request.resource.data.wk
           && request.time < tbGame().kickoff
           && request.resource.data.revealAt == tbGame().kickoff
           && request.resource.data.total is int
@@ -168,12 +225,13 @@ service cloud.firestore {
            create/update rule below, so an unrevealed pick stays
            unreadable no matter what a client asks for. Same shape as the
            tiebreaks rule above, deliberately. */
-        allow read: if isMember(poolId) && (
+        // `resource != null` for the same reason as tiebreaks above.
+        allow read: if isMember(poolId) && resource != null && (
           resource.data.uid == request.auth.uid ||
           resource.data.revealAt <= request.time
         );
 
-        // WRITE: four conditions, all required.
+        // WRITE: five conditions, all required.
         allow create, update: if isMember(poolId)
           // 1. The doc id must be yours. Stops writing to someone else's pick.
           && pickId == request.auth.uid + '_' + request.resource.data.gameId
@@ -184,7 +242,22 @@ service cloud.firestore {
           // 3. revealAt must be an honest copy of kickoff, so it cannot
           //    be backdated to expose picks early or forward-dated to hide them.
           && request.resource.data.revealAt == game().kickoff
-          // 4. Weight is either absent or a legal stake.
+          /* 4. `wk` must be the game's REAL week.
+                This was unconstrained, and the gap was not theoretical: a
+                member could write a pick tagged wk=3 whose gameId belonged
+                to week 18. The kickoff lock passed (week 18 is months
+                away), and the scoring job — which loads a week's picks by
+                `wk` — then saw that player holding more weights than the
+                week had games, judged the weight set invalid, and dropped
+                the ENTIRE POOL to straight-up scoring for that week. One
+                member could silently erase everyone's confidence points,
+                retroactively, for any week they liked. */
+          && request.resource.data.wk == game().wk
+          /* 5. Weight is either absent or a legal stake. `winner` is
+                allowed to be null: that is a CLEARED pick. Picks can never
+                be deleted, so un-picking a game has to be recorded as a
+                tombstone — otherwise the removed pick stays in the
+                database and goes on being scored. */
           && (request.resource.data.weight == null ||
               (request.resource.data.weight is int &&
                request.resource.data.weight >= 1 &&

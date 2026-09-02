@@ -150,10 +150,7 @@ const norm = e => String(e || '').trim().toLowerCase();
 function validEmail(e) {
   if (typeof e !== 'string') return false;
   if (e.length < 6 || e.length > 254) return false;
-  // No apostrophe in this set: o'brien@ and d'angelo@ are legal, issued
-  // addresses. The characters that matter are the ones that let an address
-  // carry a second address (angle brackets, comma, semicolon, quote).
-  if (/[<>,;"\\\s]/.test(e)) return false;
+  if (/[<>,;"'\\\s]/.test(e)) return false;
   if (/[^\x20-\x7E]/.test(e)) return false;          // ASCII only
   const at = e.lastIndexOf('@');
   if (at < 1) return false;
@@ -176,20 +173,7 @@ function deliveryKey(raw) {
   const s = norm(raw);
   const at = s.lastIndexOf('@');
   if (at < 1) return s;
-  let local = s.slice(0, at).split('+')[0];
-  const domain = s.slice(at + 1).replace(/\.$/, '');
-  /* Gmail ignores dots as well as +tags, and leaving them in here left
-     the mail bomb this function exists to stop wide open for the biggest
-     mail provider there is: lee@, l.ee@, le.e@, l.e.e@ … are 2^(n-1)
-     distinct keys for one inbox, each with its own send budget, all
-     carrying the same valid PIN. Only the per-IP limiter stood in the
-     way — a few thousand DKIM-signed messages a day into one victim's
-     inbox, on our sending domain's reputation. */
-  if (domain === 'gmail.com' || domain === 'googlemail.com') {
-    local = local.replace(/\./g, '');
-    return (local || s.slice(0, at)) + '@gmail.com';
-  }
-  return local + '@' + domain;
+  return s.slice(0, at).split('+')[0] + '@' + s.slice(at + 1).replace(/\.$/, '');
 }
 
 /* The address a player IS, as opposed to the one they typed.
@@ -312,35 +296,11 @@ async function requestCode(req, env, cors) {
     return json({ error: 'too_many' }, 429, cors);
   }
 
-  /* Cooldown, keyed on the IDENTITY — not the mailbox.
-
-     On a hit we still answer 200 with the same shape, because a code
-     from the last 45s is in their inbox and, since PINs are derived per
-     window, it is the very same code we would send again. The flag
-     exists so the UI can say something true instead of pretending it
-     sent.
-
-     KEYING THIS ON deliveryKey() WAS A REMOTE ACCOUNT LOCKOUT, and a
-     cheap one. deliveryKey strips +tags for every domain; canonical()
-     keeps them outside Gmail. So for any non-Gmail address the two
-     disagree, and an attacker could exploit the gap:
-
-       1. POST request-code for  lee+x@yahoo.com
-          → cooldown set on     rl:lee@yahoo.com
-          → the PIN mailed is derived for the IDENTITY lee+x@yahoo.com
-       2. Lee asks for his own code within 45s → cooldown hit → nothing
-          is sent, and the app cheerfully tells him it is in his inbox.
-       3. The code that IS in his inbox belongs to a different identity,
-          so verifying it answers wrong_code — and each honest attempt
-          burns one of his five attempts until he is locked for 15
-          minutes.
-
-     One request every 40 seconds, trivially scripted, holds a named
-     player out of the pool indefinitely with no way to recover. The
-     mailbox-level defence this was reaching for is the SEND_LIMITER
-     immediately above, which is where it belongs: that one is about
-     whose inbox fills up, this one is about who already has a code. */
-  const throttled = await env.PINS.get(`rl:${e}`);
+  // Cooldown. On a hit we still answer 200 with the same shape, because
+  // a code from the last 45s is in their inbox and — since PINs are derived
+  // per window — it is the very same code we would send again. The flag
+  // exists so the UI can say something true instead of pretending it sent.
+  const throttled = await env.PINS.get(`rl:${deliveryKey(typed)}`);
   if (throttled) return json({ ok: true, throttled: true }, 200, cors);
 
   const pin = await pinFor(env, e, currentWindow());
@@ -368,8 +328,7 @@ async function requestCode(req, env, cors) {
   // (pinFor is deterministic per window) — trivial next to telling
   // someone their code request failed when it didn't.
   try {
-    // Same key as the read above — the identity, not the mailbox.
-    await env.PINS.put(`rl:${e}`, '1', { expirationTtl: REQUEST_COOLDOWN });
+    await env.PINS.put(`rl:${deliveryKey(typed)}`, '1', { expirationTtl: REQUEST_COOLDOWN });
   } catch (err) {
     console.error('cooldown write failed (non-fatal, code already sent)', String(err));
   }
@@ -427,39 +386,16 @@ async function verifyCode(req, env, cors) {
      path contains /api/verify-code, 10 requests per 1 minute per IP,
      action Block. Do not raise these numbers instead — a bigger counter
      would still lose the same race. */
-  /* The atomic gate. This is the layer a scripted attack actually meets:
-     the KV counters below can be raced, this cannot. Quantified, the old
-     ceiling was roughly half a million guesses a day against a
-     1-in-a-million code across three live windows — a coin flip inside 24
-     hours, with no email ever sent to warn the account's owner, because
-     guessing never touches the mailer.
-
-     ONLY THE IP KEY IS CHECKED HERE. The per-ADDRESS key is checked in
-     the !hit branch below, with the KV counters, and the reason is the
-     bug directly beneath this comment: checking anything keyed on the
-     victim's email BEFORE comparing the code rebuilds the remote lockout
-     that block was written to remove. Eight wrong guesses a minute at a
-     known address — trivial to send — would hold `pin:{email}` at its
-     limit continuously, and the person holding that inbox would be
-     answered 429 while typing the correct code, exactly as before, just
-     through a different door. The atomic limiter made that DoS cheaper
-     than the KV version, not harder.
-
-     THE IP KEY MOVED DOWN TOO, and for the same reason in a different
-     costume. "A flood only costs its own source" is true of one person
-     and false of a household: four players watching the game together
-     on one WiFi, or anyone behind mobile-carrier CGNAT, share an IP.
-     Two sign-ins with one fumbled code each is four requests; a
-     double-tapped Verify button doubles it; at 8 a minute the fifth
-     person's CORRECT code came back "too many attempts" and they could
-     not get into the pool on the one afternoon it mattered. Successful
-     verifies were counted against the budget as well as failed ones.
-
-     Checking the code first costs nothing — the comparison is an HMAC
-     over cached key material, no KV read — and wrong guesses still meet
-     both limiters a few lines down. Nothing about the brute-force
-     ceiling changes; what changes is that a correct code can no longer
-     be refused. */
+  /* The atomic gate, per address AND per IP. This is the layer that a
+     scripted attack actually meets: the KV counters below can be raced,
+     this cannot. Quantified, the old ceiling was roughly half a million
+     guesses a day against a 1-in-a-million code across three live
+     windows — a coin flip inside 24 hours, with no email ever sent to
+     warn the account's owner, because guessing never touches the mailer. */
+  if (!(await rateOk(env.PINS_LIMITER, `pin:${e}`)) ||
+      !(await rateOk(env.PINS_LIMITER, `pinip:${ip}`))) {
+    return json({ error: 'too_many' }, 429, cors);
+  }
 
   const [tries, ipTries] = await Promise.all([
     countOf(env, `att:${e}`),
@@ -489,12 +425,6 @@ async function verifyCode(req, env, cors) {
   }
 
   if (!hit) {
-    // Both atomic limits live HERE, where they throttle GUESSING and can
-    // never stand between someone and their own correct code.
-    if (!(await rateOk(env.PINS_LIMITER, `pin:${e}`)) ||
-        !(await rateOk(env.PINS_LIMITER, `pinip:${ip}`))) {
-      return json({ error: 'too_many' }, 429, cors);
-    }
     if (tries >= MAX_ATTEMPTS)      return json({ error: 'locked' }, 429, cors);
     if (ipTries >= MAX_IP_ATTEMPTS) return json({ error: 'locked' }, 429, cors);
     const left = Math.max(0, MAX_ATTEMPTS - (tries + 1));

@@ -36,12 +36,38 @@ const VAPID_KEY = "BHd0epdIuyVNZK2ly8EKsZ3QUB-lERPlMM7hnuH_e_Y1auimWPhlww9iPQ-Ho
 
 const SEASON = "2026";
 
+/* How far behind the device clock to place any `revealAt <=` query bound.
+
+   The rules compare against `request.time` (Google's clock); the query
+   filters against this device's. A phone running even a minute fast asks
+   for picks the server has not revealed yet — and because a list query is
+   refused outright unless the rule permits EVERY document it could return,
+   the whole Grid read fails rather than returning fewer rows. It then
+   degrades to an empty Grid with only a console warning. Asking for
+   slightly less than we are entitled to costs at most one refresh cycle
+   of freshness; asking for slightly more costs the entire read. */
+const CLOCK_SKEW_MS = 120000;
+
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
 let user = null;
 let poolId = localStorage.getItem('ps_pool') || null;
+let swRegistering = null;
+
+/* Register the service worker the moment this module loads.
+
+   Everything push-related depends on there being a registered worker:
+   getToken() is handed one, and a Web Push message is only ever displayed
+   by a worker's own push handler. Waiting for the app to call registerSW()
+   meant it never happened at all. Registering here also warms the offline
+   cache before the first tap. */
+if ('serviceWorker' in navigator) {
+  // Deferred one tick so `registerSW` is defined and the app can still
+  // attach its own update prompt on top of this same registration.
+  setTimeout(() => registerSW(), 0);
+}
 
 /* ============================================================
    AUTH
@@ -61,6 +87,15 @@ async function signIn() {
 function watchAuth(cb) {
   onAuthStateChanged(auth, async u => {
     user = u;
+    if (!u) {
+      /* Clear the cached pool on sign-out. It used to survive, so the next
+         person to sign in on a shared device (the family iPad) was silently
+         auto-joined to the previous person's pool — they appeared in those
+         standings and could read that pool's revealed picks, and were never
+         offered the join screen. */
+      poolId = null;
+      try { localStorage.removeItem('ps_pool'); } catch {}
+    }
     if (u) {
       /* Guarded, because cb(u) is the contract and it has to fire.
          ensureCurrentPool() and ensureMember() have no internal try/catch,
@@ -92,7 +127,10 @@ async function alertsHealthy() {
   if (Notification.permission !== 'granted') return { ok: false, reason: 'permission' };
   if (!user || !poolId) return { ok: false, reason: 'signed-out' };
   try {
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await swReady();
+    // No worker means push cannot be delivered at all — report it as the
+    // fault it is rather than hanging on a promise that never settles.
+    if (!reg) return { ok: false, reason: 'no-worker' };
     const token = await getToken(getMessaging(app),
       { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     return token ? { ok: true } : { ok: false, reason: 'no-token' };
@@ -101,30 +139,68 @@ async function alertsHealthy() {
   }
 }
 
-async function ensureMember() {
+/* The name to show for this person, from the first source that has one.
+
+   PIN sign-in mints a Firebase CUSTOM token, and a custom token populates
+   neither `displayName` nor `email` — the Worker carries the address in a
+   custom claim, which is not `user.email`. The old chain fell all the way
+   through to reading `#obMailIn` from the DOM, but by the time joinPool()
+   runs the onboarding body has been re-rendered to the PIN screen and that
+   input no longer exists. So EVERY member document was created with the
+   literal name "Player".
+
+   That is not just cosmetic: the app keyed players by name, so a whole
+   pool of "Player" collapsed into one row and everyone saw one person's
+   picks. The name typed at "What do we call you?" is saved to
+   localStorage by the onboarding, so use it. */
+function myName() {
+  const typed = (() => { try { return localStorage.getItem('ps_name'); } catch { return null; } })();
+  return (user && user.displayName)
+      || (typed && typed.trim())
+      || (user && user.email ? user.email.split('@')[0] : null)
+      || (document.getElementById('obMailIn')?.value?.split('@')[0])
+      || 'Player';
+}
+
+async function ensureMember(code) {
   const ref = doc(db, 'pools', poolId, 'members', user.uid);
   const snap = await getDoc(ref);
+  const name = myName();
   if (!snap.exists()) {
-    await setDoc(ref, {
-      name: user.displayName || (user.email ? user.email.split('@')[0] : (document.getElementById('obMailIn')?.value || 'Player').split('@')[0]),
-      photo: user.photoURL || null,
-      joinedAt: serverTimestamp()
-    });
+    const rec = { name, photo: user.photoURL || null, joinedAt: serverTimestamp() };
+    // Required by the rule when CREATING a membership; omitted on rename.
+    if (code) rec.code = String(code).trim().toUpperCase();
+    await setDoc(ref, rec);
+  } else if (name !== 'Player' && snap.data().name !== name) {
+    // Heal the "Player" rows already written by the bug above, and pick up
+    // a rename, without touching joinedAt.
+    await setDoc(ref, { name }, { merge: true });
   }
 }
 
 /* ============================================================
    JOINING A POOL
    ============================================================ */
+/* Codes resolve through /joinCodes/{code}, a one-field lookup document,
+   rather than by querying the pools collection.
+
+   The old query needed every pool to be readable by anyone signed in,
+   which meant anyone signed in could also LIST them — reading every
+   pool's join code and owner, then writing themselves in as a member.
+   See the JOIN CODES block in firestore.rules. */
 async function joinPool(code) {
   const clean = code.trim().toUpperCase();
-  const q = query(collection(db, 'pools'), where('joinCode', '==', clean));
-  const res = await getDocs(q);
-  if (res.empty) throw new Error('That code does not match a pool.');
-  poolId = res.docs[0].id;
+  const look = await getDoc(doc(db, 'joinCodes', clean));
+  if (!look.exists()) throw new Error('That code does not match a pool.');
+
+  poolId = look.data().poolId;
+  if (!poolId) throw new Error('That code does not match a pool.');
   localStorage.setItem('ps_pool', poolId);
-  await ensureMember();
-  return { id: poolId, ...res.docs[0].data() };
+
+  // The code is carried on the membership document: the rule requires it
+  // to create one, which is what makes a code mean something.
+  await ensureMember(clean);
+  return await getPool();
 }
 
 async function getPool() {
@@ -151,7 +227,32 @@ async function getMembers() {
    app with no explanation. Check on launch and clear it. */
 async function ensureCurrentPool() {
   if (!poolId) return null;
-  const snap = await getDoc(doc(db, 'pools', poolId));
+  let snap;
+  try {
+    snap = await getDoc(doc(db, 'pools', poolId));
+  } catch (e) {
+    const code = (e && e.code) || '';
+    /* ONLY an identity failure clears the pool.
+
+       Clearing on ANY thrown read was badly wrong: with no offline
+       persistence configured, a getDoc on a dead connection rejects with
+       'unavailable' — so opening the app in a tunnel, on airplane mode or
+       on stadium wifi DELETED the stored pool id and dropped a
+       signed-in player onto the full sign-up screen asking for their name
+       and email. They would reasonably conclude their account was gone.
+
+       A permission denial or a missing document really does mean "not
+       your pool" and is worth clearing for. A network failure means
+       "ask again later" and must leave everything intact. */
+    if (/permission|not-found/i.test(code)) {
+      console.warn('pool not readable, clearing', code);
+      localStorage.removeItem('ps_pool');
+      poolId = null;
+      return null;
+    }
+    console.warn('pool read failed, keeping the pool (offline?)', code || e);
+    return { id: poolId, offline: true };
+  }
   if (!snap.exists() || snap.data().season !== SEASON) {
     localStorage.removeItem('ps_pool');
     poolId = null;
@@ -169,7 +270,8 @@ async function refreshPushToken() {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   try {
     if (!(await isSupported())) return;
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await swReady();
+    if (!reg) return null;   // no worker = no push; never hang waiting for one
     const token = await getToken(getMessaging(app),
       { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     await upsertRoster();
@@ -183,22 +285,39 @@ async function refreshPushToken() {
 /* ============================================================
    SCHEDULE
    ============================================================ */
+/* One game document -> the shape the app uses, or null if it is not a
+   usable game.
+
+   `kickoff.toMillis()` assumed every document has a kickoff Timestamp. A
+   scoring job that writes by a reconstructed document id can CREATE a
+   partial game document holding only scores — no kickoff, no wk — and one
+   of those threw here, inside loadSeason(), which is not wrapped in
+   optional(). One malformed document therefore took down the entire app
+   for every player with "We couldn't load your week." Drop the bad row
+   instead; a missing game is visibly wrong, a dead app is unusable. */
+function toGame(d) {
+  const v = d.data();
+  if (!v || !v.kickoff || typeof v.kickoff.toMillis !== 'function') {
+    console.warn('skipping malformed game doc', d.id);
+    return null;
+  }
+  return { id: d.id, ...v, kick: v.kickoff.toMillis() };
+}
+
 async function getWeek(wk) {
   const q = query(collection(db, 'seasons', SEASON, 'games'), where('wk', '==', wk));
   const res = await getDocs(q);
-  return res.docs
-    .map(d => ({ id: d.id, ...d.data(), kick: d.data().kickoff.toMillis() }))
-    .sort((a, b) => a.kick - b.kick);
+  return res.docs.map(toGame).filter(Boolean).sort((a, b) => a.kick - b.kick);
 }
 
-/* Live score updates while games are running. Returns an unsubscribe fn. */
+/* Live score updates while games are running. Returns an unsubscribe fn.
+   `wk` is handed back to the callback so a listener left over from another
+   week cannot write its games into the week now on screen. */
 function watchWeek(wk, cb) {
   const q = query(collection(db, 'seasons', SEASON, 'games'), where('wk', '==', wk));
   return onSnapshot(q, snap => {
-    cb(snap.docs
-      .map(d => ({ id: d.id, ...d.data(), kick: d.data().kickoff.toMillis() }))
-      .sort((a, b) => a.kick - b.kick));
-  });
+    cb(snap.docs.map(toGame).filter(Boolean).sort((a, b) => a.kick - b.kick), wk);
+  }, err => console.warn('watchWeek', err));
 }
 
 /* ============================================================
@@ -211,25 +330,84 @@ function watchWeek(wk, cb) {
    it to match, and the read rule uses it so other people's picks
    stay invisible until the whistle. See firestore.rules.
    ============================================================ */
+/* `picks` is {gameId: {winner, weight}}. A gameId mapped to null means
+   "this pick was cleared" — see the tombstone note below.
+
+   THIS USED TO BE ONE ATOMIC BATCH OF THE WHOLE WEEK, which failed in two
+   ways that both ended with the user being told "Saved":
+
+   1. Firestore batches are all-or-nothing. The client skips a game it
+      thinks has kicked off using the DEVICE clock, while the rule uses
+      `request.time`. A phone even a minute slow re-sent the 1:00 games at
+      1:00:30, the rule denied those, and the WHOLE batch was rejected —
+      including the eleven perfectly legal picks in it. Nothing was
+      written and the caller printed "Saved".
+   2. The rules cost several document-access calls per pick (a members
+      lookup plus the game lookup, twice). Firestore caps a batched write
+      at 20 access calls for the entire request, so past a handful of
+      picks in one batch the commit was refused outright — which is to
+      say a full 16-game week could not be saved at all.
+
+   Written individually, each write gets its own rule budget and one
+   rejection can no longer take down the others. The caller is told
+   exactly what failed instead of a cheerful green "Saved". */
 async function savePicks(wk, picks, games) {
   if (!user || !poolId) throw new Error('Not signed in.');
-  const batch = writeBatch(db);
   const byId = Object.fromEntries(games.map(g => [g.id, g]));
+  const jobs = [];
+  const locked = [];
 
   for (const [gameId, p] of Object.entries(picks)) {
     const g = byId[gameId];
     if (!g) continue;
-    if (Date.now() >= g.kick) continue;          // client-side courtesy
-    batch.set(doc(db, 'pools', poolId, 'picks', `${user.uid}_${gameId}`), {
-      uid: user.uid,
-      gameId, wk,
-      winner: p.winner,
-      weight: p.weight ?? null,
-      revealAt: g.kickoff,                        // must equal game kickoff
-      updatedAt: serverTimestamp()
+    // Locked games are skipped, but REMEMBERED — see the check after the
+    // loop. Silently dropping them meant a write with nothing left in it
+    // resolved clean and the caller printed "Saved" for zero writes.
+    if (Date.now() >= g.kick) { locked.push(gameId); continue; }
+    /* Clearing a pick writes a TOMBSTONE rather than deleting the doc.
+       `allow delete: if false` in the rules means a removed pick could
+       never actually leave the database: the UI showed the game as
+       unpicked, said "Saved", and the scorer went on counting the old
+       pick all season. A null winner is a pick that is not there. */
+    const cleared = !p || p.winner == null;
+    jobs.push({
+      gameId,
+      p: setDoc(doc(db, 'pools', poolId, 'picks', `${user.uid}_${gameId}`), {
+        uid: user.uid,
+        gameId, wk,
+        winner: cleared ? null : p.winner,
+        weight: cleared ? null : (p.weight ?? null),
+        revealAt: g.kickoff,                      // must equal game kickoff
+        updatedAt: serverTimestamp()
+      })
     });
   }
-  await batch.commit();                           // rules reject any late write
+
+  /* Every pick in this request was already locked, so nothing was
+     written. `Promise.allSettled([])` resolves clean, which is how a tap
+     landing a second after kickoff got a green "Saved" for a write that
+     never happened — the card even printed the rank it had not saved. */
+  if (!jobs.length && locked.length) {
+    const err = new Error(locked.length === 1
+      ? 'That game has kicked off — the pick is final.'
+      : 'Those games have kicked off — those picks are final.');
+    err.failed = locked.map(gameId => ({ gameId, reason: 'locked' }));
+    throw err;
+  }
+
+  const settled = await Promise.allSettled(jobs.map(j => j.p));
+  const failed = settled
+    .map((r, i) => (r.status === 'rejected' ? { gameId: jobs[i].gameId, reason: r.reason } : null))
+    .filter(Boolean);
+
+  if (failed.length) {
+    console.warn('savePicks: rejected', failed);
+    const err = new Error(failed.length === jobs.length
+      ? "Your picks didn't save."
+      : `${failed.length} of ${jobs.length} picks didn't save.`);
+    err.failed = failed;
+    throw err;                                    // the caller MUST surface this
+  }
 }
 
 /* My own picks for a week. */
@@ -239,19 +417,57 @@ async function myPicks(wk) {
     where('uid', '==', user.uid), where('wk', '==', wk));
   const res = await getDocs(q);
   const out = {};
-  res.docs.forEach(d => { const v = d.data(); out[v.gameId] = { winner: v.winner, weight: v.weight }; });
+  res.docs.forEach(d => {
+    const v = d.data();
+    if (v.winner == null) return;      // tombstone: a pick that was cleared
+    out[v.gameId] = { winner: v.winner, weight: v.weight };
+  });
   return out;
 }
 
 /* Everyone's revealed picks — the Grid.
    The revealAt filter is not optional: the security rule only permits
    the query because of it. Drop the filter and the read is denied. */
-function watchRevealed(wk, cb) {   // legacy: small pools only, do not use at scale
+/* Live reveals for ONE week. Small pools only — this reads every revealed
+   pick rather than a snapshot document.
+
+   Three separate bugs lived in the four lines this replaces:
+
+   1. It emitted raw pick documents — {uid, gameId, winner, weight, …} —
+      with no `name`, while the consumer indexed the rows by `name`. Every
+      row was silently dropped, so the Grid never filled in during games;
+      it only ever updated on a manual week switch, which goes through
+      getRevealed(), which does join names.
+   2. `Timestamp.now()` was evaluated once, when the query object was
+      built, and onSnapshot re-runs THAT query forever. Picks that revealed
+      after the page loaded could therefore never match, so even with (1)
+      fixed the listener could only show what was already revealed at load.
+      The caller re-subscribes as kickoffs pass; the bound is also nudged
+      back so a slightly fast device clock cannot ask for picks the server
+      has not revealed yet (a rules denial kills the WHOLE query, not just
+      the offending row).
+   3. `wk` was captured at subscribe time but the callback wrote into
+      whatever week was on screen when it fired. That is handled by passing
+      `wk` back to the caller here. */
+function watchRevealed(wk, cb) {
+  const bound = Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS);
   const q = query(
     collection(db, 'pools', poolId, 'picks'),
     where('wk', '==', wk),
-    where('revealAt', '<=', Timestamp.now()));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => d.data())));
+    where('revealAt', '<=', bound));
+
+  let names = {};
+  getMembers()
+    .then(ms => { names = Object.fromEntries(ms.map(m => [m.uid, m.name])); })
+    .catch(() => {});
+
+  return onSnapshot(q, snap => {
+    const rows = snap.docs
+      .map(d => d.data())
+      .filter(v => v.winner != null)     // skip cleared picks (tombstones)
+      .map(v => ({ ...v, name: names[v.uid] || 'Player' }));
+    cb(rows, wk);
+  }, err => console.warn('watchRevealed', err));
 }
 
 /* Sign in with a token minted by the auth Worker. */
@@ -285,30 +501,44 @@ async function getAllWeeks() {
    The revealAt filter is what makes the read legal — see firestore.rules. */
 async function getRevealed(wk) {
   const q = query(collection(db, 'pools', poolId, 'picks'),
-    where('wk', '==', wk), where('revealAt', '<=', Timestamp.now()));
+    where('wk', '==', wk),
+    // See CLOCK_SKEW_MS: a fast device clock asking for not-yet-revealed
+    // picks gets the entire query denied, not just those rows.
+    where('revealAt', '<=', Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS)));
   const [res, members] = await Promise.all([getDocs(q), getMembers()]);
   const name = Object.fromEntries(members.map(m => [m.uid, m.name]));
-  return res.docs.map(d => {
-    const v = d.data();
-    return { ...v, name: name[v.uid] || 'Player' };
-  });
+  return res.docs
+    .map(d => d.data())
+    .filter(v => v.winner != null)       // skip cleared picks (tombstones)
+    .map(v => ({ ...v, name: name[v.uid] || 'Player' }));
 }
 
 async function getTiebreaks(wk) {
   const q = query(collection(db, 'pools', poolId, 'tiebreaks'),
-    where('wk', '==', wk), where('revealAt', '<=', Timestamp.now()));
+    where('wk', '==', wk),
+    where('revealAt', '<=', Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS)));
   const [res, members] = await Promise.all([getDocs(q), getMembers()]);
   const name = Object.fromEntries(members.map(m => [m.uid, m.name]));
   const rows = res.docs.map(d => {
     const v = d.data();
     return { ...v, name: name[v.uid] || 'Player', mine: v.uid === user?.uid };
   });
-  // Your own guess is visible before kickoff; the query above will not
-  // return it, so fetch it directly.
-  const own = await getDoc(doc(db, 'pools', poolId, 'tiebreaks', `${user.uid}_${wk}`));
-  if (own.exists() && !rows.some(r => r.mine)) {
-    rows.push({ ...own.data(), name: 'You', mine: true });
-  }
+  /* Your own guess is visible before kickoff; the query above will not
+     return it, so fetch it directly — inside its own try.
+
+     When you have NOT entered a guess this document does not exist, and
+     the read rule dereferences `resource.data.uid` on a null resource,
+     which rules treat as an evaluation error and refuse. Unguarded, that
+     rejection took the whole function down, `optional()` turned it into
+     `[]`, and the tiebreak panel was empty for EVERYONE until they had
+     personally submitted a guess — including on every past week they
+     never entered one. */
+  try {
+    const own = await getDoc(doc(db, 'pools', poolId, 'tiebreaks', `${user.uid}_${wk}`));
+    if (own.exists() && !rows.some(r => r.mine)) {
+      rows.push({ ...own.data(), name: 'You', mine: true });
+    }
+  } catch { /* no guess of your own yet — not an error */ }
   return rows;
 }
 
@@ -324,9 +554,20 @@ async function saveTiebreak(wk, total, game) {
    state 'off' denies the read, so this returns null and the tab is gone. */
 async function getArchive() {
   try {
-    const res = await getDocs(collection(db, 'pools', poolId, 'archive'));
-    if (res.empty) return null;
-    return { id: res.docs[0].id, ...res.docs[0].data() };
+    /* Filter on the field the rule keys off, rather than listing the whole
+       collection. A list is refused unless the rule permits EVERY document
+       it could return, so as soon as a second archive existed in state
+       'off' the unfiltered list was denied — and the archive tab vanished
+       for everyone, including the archive that was still public. */
+    const pub = await getDocs(query(collection(db, 'pools', poolId, 'archive'),
+                                    where('state', '==', 'public')));
+    if (!pub.empty) return { id: pub.docs[0].id, ...pub.docs[0].data() };
+
+    // Owner-visible archives, if this person is the owner.
+    const own = await getDocs(query(collection(db, 'pools', poolId, 'archive'),
+                                    where('state', '==', 'owner')));
+    if (!own.empty) return { id: own.docs[0].id, ...own.docs[0].data() };
+    return null;
   } catch {
     return null;                 // denied = hidden, which is the point
   }
@@ -374,18 +615,37 @@ async function getShard(wk, uid = null) {
 async function upsertRoster(extra = {}) {
   if (!user || !poolId) return;
   const ref = doc(db, 'pools', poolId, 'private', 'roster');
-  const entry = {
-    name: user.displayName
-      || (user.email ? user.email.split('@')[0] : null)
-      || (document.getElementById('obMailIn')?.value?.split('@')[0])
-      || 'Player',
-    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    ...extra
-  };
+
+  const entry = { name: myName(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  /* Spreading `extra` blindly copied keys whose value was `undefined`,
+     which the SDK rejects outright ("Unsupported field value: undefined")
+     — so one caller passing {name: undefined} made the whole write throw
+     and the person ended up with no roster entry, meaning no reminders. */
+  for (const [k, v] of Object.entries(extra)) if (v !== undefined) entry[k] = v;
+
+  /* WRITE EACH LEAF ON ITS OWN DOTTED PATH.
+
+     `updateDoc(ref, { [uid]: entry })` REPLACES the whole map at `uid` —
+     nested merging only happens with dotted paths. `entry` never contains
+     `tokens`, so every call silently deleted that person's push tokens,
+     and `prefs` with them. It ran on every launch (watchAuth) and on every
+     settings toggle, so: a second device wiped the first device's token,
+     toggling any alert switch wiped all of them, and signing in anywhere
+     with notifications not granted left the person with zero tokens and
+     nothing on screen to say alerts had stopped. That is the whole
+     "notifications never arrive" story, and it undid itself again after
+     every fix further down the chain.
+
+     `affectedKeys()` still resolves a dotted path to its top-level key, so
+     `private/roster`'s one-key-only rule is unaffected. */
+  const patch = {};
+  for (const [k, v] of Object.entries(entry)) patch[`${user.uid}.${k}`] = v;
+
   try {
-    await updateDoc(ref, { [user.uid]: entry });
+    await updateDoc(ref, patch);
   } catch {
     // First writer creates it. Admin-created at pool setup normally.
+    // setDoc+merge does merge nested maps, so this path was always safe.
     await setDoc(ref, { [user.uid]: entry }, { merge: true });
   }
 }
@@ -398,22 +658,35 @@ async function getStandings() {
   return res.docs.map(d => ({ uid: d.id, ...d.data() }));
 }
 
-/* Mode is stored as a history so past weeks stay reproducible. */
+/* Mode is stored as a history so past weeks stay reproducible.
+
+   IT LIVES ON THE POOL DOCUMENT, as `scoringHistory`. This used to read
+   `pools/{id}/config/scoring.history` — a document nothing has ever
+   written. setup_season.py writes `scoringHistory` on the pool doc and
+   score_week.py and build_snapshot.py both read it there; only the client
+   looked somewhere else, so the read always missed and fell through to
+   'straight'.
+
+   The consequence was not subtle: the confidence tray, the stake bars and
+   every ranked point silently disappeared for every player, while the
+   server scored the season in confidence and the Help tab went on
+   explaining the 136-point week. Client and scorer now read one field. */
 async function getScoringMode(wk) {
-  const snap = await getDoc(doc(db, 'pools', poolId, 'config', 'scoring'));
-  const hist = snap.exists() ? (snap.data().history || []) : [];
-  let mode = 'straight';
-  hist.sort((a, b) => a.week - b.week).forEach(h => { if (h.week <= wk) mode = h.mode; });
+  const pool = await getPool();
+  const hist = (pool && pool.scoringHistory) || [];
+  // Match score_week.py exactly: default confidence, then replay history.
+  let mode = 'confidence';
+  [...hist].sort((a, b) => a.week - b.week).forEach(h => { if (h.week <= wk) mode = h.mode; });
   return mode;
 }
 
-/* Owner only. Takes effect at the next week boundary, never mid-week. */
+/* Owner only — the pool document's update rule enforces that.
+   Takes effect at the next week boundary, never mid-week. */
 async function setScoringMode(mode, fromWeek) {
-  const ref = doc(db, 'pools', poolId, 'config', 'scoring');
-  const snap = await getDoc(ref);
-  const hist = snap.exists() ? (snap.data().history || []) : [];
+  const pool = await getPool();
+  const hist = (pool && pool.scoringHistory) || [];
   const next = hist.filter(h => h.week !== fromWeek).concat([{ week: fromWeek, mode }]);
-  await setDoc(ref, { history: next }, { merge: true });
+  await setDoc(doc(db, 'pools', poolId), { scoringHistory: next }, { merge: true });
 }
 
 /* ============================================================
@@ -432,9 +705,15 @@ async function enablePush() {
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('Alerts were declined.');
 
-  const reg = await navigator.serviceWorker.ready;
+  /* This must THROW rather than return quietly: the caller turns the
+     result into "Done" on screen, so a silent null would tell someone
+     their alerts are on when nothing was ever registered. */
+  const reg = await swReady();
+  if (!reg) throw new Error("This browser couldn't start the background worker that receives alerts. Try a normal (not private) window.");
+
   const messaging = getMessaging(app);
   const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+  if (!token) throw new Error("Alerts couldn't be registered. Try again in a moment.");
 
   // A person may have a phone and a laptop, so tokens are a list.
   // We cannot read the roster to merge — the rule forbids it — so append
@@ -453,15 +732,59 @@ async function enablePush() {
    Without the prompt, a new version sits in the waiting state until
    every window is closed — which on a home-screen app can be days.
    ============================================================ */
-function registerSW(onUpdateReady) {
-  if (!('serviceWorker' in navigator)) return;
+/* The callback lives OUTSIDE registerSW, and that is the whole fix.
 
-  navigator.serviceWorker.register('./sw.js').then(reg => {
+   registerSW is called twice with no arguments — once from the module's
+   own boot (so push works without waiting for the app) and once from
+   enablePush. Both hit the `if (swRegistering) return` guard, so the
+   FIRST call won the registration and any callback passed later was
+   dropped on the floor. The default was a no-op, nothing else ever
+   passed one, and therefore `onUpdateReady` was never called, the
+   "Update now" prompt did not exist, and the SKIP_WAITING handler in
+   sw.js was unreachable code.
+
+   What that cost: a new service worker installed, parked in `waiting`,
+   and stayed there until every window of the app was closed. On an
+   iPhone home-screen install that means swiping the app out of the
+   switcher — which nobody does — so a worker could be days or weeks
+   stale. Page code still updated (it is network-first), so the deploy
+   LOOKED like it worked while the worker itself, and everything it
+   caches, stayed frozen.
+
+   Now the callback is module state: whoever registers one gets it, in
+   any order, and a worker already parked in `waiting` from a previous
+   visit is reported immediately rather than waiting for an
+   `updatefound` that already fired and will not fire again. */
+let swUpdateCb = null;
+let swReg = null;
+const swAnnounce = () => {
+  if (!swUpdateCb || !swReg || !swReg.waiting) return;
+  if (!navigator.serviceWorker.controller) return;   // first install, not an update
+  swUpdateCb(() => swReg.waiting && swReg.waiting.postMessage('SKIP_WAITING'));
+};
+
+function registerSW(onUpdateReady) {
+  if (typeof onUpdateReady === 'function') {
+    swUpdateCb = onUpdateReady;
+    swAnnounce();                    // may already be waiting from last visit
+  }
+  if (!('serviceWorker' in navigator)) return;
+  if (swRegistering) return swRegistering;
+
+  swRegistering = navigator.serviceWorker.register('./sw.js').then(reg => {
+    swReg = reg;
     // Check for a new version every time the app is opened or resumed.
     reg.update();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') reg.update();
     });
+
+    /* An update downloaded during a PREVIOUS visit is already parked in
+       `waiting` before this listener is attached — `updatefound` fired
+       long ago and will not fire again. Without this check that update
+       sits there unmentioned until every window is closed, which on a
+       home-screen app can be days. */
+    swAnnounce();
 
     reg.addEventListener('updatefound', () => {
       const sw = reg.installing;
@@ -469,25 +792,46 @@ function registerSW(onUpdateReady) {
       sw.addEventListener('statechange', () => {
         // A new worker is ready AND an old one is running = real update.
         if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-          onUpdateReady(() => {
-            sw.postMessage('SKIP_WAITING');
-          });
+          swAnnounce();
         }
       });
     });
+    return reg;
+  }).catch(e => {
+    // Registration can fail on a bad certificate, a private window, or an
+    // unsupported browser. Swallowing it silently used to mean push was
+    // dead with nothing anywhere to say so.
+    console.warn('service worker registration failed', e);
+    return null;
   });
+  return swRegistering;
+}
 
-  // When the new worker takes control, reload once to pick up new code.
-  let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
-    reloading = true;
-    window.location.reload();
-  });
+/* The registration, or null, but NEVER a promise that hangs.
+
+   `navigator.serviceWorker.ready` is specified to wait indefinitely for an
+   active worker and never to reject. Three functions here await it, and
+   `watchAuth` awaits one of those BEFORE calling back — so on any device
+   with no registration, the sign-in callback never fired and the app sat
+   on "Getting your week…" forever, with no error and no retry button.
+   That is not a hypothetical: nothing in this app ever called
+   registerSW(), so no service worker was ever registered, which is also
+   why no push notification has ever been displayed — a push is only shown
+   if a registered worker handles it.
+
+   Registration now happens at module load (below), and every consumer
+   goes through this, which resolves to null rather than hanging. */
+async function swReady(ms = 8000) {
+  if (!('serviceWorker' in navigator)) return null;
+  registerSW();                                   // idempotent
+  return Promise.race([
+    navigator.serviceWorker.ready.catch(() => null),
+    new Promise(r => setTimeout(() => r(null), ms))
+  ]);
 }
 
 window.PS = {
-  SEASON, auth, db,
+  SEASON, auth, db, swReady,
   signIn, signOut: () => signOut(auth), watchAuth,
   joinPool, getPool, getMembers,
   getWeek, watchWeek,

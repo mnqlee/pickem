@@ -1,23 +1,39 @@
 # Tests
 
-189 checks. Nothing here touches Firebase, Resend, KV or the live site.
+365 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
-    cp ../../worker/auth.js ./auth.mjs
+    cp ../../worker/auth.js /tmp/auth.mjs      # NOTE: /tmp — see below
 
     node auth.core.test.mjs      # 27  sign-in Worker, happy path and edges
-    node auth.stress.test.mjs    # 38  sign-in Worker, adversarial
+    node auth.stress.test.mjs    # 49  sign-in Worker, adversarial
 
     node serve.mjs &
-    node stress-ui.mjs           # 48  sign-in screens in a real browser
+    node signin.ui.test.mjs      # 48  sign-in screens in a real browser
     node invite.ui.test.mjs      #  5  bare-domain invite links
 
     node app-serve.mjs &
     node polish.ui.test.mjs      # 40  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
-    node sw.push.test.mjs        # 10  service worker push display
+    node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
+    node regress.ui.test.mjs     # 21  bugs that shipped, so they cannot return
+    node sw.push.test.mjs        # 16  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
+
+    python season_sim.py         # 117 the REAL scorer, 50 players, 18 weeks
+
+`season_sim.py` needs no Firebase and no credentials: `fakestore.py` is an
+in-memory stand-in for the Firestore client, so `score_week.py` runs
+unmodified against a seeded season. It is the only thing that tests the
+code deciding who actually wins — the browser suite never runs the scorer,
+it renders standings the scorer already wrote.
+
+**The auth tests import `/tmp/auth.mjs`, not `./auth.mjs`.** Copying to the
+local directory leaves a stale `/tmp` copy in place, and the suite then
+grades a previous version of the Worker while reporting a clean pass — it
+happened, and it hid four real failures behind a green run. Copy to `/tmp`,
+and re-copy after every edit to `worker/auth.js`.
 
 `app-serve.mjs` returns data in the exact shape Firestore holds it, per
 `import_schedule.py` and `score_week.py`, so the app's own mapping and
@@ -65,9 +81,90 @@ can no longer yank the onboarding out from under someone mid-sign-in.
 
 Add a case here before changing any of this again.
 
+**Clearing one pick wiped a whole week's confidence points.** The scorer
+demanded an exact 1..k run of ranks and scored anyone else straight-up.
+Un-picking a game leaves the rank it held unused, so an ordinary tap
+produced `{1..6, 8..16}` — a hole, not a duplicate — and cost that player
+every ranked point for the week, with no message and nothing on the sheet
+to show it. The out-of-range half of that check was wrong too, and for a
+worse reason: a game postponed OUT of a week leaves the players who
+ranked it holding a 16 on a 15-game slate, through no act of their own —
+and that also cost them the week. `pay()` is now clamped at both ends, so
+the only shape that can beat an honest sheet is a repeated rank, and that
+is the only thing penalised. `season_sim.py` covers all of it.
+
+**A correct pick could score minus one.** `pay()` is `n + 1 - rank`, and a
+rank can outlive the slate it was made against: rank sixteen games, have
+one postponed into another week, and rank 16 on the resulting 14-game week
+paid −1. Floored at zero in all three implementations — the app, the
+scorer, and the snapshot builder — which now have to stay in step.
+
+**The Grid's sticky header stuck to nothing.** `thead th{position:sticky}`
+binds to the nearest scrollport, which was a box with `overflow-x:auto`
+and no height — so the page scrolled, the box left with it, and the header
+was gone by row 12. Reading the CSS never showed this; scrolling a 50-row
+pool does. `scale.ui.test.mjs` scrolls and asserts the header is still on
+screen.
+
+**The atomic rate limiter rebuilt the lockout it was added to prevent.**
+`verifyCode` checks the code before the KV counters precisely so a correct
+PIN always beats a lockout aimed at someone's address. The new
+`PINS_LIMITER` check went in ABOVE that comparison, keyed on the email —
+so eight wrong guesses a minute would answer the real owner 429 while they
+typed the right code, the same DoS as before and cheaper to run. The
+address key now lives in the wrong-guess branch — and so does the IP key,
+because an IP is not a person either: four players on one living-room
+WiFi, or anyone behind carrier NAT, share it, and the fifth to sign in on
+game day was refused while holding the right code. Section K covers the
+bindings themselves, which nothing tested before: every other test runs
+with no binding at all, so an inverted check would have passed the suite
+green.
+
+**The service worker cached `/api/session` forever.** It is a GET whose
+path ends in neither `.html` nor `.js` nor a slash, so it fell through to
+the cache-first branch — and its body is a Firebase custom token that
+expires in an hour. Signing out did not sign you out (the reload re-read
+the cached token and signed the same person back in; on a shared iPad,
+the next person was signed in as the previous player); every returning
+player was sent back to the PIN screen weekly, forever, because the
+stale token was rejected and never re-fetched; and a 401 cached on the
+first-ever visit killed session restore from day one. Bumping VERSION did
+not help, because nothing ever activated a waiting worker — the update
+prompt was passed to a function that dropped it, so `SKIP_WAITING` was
+unreachable code. Both fixed; `sw.push.test.mjs` asserts `/api/*` is
+never intercepted.
+
+**Every weekly result notification was rejected by Google.** `link` must
+be an absolute HTTPS URL; `score_week.py` and `remind.py` both passed
+`"/index.html"`, so FCM answered 400 INVALID_ARGUMENT and the failure
+went to a log line in a green workflow run. `worker/live.js` had already
+found and fixed exactly this; the two Python senders were never updated.
+
+**A postponed game was scored as a 0-0 final.** ESPN reports it as state
+`post` with no score. `live.js` guards that and refuses to write;
+`score_week.py` did not, runs later, and overwrote the refusal — which
+silently made the week "complete", handed out weekly awards on it, and
+took the confidence stake off everyone who had picked that game.
+
+**Weekly badges could never be revoked.** `award()` only ever added, so
+re-scoring a week after a corrected result left the old winner holding a
+1ST seal beside the new one — the Standings tab and the Week-by-week row
+disagreeing on the same screen.
+
+**A stranger could lock you out of your own account.** The 45-second
+"we already sent you one" cooldown was keyed on the delivery mailbox
+while the PIN is derived from the identity, and outside Gmail those
+differ. Requesting a code for `you+x@yahoo.com` set the cooldown on
+`you@yahoo.com`, so your own request was answered "already sent" with no
+email — while the code in your inbox belonged to a different identity and
+could never verify.
+
 ## Known limit, deliberately not "fixed" in code
 
 KV has no atomic increment, so the failed-attempt counters lose a race
-against guesses fired in parallel. That belongs to a Cloudflare Rate
-Limiting rule on `/api/verify-code` (10 requests / 1 minute / IP, Block).
-`auth.stress.test.mjs` asserts the undercount on purpose.
+against guesses fired in parallel. Those counters are now only the
+friendly "3 tries left" layer; the real gate is the `PINS_LIMITER` /
+`SEND_LIMITER` bindings in `worker/wrangler.toml`, which are atomic and
+evaluated at the edge. `auth.stress.test.mjs` asserts the KV undercount on
+purpose (the fail-open path, for an account without the Rate Limiting
+API) and separately tests the bindings in section K.

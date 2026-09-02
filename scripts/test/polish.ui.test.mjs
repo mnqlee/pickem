@@ -223,6 +223,28 @@ console.log('\n10. Moving around the app is clean');
   await ctx.close();
 }
 
+console.log('\n11. One failing secondary read does not take down the app');
+for (const call of ['getStandings','getMembers','getScoringMode','getRevealed','getTiebreaks','getArchive','myPicks']) {
+  const { ctx, page } = await open({ ...MID, fail: { [call]: true } });
+  await page.waitForTimeout(400);
+  const s = await page.evaluate(() => ({
+    booted: document.getElementById('boot').classList.contains('hide'),
+    cards: document.querySelectorAll('#slate .card').length }));
+  ok(`app still loads when ${call} fails`, s.booted && s.cards > 0, JSON.stringify(s));
+  await ctx.close();
+}
+{
+  // The schedule is the one read the app cannot do without.
+  const { ctx, page } = await open({ ...MID, fail: { getAllWeeks: true } });
+  await page.waitForTimeout(500);
+  const s = await page.evaluate(() => ({
+    shown: !document.getElementById('boot').classList.contains('hide'),
+    why: document.getElementById('bootWhy').textContent }));
+  ok('a failed schedule read still shows the error screen', s.shown, JSON.stringify(s));
+  ok('and names the real reason for whoever has to fix it', s.why.length > 0, s.why);
+  await ctx.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fails.length) { console.log('\nFAILURES:'); fails.forEach(f => console.log('  - ' + f)); }
 await browser.close();

@@ -29,6 +29,24 @@ matter how many people are in the pool.
 
 # Part 1 — Deploy the snapshot layer
 
+**Before following this: step 5 below is stale and would reopen a bug
+that's since been fixed.** `.github/workflows/live.yml`'s 5-minute
+schedule (the thing step 5 tells you to add) is deliberately disabled
+now — see the file's own header — because running it alongside
+`worker/live.js` (the Cloudflare Worker that now handles live scores
+every minute and reminders every five) sent every kickoff reminder
+twice, from two dedupe stores that can't see each other. `worker/live.js`
+does not build snapshots; it writes scores straight to the game
+documents and computes reminders straight from `picks/*`. So if you do
+adopt the snapshot layer below, step 5 needs to become "have something
+call `build_snapshot.py` on a live cadence without also re-enabling
+`remind.py` on that same schedule" — a Cloudflare Cron Trigger on
+`worker/live.js` that shells out to snapshot-building logic, or a
+GitHub Actions schedule that runs `build_snapshot.py` alone. Neither
+exists yet; this needs to be built, not just switched on. The rest of
+this part (rules, roster, `getBoard()`/`getShard()`) is otherwise
+accurate and independent of that gap.
+
 ## 1. Publish the new rules
 
 Firestore → Rules → paste `firestore.rules` → Publish.

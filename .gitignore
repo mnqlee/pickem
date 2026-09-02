@@ -1,4 +1,43 @@
+# ---- CREDENTIALS ----------------------------------------------------
+# This repo is public. Everything here is a file that has, in real
+# projects, been committed by someone running `git add -A` in a hurry.
+
+# The Firebase admin key. `serviceAccount.json` is the name our scripts
+# default to — but the file the Firebase console actually hands you is
+# called pickem-c0d06-firebase-adminsdk-XXXXX-YYYYYYYY.json, and THAT
+# name was not covered. check.sh only ever looked for the tidy name too,
+# so it printed "service account not in git" with the real key staged.
 serviceAccount.json
+*firebase-adminsdk*.json
+*-service-account*.json
+
+# Wrangler's local secrets file. worker/wrangler.toml names three secrets
+# set with `wrangler secret put`: SA_JSON (the whole admin key),
+# RESEND_KEY, and ADMIN_KEY (which guards endpoints that send real
+# notifications to real phones). .dev.vars is where all three end up the
+# first time anyone runs the Worker locally.
+.dev.vars
+worker/.dev.vars
+.env
+.env.*
+
 *.pem
+*.p12
+*.key
+
+# ---- TOOL STATE -----------------------------------------------------
+.wrangler/
+.firebase/
+firebase-debug.log
+*firebase-debug*.log
 .DS_Store
 __pycache__/
+*.pyc
+
+# The test suite runs against a Playwright install that is not part of
+# this repo (see scripts/test/README.md). Nothing here is source.
+# NOTE: no trailing slash — a bare `node_modules/` does not match a
+# SYMLINK named node_modules, which is how it is set up locally, so git
+# offered to commit a broken link.
+node_modules
+scripts/test/screens/

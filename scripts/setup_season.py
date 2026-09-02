@@ -83,6 +83,19 @@ def main():
     })
     ref.collection("private").document("roster").set({})
 
+    # The code -> pool lookup the app joins through.
+    #
+    # Pool documents are no longer world-readable (they used to be, which
+    # let any signed-in stranger list every pool, read its join code and
+    # add themselves as a member). joinPool() reads exactly this one
+    # document, by exact code, so a code still gets you in but can no
+    # longer be discovered. Written here because the rules deny every
+    # client write to it. See the JOIN CODES block in firestore.rules.
+    db.collection("joinCodes").document(code).set({
+        "poolId": ref.id,
+        "season": str(a.season),
+    })
+
     # The owner has to be a MEMBER, not just the ownerUid on the pool doc.
     # firestore.rules gates the roster, standings, picks and tiebreaks on
     # isMember(), which checks for pools/{id}/members/{uid}. Without this

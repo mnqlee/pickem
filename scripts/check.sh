@@ -56,9 +56,35 @@ echo
 echo "Safety"
 grep -q 'serviceAccount.json' .gitignore && ok "serviceAccount.json is gitignored" \
   || no "serviceAccount.json NOT in .gitignore — never commit it"
-git ls-files --error-unmatch serviceAccount.json >/dev/null 2>&1 \
-  && no "serviceAccount.json IS TRACKED BY GIT. Remove it now." \
-  || ok "service account not in git"
+grep -q 'firebase-adminsdk' .gitignore && ok "the console's own key filename is ignored too" \
+  || no "*firebase-adminsdk*.json NOT ignored — that is the name Firebase gives you"
+grep -q 'dev.vars' .gitignore && ok ".dev.vars is ignored (SA_JSON, RESEND_KEY, ADMIN_KEY)" \
+  || no ".dev.vars NOT ignored — one 'git add -A' publishes every Worker secret"
+
+# Ask git, don't guess a filename. This used to check one tidy name and
+# would print "service account not in git" while the real key — which
+# Firebase names pickem-c0d06-firebase-adminsdk-XXXXX-YYYY.json — sat
+# staged beside it.
+leaked=$(git ls-files | grep -Ei 'serviceaccount|adminsdk|\.pem$|dev\.vars|(^|/)\.env' || true)
+[ -z "$leaked" ] && ok "no credential-shaped file is tracked by git" \
+  || no "TRACKED BY GIT: $(echo "$leaked" | tr '\n' ' ')— remove before pushing"
+
+echo
+echo "Deploy hygiene"
+# sw.js calls this "the difference between updates working and not
+# working" and nothing checked it. Compare against the last COMMITTED
+# version, which is what is actually live.
+cur=$(grep -o "VERSION *= *'[^']*'" sw.js | head -1)
+prev=$(git show HEAD:sw.js 2>/dev/null | grep -o "VERSION *= *'[^']*'" | head -1)
+if [ -z "$prev" ]; then
+  ok "sw.js $cur (no previous commit to compare against)"
+elif [ "$cur" != "$prev" ]; then
+  ok "sw.js VERSION bumped: $prev -> $cur"
+elif git diff --quiet HEAD -- sw.js index.html firebase-init.js 2>/dev/null; then
+  ok "sw.js VERSION unchanged, and neither is the app"
+else
+  no "app files changed but sw.js VERSION is still $cur — bump it"
+fi
 
 echo
 [ $fail -eq 0 ] && echo "Ready to deploy." || echo "Fix the above first."

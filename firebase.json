@@ -1,1 +1,17 @@
-﻿{"firestore":{"rules":"firestore.rules"}}
+{
+  "//": [
+    "Without this file the CLI does not know where the rules or indexes",
+    "live, so `firebase deploy --only firestore:rules` had nothing to",
+    "deploy. Combined with there being no .firebaserc, that is why the",
+    "deploy answered 'No currently active project'.",
+    "",
+    "Run once to bind the project (writes .firebaserc):",
+    "    npx firebase-tools use --add",
+    "or pass it every time:",
+    "    npx firebase-tools deploy --only firestore:rules --project pickem-c0d06"
+  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}
