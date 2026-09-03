@@ -116,8 +116,11 @@ def main():
     existing = {d.id: (d.to_dict() or {}) for d in col.stream()}
 
     batch, n, kept = db.batch(), 0, 0
+    written_ids = set()
+    weeks_touched = {g["wk"] for g in games}
     for g in games:
         gid = g.pop("id")
+        written_ids.add(gid)
         prev = existing.get(gid)
 
         # merge=True protects fields we DON'T send. It does not protect
@@ -148,6 +151,29 @@ def main():
     print(f"Wrote {n} games to seasons/{season_id}/games")
     if kept:
         print(f"  ({kept} already final — kept their scores, refreshed only the schedule)")
+
+    # A re-import's doc id is built from the matchup, not just the week —
+    # deliberately, so a game already final never gets walked over (see the
+    # comment above). But that means a matchup that has since changed —
+    # an early speculative fetch before ESPN finalized things, a flex that
+    # swapped an opponent rather than just a kickoff — leaves its OLD
+    # document sitting there, still claiming to be that week's game, at
+    # whatever kickoff time it had back then. The app has no de-dup: it
+    # would render both, side by side, forever. Nothing here deletes
+    # anything automatically — this only WARNS, once, right when it is
+    # easiest to notice and act on. scripts/find_stale_games.py does the
+    # actual reporting/cleanup in more detail.
+    orphans = [doc_id for doc_id, g in existing.items()
+               if g.get("wk") in weeks_touched and doc_id not in written_ids]
+    if orphans:
+        print(f"\nWARNING: {len(orphans)} leftover document(s) for the week(s) just "
+              f"imported no longer match today's schedule and were NOT removed:")
+        for doc_id in orphans:
+            g = existing[doc_id]
+            print(f"  {doc_id}  wk {g.get('wk')}  {g.get('away')}@{g.get('home')}")
+        print("These will still render in the app next to the correct games. Review "
+              "and remove them with scripts/find_stale_games.py --delete once you're "
+              "sure they're not something you still need.")
 
 
 if __name__ == "__main__":

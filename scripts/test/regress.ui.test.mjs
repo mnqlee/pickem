@@ -103,7 +103,14 @@ console.log('\n4. A failed save must never say "Saved"');
   const side = page.locator('#slate .side').first();
   if (await side.count()) {
     await side.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(700);
+    /* commitPicks() now retries once, silently, ~1.2s after the first
+       rejection — see its own comment: a brand-new sign-in's Firestore
+       connection can reject a write in its first second while it is
+       still finishing its handshake, which is exactly what "picks didn't
+       save" right after signing in, that then quietly stopped on its
+       own, turned out to be. A permanently-failing save (this test) still
+       ends up reported — just after that one retry, not before it. */
+    await page.waitForTimeout(2200);
     const label = await page.locator('#toast').innerText().catch(() => '');
     ok('a rejected save does not report success', !/^saved$/i.test(label.trim()), label);
     ok('and says something is wrong instead',
@@ -229,6 +236,32 @@ console.log('\n9. Nobody leads a week in which nobody has scored');
     return pts.some(p => p > 0) ? 'someone scored' : 'crowned at zero';
   });
   ok('no gold row while every score is zero', verdict !== 'crowned at zero', verdict);
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n10. "Show me the walkthrough again" must not skip to the last page');
+{
+  /* THE BUG: replayOnboarding() looked for the one screen flagged
+     `howto` — the "Six rules" recap, which is also the LAST screen
+     before "Let's play" — so tapping this in Settings for someone
+     already signed in landed one tap from the end and skipped every
+     other page of the tour (install, alerts) that the function's own
+     comment said it was never supposed to skip. Only the two sign-in
+     screens (name/email, the code) are meant to be skipped for someone
+     already in. */
+  const { ctx, page, errors } = await open({});
+  await page.waitForTimeout(700);
+  await page.click('[data-tab="help"]').catch(() => {});
+  await page.waitForTimeout(200);
+  await page.click('#hpReplay', { force: true }).catch(() => {});
+  await page.waitForTimeout(300);
+  const heading = await page.locator('#obBody').innerText().catch(() => '');
+  ok('replay does not open on the final "Six rules" recap screen',
+     !/Six rules/i.test(heading), heading.slice(0, 60));
+  ok('and does not open on a sign-in screen either',
+     !/What do we call you|Check your inbox/i.test(heading), heading.slice(0, 60));
   ok('no errors', errors.length === 0, errors[0] || '');
   await ctx.close();
 }

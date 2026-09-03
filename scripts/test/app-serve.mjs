@@ -135,6 +135,7 @@ window.PS = {
   async saveTiebreak(){ await call('saveTiebreak'); },
   watchWeek(wk, cb){ log.push('watchWeek'); },
   watchRevealed(wk, cb){ log.push('watchRevealed'); },
+  watchMembers(cb){ log.push('watchMembers'); },
   watchAuth(cb){ log.push('watchAuth'); setTimeout(()=>cb(P.signedOut ? null : { uid:'u_0' }), 0); },
   async signOut(){}, async enablePush(){}, async refreshPushToken(){},
   async alertsHealthy(){ return true; },

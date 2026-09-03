@@ -214,6 +214,20 @@ async function getMembers() {
   return res.docs.map(d => ({ uid: d.id, ...d.data() }));
 }
 
+/* Live roster. getMembers() is a one-time read, called once from
+   loadSeason() at boot — so PLAYERS was frozen to whoever had already
+   joined at the moment YOUR page loaded. Anyone who signed up after that
+   — the exact moment a pool owner is watching for, right before kickoff
+   — never appeared in Standings or the Grid for anyone already in the
+   app, on any device, until they manually reloaded. A brand-new member's
+   own device was fine (their own boot() ran after they joined), which is
+   what made this easy to miss testing alone. */
+function watchMembers(cb) {
+  return onSnapshot(collection(db, 'pools', poolId, 'members'),
+    snap => cb(snap.docs.map(d => ({ uid: d.id, ...d.data() }))),
+    err => console.warn('watchMembers', err));
+}
+
 /* ============================================================
    SEASON HANDOVER
 
@@ -833,7 +847,7 @@ async function swReady(ms = 8000) {
 window.PS = {
   SEASON, auth, db, swReady,
   signIn, signOut: () => signOut(auth), watchAuth,
-  joinPool, getPool, getMembers,
+  joinPool, getPool, getMembers, watchMembers,
   getWeek, watchWeek,
   savePicks, myPicks, watchRevealed,
   getStandings, getScoringMode, setScoringMode,

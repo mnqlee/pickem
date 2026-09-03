@@ -514,17 +514,37 @@ tbody tr.me td.tot{background:#241F1E}
 .opt h4{margin:0 0 4px;font-size:13.5px;font-weight:700}
 .opt p{margin:0;font-size:11.5px;line-height:1.55;color:var(--chalk)}
 .prefs{margin-top:12px}
-.pref{display:flex;align-items:center;gap:11px;padding:11px 0;
-  border-top:1px solid rgba(250,247,241,.08);cursor:pointer}
+.pref{display:flex;align-items:flex-start;gap:11px;padding:13px 0;width:100%;
+  margin:0;background:transparent;border:0;
+  border-top:1px solid rgba(250,247,241,.08);
+  font:inherit;color:inherit;text-align:left;cursor:pointer;
+  -webkit-appearance:none;appearance:none}
+/* These were bare <div>s until they became real <button role="switch">
+   elements for keyboard/screen-reader access (see renderPrefs()) — but a
+   <button> carries its own UA chrome (border, background, padding) that
+   nothing here was resetting, since only border-top was ever set. Every
+   row rendered with its native platform button box still showing through
+   underneath this design's own border, which is what made the list look
+   offset and uneven instead of like flat rows in one list. */
 .pref:first-child{border-top:0}
-.pref-t{flex:1;min-width:0}
+/* The master switch sits above the list, not inside .prefs, so it never
+   gets the :first-child rule above — give it the same flat top and a
+   line of its own underneath so it doesn't read as one more list row. */
+.pref-all{border-top:0;border-bottom:1px solid rgba(250,247,241,.14);padding-bottom:14px}
+.pref-t{flex:1;min-width:0;padding-top:2px}
 .pref-t b{display:block;font-size:13px;font-weight:600;letter-spacing:-.01em}
 .pref-t span{display:block;font-size:11px;color:var(--chalk);margin-top:2px;line-height:1.4}
-.sw{flex:0 0 42px;width:42px;height:25px;border-radius:13px;background:rgba(250,247,241,.16);
-  position:relative;transition:background .2s}
-.sw::after{content:'';position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;
+.sw{flex:0 0 42px;width:42px;height:25px;border-radius:13px;
+  background:rgba(250,247,241,.16);border:1px solid rgba(250,247,241,.4);
+  box-sizing:border-box;position:relative;transition:background .2s,border-color .2s}
+/* The off state was a track at 16% white on a dark card with no border of
+   its own — legible next to a same-row "on" switch for comparison, but
+   toggle the top row off on its own and it reads as though the whole
+   control vanished. The border keeps every row's switch visible on its
+   own, on or off. */
+.sw::after{content:'';position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;
   background:var(--paper);transition:transform .2s}
-.pref.on .sw{background:var(--stamp)}
+.pref.on .sw{background:var(--stamp);border-color:var(--stamp)}
 .pref.on .sw::after{transform:translateX(17px)}
 .modeswitch{display:flex;gap:6px;margin-top:13px}
 .mbtn{flex:1;padding:11px 8px;border-radius:8px;border:1.5px solid rgba(250,247,241,.16);
@@ -991,7 +1011,7 @@ tbody tr.me td.tot{background:#241F1E}
     <div class="hp-sec">
       <h3>How the pool picked</h3>
       <p class="hp-p">Once a game kicks off, every locked card shows the split: what
-        percentage of the pool took each side. The <b>Grid</b> carries a <b>The pool</b>
+        percentage of the pool took each side. The <b>Grid</b> carries <b>The pool</b>
         row along the bottom with the majority pick on every game.</p>
       <p class="hp-p">It only ever appears <b>after</b> kickoff. Before that it would tell
         you what everyone else did, which is the whole thing we are protecting.</p>
@@ -1011,8 +1031,8 @@ tbody tr.me td.tot{background:#241F1E}
       <h3>Badges</h3>
       <div class="bdgrow"><span class="bdgart" id="bdg1"></span>
         <p class="hp-p">Post the highest score of anybody in the pool for a week and this
-          is yours. Rack them up and it starts keeping count. Finish level with somebody
-          and you both take one, no argument.</p></div>
+          is yours. Rack them up and it starts keeping count. Finish tied with somebody
+          for the week and you both take one, no argument.</p></div>
       <div class="bdgrow"><span class="bdgart" id="bdg2"></span>
         <p class="hp-p">Second best that week. Close, but somebody was closer.</p></div>
       <div class="bdgrow"><span class="bdgart" id="bdg3"></span>
@@ -1097,6 +1117,9 @@ tbody tr.me td.tot{background:#241F1E}
     <div class="opt">
       <h4>Alerts</h4>
       <p>You only ever hear about games you haven't picked. Finish the week early and these stay quiet.</p>
+      <button type="button" class="pref pref-all" id="prefsAll" role="switch" aria-checked="true">
+        <div class="pref-t"><b>All alerts</b><span>Turn every category below on or off at once</span></div>
+        <div class="sw"></div></button>
       <div class="prefs" id="prefs"></div>
     </div>
     <div class="opt"><h4>Kickoff lock</h4>
@@ -1588,7 +1611,7 @@ function renderSlate(){
              <span class="sb-pts">${pay(p.weight,N)} pts</span></span></button>`
         : `<button type="button" class="stakebar empty" data-stake="${g.id}"
              aria-label="Stake a confidence rank on this pick">
-             <span class="sb-l">Tap to stake a rank</span>
+             <span class="sb-l">Tap to stake points</span>
              <span class="sb-r"><span class="sb-num blank">?</span></span></button>`;
     const band=L?`<div class="lockband"><span>${isFinal(g)
       // A genuine tie is written with no winner, so say "tie" rather than
@@ -1879,13 +1902,31 @@ $('#abFix').addEventListener('click',async()=>{
   btn.disabled=true; btn.textContent='One moment';
   try{
     if(DEMO){ btn.textContent='Done'; return; }
+    /* iOS Safari has no `Notification` global at all until the app is
+       added to the Home Screen — it is not merely denied, the whole API
+       does not exist yet. Calling straight into it threw a raw
+       ReferenceError ("Can't find variable: Notification") that landed,
+       word for word, in this banner: the same ugly-error-as-UI-copy bug
+       already fixed once for enablePush() in firebase-init.js, just not
+       here too. Check for the API before ever touching it. */
+    if(typeof Notification==='undefined'){
+      const w=$('#abWhy');
+      if(w)w.textContent="This iPhone can't send alerts from a browser tab. Add the app to "
+        +"your Home Screen first (Share, then Add to Home Screen), then turn alerts on from there.";
+      btn.style.display='none';
+      return;
+    }
     const perm=await Notification.requestPermission();
     if(perm!=='granted'){
       // Write into the text node, not the bar — replacing the bar's HTML
       // would delete this very button along with it.
+      // "Device settings" reads, to most people, as this app's own
+      // Settings tab a swipe away — so a refusal sent them looking for a
+      // switch that was never going to fix it. Name the real place.
       const w=$('#abWhy');
-      if(w)w.textContent="Alerts are blocked for this app. Turn notifications back on in "
-        +"your device settings — the app can't ask again once it has been refused.";
+      if(w)w.textContent="Alerts are blocked for this app at the phone/browser level. Open your "
+        +"device's own Settings app (not this app's Settings tab) → Notifications, find this app, "
+        +"and turn them back on — it can't ask again once it has been refused.";
       btn.style.display='none';
       return;
     }
@@ -2455,7 +2496,7 @@ document.addEventListener('focusout',e=>{
    "Saved" and lost the picks. Someone could tap through all sixteen
    games, be told sixteen times that it saved, and go to bed with nothing
    written. */
-function commitPicks(){
+function commitPicks(attempt=0){
   if(DEMO){ flashSaved(); return; }
   /* Show that something is happening. With no persistence configured, an
      offline setDoc() neither resolves nor rejects — it just hangs — so
@@ -2479,12 +2520,28 @@ function commitPicks(){
     .then(()=>{ if(state.cleared)delete state.cleared[wk]; flashSaved(); })
     .catch(err=>{
       console.warn('save failed',err);
+      const code=String((err&&err.code)||'');
+      /* Retrying a game that is genuinely locked just fails again — don't
+         make someone wait 1.2s to be told the same true thing twice. */
+      const locked=err&&err.failed&&err.failed.length&&
+        err.failed.every(f=>f.reason==='locked');
+      /* ONE automatic, silent retry before telling anyone anything is
+         wrong. A brand-new sign-in hands the browser a freshly-minted
+         Firestore connection, and a write landing in the first second or
+         two of that connection's life can be rejected while it is still
+         finishing its handshake — nothing wrong with the pick, the
+         network, or the game. This is what "picks didn't save" right
+         after signing in, that then quietly stopped happening on its
+         own, actually was: the reconnect was always coming, the app
+         just never waited for it. Reading state.picks fresh on the
+         retry (not the payload captured above) also means a second tap
+         in that window is picked up rather than overwritten. */
+      if(attempt<1&&!locked){ setTimeout(()=>commitPicks(attempt+1),1200); return; }
       /* Show OUR message, never the exception's. A raw throw here could
          be a Firestore internal assertion or a permission dump — text
          that means nothing to a player and looks like the app is broken
          beyond use. savePicks() attaches `failed` to the errors it raises
          itself; anything else is unknown and gets the generic line. */
-      const code=String((err&&err.code)||'');
       saveFailed(
         err&&err.failed          ? err.message :
         /permission/i.test(code) ? "That game is locked — picks are final at kickoff." :
@@ -2774,6 +2831,16 @@ async function boot(){
       await loadWeek(state.week);
       render(); tick(); renderAlerts(true);
       watchLive();
+      /* Roster-wide, not per-week, so it is subscribed once here rather
+         than inside watchLive() — that resubscribes on every week switch,
+         and a members listener does not need to. Guarded on its own,
+         separate from the try/catch around the rest of boot(): this is
+         an enhancement (new members appear without a reload), not
+         something the app needs to have a week to show. Letting it throw
+         here would fail the ENTIRE boot over a feature that is allowed
+         to simply not be there. */
+      try{ PS.watchMembers(members=>{ applyMembers(members); render(); }); }
+      catch(e){ console.warn('watchMembers unavailable',e); }
       // Only now is there an app worth showing. Hiding onboarding any
       // earlier meant a failed load left the user staring at nothing,
       // with no route back to the sign-in screen.
@@ -2844,6 +2911,21 @@ const optional=(p,fallback,label)=>p.catch(e=>{
   return fallback;
 });
 
+/* NAMES/PLAYERS from a roster snapshot, shared by the initial load and
+   the live listener below — the two used to duplicate this by hand, and
+   the live one had drifted (no ME/localStorage fallback), which showed
+   up only for a lone player whose own roster read had failed. */
+function applyMembers(members){
+  // Fall back to just me so the sheet still works in a pool whose roster
+  // could not be read — a solo view beats no view.
+  NAMES={};
+  members.forEach(m=>{ NAMES[m.uid]=m.name||'Player'; });
+  if(!NAMES[ME])NAMES[ME]=(localStorage.getItem('ps_name')||'You');
+  // Sort by DISPLAY name, key by uid.
+  PLAYERS=members.length?members.map(m=>m.uid).sort((a,b)=>
+    String(NAMES[a]||'').localeCompare(String(NAMES[b]||''))):[ME];
+}
+
 async function loadSeason(){
   // Independent reads, so fetch them together. In series this was four
   // round trips stacked back to back before anything could render — on a
@@ -2865,14 +2947,7 @@ async function loadSeason(){
      signed-in uid before any of it is built. */
   ME=PS.user?.uid||ME;
 
-  // Fall back to just me so the sheet still works in a pool whose roster
-  // could not be read — a solo view beats no view.
-  NAMES={};
-  members.forEach(m=>{ NAMES[m.uid]=m.name||'Player'; });
-  if(!NAMES[ME])NAMES[ME]=(localStorage.getItem('ps_name')||'You');
-  // Sort by DISPLAY name, key by uid.
-  PLAYERS=members.length?members.map(m=>m.uid).sort((a,b)=>
-    String(NAMES[a]||'').localeCompare(String(NAMES[b]||''))):[ME];
+  applyMembers(members);
 
   STANDINGS={};
   /* getStandings() returns every doc in the collection, including the
@@ -3089,7 +3164,42 @@ const heroCard=`<div class="mc" id="mcard">
 </div>`;
 
 const obScreens=()=>[
-  /* ---------- 1. sign in ---------- */
+  /* ---------- 1. install (iPhone, not yet installed) ----------
+     This used to run AFTER sign-in, which is what made "I added it to my
+     Home Screen and it asked for my name and email again" happen every
+     time on iPhone: the sign-in cookie was set while still inside Safari's
+     own tab, and standalone (Home Screen) mode is a separate storage
+     context on iOS — Apple partitions it from the browser tab on purpose,
+     and nothing in this app's code can reach across that wall. Leaving
+     Safari to open the new icon left the fresh, empty context with no
+     cookie to find, so boot() correctly saw nobody signed in and asked
+     again — a second, real sign-in, not a bug reusing the first one.
+
+     Asking for the Home Screen FIRST, before any sign-in has happened,
+     means the one sign-in that counts happens after the switch, already
+     inside the standalone context that persists — so it only ever
+     happens once. `show` still reads isIOS && !installed, so once this
+     screen has done its job (or on Android/desktop, where it never
+     applies), obScreens() drops it and whoever is here lands straight on
+     sign-in, same as before. */
+  {
+    show:isIOS&&!installed, id:'install',
+    body:`<div class="ob-kicker">First thing</div>
+      <h1 class="ob-h">Make it a real app</h1>
+      <ol class="ob-steps">
+        <li>Tap <span class="ob-share">&#8593;</span> at the bottom of Safari</li>
+        <li>Scroll and choose <b>Add to Home Screen</b></li>
+        <li>Open Pick’em from your new icon, then sign in there</li>
+      </ol>
+      <div class="ob-note"><b>Do this before you sign in</b>
+        Apple only allows notifications for apps on the Home Screen, and
+        signing in here first means you'd have to sign in again once you
+        do add it. Skip it now and you can still add it later from
+        Settings — you'll just sign in one more time when you do.</div>`,
+    btn:'I added it', skip:'Later'
+  },
+
+  /* ---------- 2. sign in ---------- */
   {
     show:true, id:'signin',
     body:`${heroCard}
@@ -3155,7 +3265,7 @@ const obScreens=()=>[
     }
   },
 
-  /* ---------- 2. the code ---------- */
+  /* ---------- 3. the code ---------- */
   {
     show:true, id:'pin',
     body:`<div class="ob-kicker">Check your inbox</div>
@@ -3216,7 +3326,14 @@ const obScreens=()=>[
       });
       setTimeout(()=>boxes[0].focus(),260);
 
-      $('#obEdit').onclick=()=>{obStep=0;pinNote('');obRender();};
+      $('#obEdit').onclick=()=>{
+        // Was a hardcoded 0 — fine while 'signin' was always screen zero,
+        // wrong now that 'install' can sit ahead of it (see obScreens()).
+        // Find it by id so "Change" always lands back on the email step.
+        const i=obScreens().findIndex(x=>x.id==='signin');
+        obStep=i<0?0:i;
+        pinNote('');obRender();
+      };
 
       /* One timer, always. This used to chain setTimeout with nothing
          cancelling the old chain, so every re-render of this screen left
@@ -3318,22 +3435,6 @@ const obScreens=()=>[
       }
       return true;
     }
-  },
-
-  /* ---------- 3. install (iPhone, not yet installed) ---------- */
-  {
-    show:isIOS&&!installed, id:'install',
-    body:`<div class="ob-kicker">One more thing</div>
-      <h1 class="ob-h">Make it a real app</h1>
-      <ol class="ob-steps">
-        <li>Tap <span class="ob-share">&#8593;</span> at the bottom of Safari</li>
-        <li>Scroll and choose <b>Add to Home Screen</b></li>
-        <li>Open Pick’em from your new icon</li>
-      </ol>
-      <div class="ob-note"><b>This is not optional on iPhone</b>
-        Apple only allows notifications for apps on the Home Screen. Skip this
-        and you get no kickoff reminders at all.</div>`,
-    btn:'I added it', skip:'Later'
   },
 
   /* ---------- 4. alerts ---------- */
@@ -3585,30 +3686,46 @@ function renderPrefs(){
        role="switch" aria-checked="${prefs[k]?'true':'false'}">
       <div class="pref-t"><b>${t}</b><span>${d}</span></div>
       <div class="sw"></div></button>`).join('');
+  renderPrefsAll();
 }
-$('#prefs').addEventListener('click',async e=>{
-  const el=e.target.closest('[data-pref]'); if(!el)return;
-  const k=el.dataset.pref, was=prefs[k];
-  prefs[k]=!was;
+/* The master switch is derived, never its own source of truth: it just
+   reflects whether every category below happens to be on right now. Called
+   from renderPrefs() so both the individual toggles and a page reload keep
+   it in sync automatically, rather than needing its own separate state. */
+function renderPrefsAll(){
+  const el=$('#prefsAll'); if(!el)return;
+  const allOn=PREFS.every(([k])=>prefs[k]);
+  el.classList.toggle('on',allOn);
+  el.setAttribute('aria-checked',allOn?'true':'false');
+}
+/* Shared by one category and "all of them": same optimistic-update,
+   same revert-and-toast on a failed write, so a dropped connection can
+   never leave the switches and the saved roster disagreeing. */
+async function savePrefs(before){
   renderPrefs();
   if(DEMO)return;
-  /* SAY SO WHEN IT DOES NOT SAVE.
-     This was fire-and-forget with an empty catch. A denied or dropped
-     write left the switch showing "on", localStorage agreeing, and the
-     roster — which is the only thing remind.py and worker/live.js
-     read — never updated. The player is then certain they enabled the
-     last-call reminder, and it never comes. Revert the switch and use
-     the toast that already exists a few functions up. */
   try{
     await PS.upsertRoster({prefs});
   }catch(err){
     console.warn('pref write failed',err);
-    prefs[k]=was;
+    prefs=before;
     renderPrefs();
     toast("That didn't save — check your connection and try again.",'fail');
     return;
   }
   localStorage.setItem('ps_prefs',JSON.stringify(prefs));
+}
+$('#prefs').addEventListener('click',e=>{
+  const el=e.target.closest('[data-pref]'); if(!el)return;
+  const k=el.dataset.pref, before={...prefs};
+  prefs[k]=!prefs[k];
+  savePrefs(before);
+});
+$('#prefsAll').addEventListener('click',()=>{
+  const before={...prefs};
+  const next=!PREFS.every(([k])=>prefs[k]);
+  PREFS.forEach(([k])=>{prefs[k]=next;});
+  savePrefs(before);
 });
 renderPrefs();
 
@@ -3655,7 +3772,15 @@ $('#logout').addEventListener('click',async()=>{
    nothing in them for someone who is already in. */
 function replayOnboarding(toHowTo){
   const sc=obScreens();
-  const firstTour=Math.max(0,sc.findIndex(x=>x.howto));
+  /* THE BUG: this looked for the single screen flagged `howto` — the
+     "Six rules" recap, which is the LAST screen before "Let's play" — so
+     "Show me the walkthrough again" in Settings skipped straight past
+     the install prompt and the alerts screen and landed one tap from the
+     end. The comment above always said the intent was to skip only the
+     two SIGN-IN screens (nothing in them for someone already signed in),
+     not the rest of the tour. Find the first screen that is neither of
+     those instead, so a replay actually replays every remaining page. */
+  const firstTour=Math.max(0,sc.findIndex(x=>x.id!=='signin'&&x.id!=='pin'));
   obStep=toHowTo?firstTour:(PS&&PS.user?firstTour:0);
   if(obStep<0)obStep=sc.length-1;
   localStorage.removeItem('ps_onboarded');

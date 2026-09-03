@@ -1,6 +1,6 @@
 # Tests
 
-365 checks. Nothing here touches Firebase, Resend, KV or the live site.
+368 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -17,7 +17,7 @@
     node polish.ui.test.mjs      # 40  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 21  bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 24  bugs that shipped, so they cannot return
     node sw.push.test.mjs        # 16  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
@@ -158,6 +158,53 @@ differ. Requesting a code for `you+x@yahoo.com` set the cooldown on
 `you@yahoo.com`, so your own request was answered "already sent" with no
 email — while the code in your inbox belonged to a different identity and
 could never verify.
+
+**"Show me the walkthrough again" landed one tap from the end.**
+`replayOnboarding()` searched for the single screen flagged `howto` — the
+"Six rules" recap, which is also the LAST screen before "Let's play" —
+so Settings' "Show me the walkthrough again," for someone already
+signed in, skipped the install prompt and the alerts screen entirely
+and opened on the final page. The function's own comment always said
+the intent was to skip only the two sign-in screens, not the rest of
+the tour; it now looks for the first screen that isn't one of those two,
+which is what actually honours that comment.
+
+**Every alert switch in Settings had the browser's own button drawn
+underneath the app's.** They were changed from bare `<div>`s to real
+`<button role="switch">` elements for keyboard and screen-reader access,
+but nothing reset a `<button>`'s own border, background and padding —
+only `border-top` was ever set, so the platform's native button chrome
+showed through on the other three sides of every row, which is what
+made the list read as offset and uneven rather than flat rows in one
+list. Toggling one off made it worse: the off-state track was 16%-white
+on a dark card with no border of its own, legible only by contrast with
+a same-row native button box that no longer exists once the reset is
+applied — so the fix pairs a full button reset with a border on the
+switch track itself, on or off.
+
+**A picks write in the first second of a fresh sign-in could be told
+"check your connection" for a connection that was never the problem.**
+A brand-new custom-token sign-in hands the browser a Firestore
+connection that is still finishing its own handshake, and a write that
+lands in that window can be rejected for reasons that have nothing to
+do with the pick, the network, or the game being locked — which is
+exactly what "your picks didn't save" right after signing in, that then
+silently stopped happening a few minutes later with no code change,
+actually was. `commitPicks()` now retries once, silently, about 1.2s
+later before saying anything is wrong; a genuinely locked game is never
+retried, since it will only ever fail the same way twice.
+
+**A newly-registered player was invisible to everyone already in the
+app.** `PLAYERS` was populated once, from a single `getMembers()` read
+inside `loadSeason()` at boot — so anyone already using the app, on any
+device, kept the roster exactly as it stood at their own page load.
+Someone who signed up after that never appeared in Standings or the
+Grid for anybody else until they manually reloaded; their own device
+was fine, since their own `boot()` ran after they had joined, which is
+what made this easy to miss testing alone. `watchMembers()` is a live
+listener now, subscribed once at boot, guarded on its own so a missing
+or failing roster listener degrades the roster refresh rather than
+failing the whole boot.
 
 ## Known limit, deliberately not "fixed" in code
 
