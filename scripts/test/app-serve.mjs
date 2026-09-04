@@ -76,7 +76,16 @@ const MEMBERS = ROSTER.map((n,i) => ({ uid: 'u_'+i, name: n }));
 
 window.PS = {
   SEASON: '2026', user: { uid: 'u_0' }, poolId: 'p_test',
-  async signInWithToken(t){ await call('signInWithToken'); return this.user; },
+  /* Real Firebase fires onAuthStateChanged the INSTANT this resolves —
+     which is several lines before the PIN screen's go() reaches
+     joinPool(). That ordering is the whole cause of the "boxes empty and
+     it sits there" bug, and a stub whose watchAuth fires once at startup
+     cannot express it. Re-fire, the way the SDK does. */
+  async signInWithToken(t){
+    await call('signInWithToken');
+    if (window.__authCb) setTimeout(() => window.__authCb(this.user), 0);
+    return this.user;
+  },
   async joinPool(c){ await call('joinPool'); window.__joined = true;
     return { id:'p_test', name:"Weekly NFL Pick'em" }; },
   async upsertRoster(x){ await call('upsertRoster'); },
@@ -133,10 +142,30 @@ window.PS = {
   async getArchive(){ await call('getArchive'); return P.archive || []; },
   async savePicks(){ await call('savePicks'); },
   async saveTiebreak(){ await call('saveTiebreak'); },
-  watchWeek(wk, cb){ log.push('watchWeek'); },
-  watchRevealed(wk, cb){ log.push('watchRevealed'); },
-  watchMembers(cb){ log.push('watchMembers'); },
-  watchAuth(cb){ log.push('watchAuth'); setTimeout(()=>cb(P.signedOut ? null : { uid:'u_0' }), 0); },
+  /* THESE USED TO LOG AND NOTHING ELSE, which meant the entire live path
+     — a score landing mid-Sunday, the Grid recolouring, players moving in
+     the Standings — was untestable, and so it was untested. The real
+     onSnapshot callbacks fire whenever Firestore pushes; these hand the
+     callback out on window so a test can push on demand.
+
+     __weekGames() returns copies of the stub's own season rows for the
+     week on screen, so a test mutates a game to final and pushes it back
+     exactly as watchWeek would deliver it. */
+  watchWeek(wk, cb){
+    log.push('watchWeek');
+    window.__weekGames = () => GAMES.filter(g => g.wk === wk).map(g => ({ ...g }));
+    window.__pushWeek  = (games) => cb(games || window.__weekGames(), wk);
+  },
+  watchRevealed(wk, cb){
+    log.push('watchRevealed');
+    window.__pushRevealed = (rows) => cb(rows || [], wk);
+  },
+  watchMembers(cb){
+    log.push('watchMembers');
+    window.__pushMembers = (m) => cb(m || MEMBERS);
+  },
+  watchAuth(cb){ log.push('watchAuth'); window.__authCb = cb;
+    setTimeout(()=>cb(P.signedOut ? null : { uid:'u_0' }), 0); },
   async signOut(){}, async enablePush(){}, async refreshPushToken(){},
   async alertsHealthy(){ return true; },
   getBoard(){ return []; }, watchBoard(){}, getShard(){ return null; },

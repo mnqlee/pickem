@@ -159,14 +159,47 @@ console.log('\n6. The scoring mode shown must be the pool\'s real mode');
      player while the server scored the season in confidence.
      Separately, the Settings buttons had "Confidence" hardcoded as
      selected and nothing ever updated it. */
-  const { ctx, page, errors } = await open({ mode: 'straight' });
-  await page.waitForTimeout(500);
-  await page.click('[data-tab="settings"]').catch(() => {});
-  await page.waitForTimeout(400);
-  const on = await page.locator('.mbtn.on').first().getAttribute('data-mode').catch(() => null);
-  ok('a straight-up pool shows Straight-up selected', on === 'straight', String(on));
-  ok('no errors', errors.length === 0, errors[0] || '');
-  await ctx.close();
+  /* RE-POINTED when the Settings mode switch was deleted. This asserted
+     on which `.mbtn` carried the `on` class, and those buttons no longer
+     exist — one scoring system now, not a setting anyone can change.
+
+     The bug underneath is not gone though, it is MORE dangerous: with no
+     switch on screen, a client that silently falls through to 'straight'
+     has nothing anywhere to reveal the mismatch, while score_week.py
+     settles the season in confidence. So this now asserts the same
+     invariant through what the mode actually DOES — the stake bars and
+     the header badge — in both directions, which is what a player would
+     have noticed and what the original bug destroyed. */
+  const soon = new Date(Date.now() + 3 * 864e5).toISOString();   // nothing locked yet
+
+  const s = await open({ mode: 'straight', startISO: soon, weeks: 2 });
+  await s.page.waitForTimeout(700);
+  ok('a straight-up pool shows no stake bars',
+     (await s.page.locator('#slate .stakebar').count()) === 0);
+  ok('and says so in the header badge',
+     (await s.page.locator('#modeTag').innerText().catch(() => '')).trim() === 'S/U');
+  ok('no errors', s.errors.length === 0, s.errors[0] || '');
+  await s.ctx.close();
+
+  /* The direction the original bug actually broke: a confidence pool
+     losing its ranks and being scored — and displayed — as straight-up. */
+  const c = await open({ mode: 'confidence', startISO: soon, weeks: 2 });
+  await c.page.waitForTimeout(700);
+  ok('a confidence pool keeps its stake bars',
+     (await c.page.locator('#slate .stakebar').count()) > 0);
+  ok('and its header badge',
+     (await c.page.locator('#modeTag').innerText().catch(() => '')).trim() === 'CONF');
+  ok('no errors', c.errors.length === 0, c.errors[0] || '');
+  await c.ctx.close();
+
+  /* And the switch itself is gone for good — putting it back is a
+     product decision, not something to reintroduce by accident. */
+  const g = await open({ startISO: soon });
+  await g.page.click('[data-tab="settings"]').catch(() => {});
+  await g.page.waitForTimeout(400);
+  ok('the scoring-mode switch is no longer in Settings',
+     (await g.page.locator('.mbtn[data-mode]').count()) === 0);
+  await g.ctx.close();
 }
 
 /* ------------------------------------------------------------------ */
@@ -263,6 +296,504 @@ console.log('\n10. "Show me the walkthrough again" must not skip to the last pag
   ok('and does not open on a sign-in screen either',
      !/What do we call you|Check your inbox/i.test(heading), heading.slice(0, 60));
   ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n11. A live player must never be shown the invented demo season');
+{
+  /* THE BUG, reported twice as "it is caching an old version" and chased
+     twice in the wrong place, because from outside that is exactly what
+     it looks like.
+
+     index.html builds a mock season at module scope — shuffled matchups
+     from slateFor(), kickoffs placed at W1OFF minute-offsets from
+     Date.now() — and that loop ran unconditionally, DEMO or not. The
+     first EIGHT week-1 offsets are negative, so isLive() (which is only
+     `Date.now() >= g.kick`) was true for half of week 1 the instant the
+     page parsed. Every player opening the app saw teams who are not
+     playing each other, half of them reading "IN PROGRESS · LOCKED", in
+     a week that has not started — until loadSeason() finished its
+     network round trips and swapped the real schedule in underneath.
+
+     Tapping to week 2 and back appeared to "fix" it, which is what sent
+     two separate investigations looking at caching, listeners and
+     Firestore consistency. It fixed nothing: it just forced a render
+     against data that had since become real.
+
+     What this asserts is the one thing that actually matters — that
+     nothing on screen came from the generator. Real games here carry
+     Firestore's document ids (`2026_W1_AWAY_HOME` shape, per
+     import_schedule.py and app-serve.mjs); generated ones are `w1g0`,
+     `w1g1`... So a single `w<digits>g<digits>` anywhere in the rendered
+     slate means the mockup reached a live player's screen. */
+  /* THE WINDOW IS THE WHOLE TEST, and the first version of this missed it.
+
+     Written the obvious way — load the app, look at the slate — this
+     passes with the bug fully present, because against a local stub
+     loadSeason() resolves in milliseconds and the mock season is
+     overwritten before any assertion runs. Confirmed by putting the bug
+     back and watching the suite stay green, which is the only reason
+     this comment exists.
+
+     The defect lives in the gap between page parse and the schedule
+     arriving. On a phone on 4G that gap is seconds long; here it has to
+     be created deliberately, by holding getAllWeeks open. Everything
+     asserted below is read DURING that gap.
+
+     ASSERTED ON #countdown, deliberately. tick() runs on a one-second
+     interval from module scope — before any sign-in, before boot's
+     network chain, regardless of auth — and writes the next kickoff into
+     that header straight out of WEEKS. So with the bug present it names a
+     fabricated matchup within a second of page load, with nothing else
+     required to reproduce it. That is also the exact artifact the player
+     photographed: their header read "BRONCOS @ SEAHAWKS · 2M 26S", which
+     is SLATES[1][9] = ['DEN','SEA'] at W1OFF[9] = +9 minutes from load.
+
+     Checking the slate instead does NOT work here, and the first two
+     attempts at this test proved it: nothing paints #slate until boot
+     finishes, so against a local stub the assertion runs after the real
+     schedule has already replaced the mockup and passes with the bug
+     fully in place. Both earlier versions stayed green when the fix was
+     reverted. This one does not. */
+  const b = await open({ signedOut: true, delay: { getAllWeeks: 4000 } });
+  await b.page.waitForTimeout(1600);         // tick() has run; schedule has not landed
+
+  /* One assertion, because only one discriminates. Matching on team
+     nicknames looks more specific and is worthless: SLATES[1] covers all
+     32 clubs, so any nickname list either matches the real schedule too
+     or misses most of the mock one — the first draft of this let
+     "JAGUARS @ RAIDERS · 33S" through. With no schedule loaded there is
+     nothing legitimate to count down to, so the header naming ANY
+     matchup at this moment means the mock season is live on screen. */
+  const head = await b.page.locator('#countdown').innerText().catch(() => '');
+  ok('the countdown names no game at all while the schedule is still loading',
+     head.trim() === '' || !/@/.test(head), head.slice(0, 60));
+
+  const leaked = await b.page.evaluate(() =>
+    [...document.querySelectorAll('#slate [data-game]')]
+      .map(el => el.getAttribute('data-game'))
+      .filter(id => /^w\d+g\d+$/.test(id)));
+  ok('no generated game ids are painted while the real schedule loads',
+     leaked.length === 0, leaked.slice(0, 3).join(', '));
+  ok('no errors', b.errors.length === 0, b.errors[0] || '');
+  await b.ctx.close();
+
+  // ...and once a real schedule does land, everything renders normally.
+  const c = await open({ weeks: 3 });
+  await c.page.waitForTimeout(1200);
+  ok('the real games render once the schedule lands',
+     (await c.page.locator('#slate [data-game]').count()) > 0);
+  ok('and the countdown then names a real one',
+     /\d/.test(await c.page.locator('#countdown').innerText().catch(() => '')));
+  await c.ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n12. The Home Screen prompt must fit the browser it is standing in');
+{
+  /* THE COMPLAINT that produced this screen: the first person other than
+     the owner to be sent the link gave up at "tap the three dots, tap
+     Share, scroll, Add to Home Screen" — four steps, described for a
+     browser they were not even using, before they had any reason to care.
+
+     Two things have to hold and neither is visible from reading the code.
+     The steps must match the ACTUAL browser (Safari puts Share in the
+     toolbar; Chrome, Edge and Firefox on iOS each bury it behind their
+     own menu first), and there must always be a way straight past it,
+     because everything except the kickoff alert works fine in a tab and a
+     forced install wall in front of a stranger is how you lose them.
+
+     iPhone cannot install from a button — Apple ships no API for it — so
+     accurate instructions are the whole of what is possible there, which
+     is exactly why getting them per-browser is worth a test. */
+  const UA = {
+    safari: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 '
+          + '(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    edge:   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 '
+          + '(KHTML, like Gecko) Version/17.5 EdgiOS/122.0 Mobile/15E148 Safari/604.1',
+    laptop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+          + '(KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  };
+  const openUA = async ua => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: ua });
+    const page = await ctx.newPage();
+    await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+    const errors = []; page.on('pageerror', e => errors.push(String(e)));
+    await page.request.post(BASE + '/__plan', { data: { signedOut: true } });
+    await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(900);
+    return { ctx, page, errors };
+  };
+
+  const saf = await openUA(UA.safari);
+  ok('an iPhone lands on the Home Screen prompt before signing in',
+     /Home Screen/i.test(await saf.page.locator('#obBody').innerText().catch(() => '')));
+  ok('and is always offered a way straight past it',
+     await saf.page.locator('#obSkip').isVisible().catch(() => false));
+  await saf.page.click('#obGo').catch(() => {});
+  await saf.page.waitForTimeout(400);
+  const safSteps = await saf.page.locator('.ob-steps').innerText().catch(() => '');
+  ok('Safari is pointed at the Share button in its own toolbar',
+     /bottom of the screen/i.test(safSteps) && !/⋯/.test(safSteps), safSteps.slice(0, 70));
+  ok('no errors', saf.errors.length === 0, saf.errors[0] || '');
+  await saf.ctx.close();
+
+  const edg = await openUA(UA.edge);
+  await edg.page.click('#obGo').catch(() => {});
+  await edg.page.waitForTimeout(400);
+  const edgSteps = await edg.page.locator('.ob-steps').innerText().catch(() => '');
+  ok('Edge on iOS is told about its own menu first, then Share',
+     /⋯/.test(edgSteps) && /Share/i.test(edgSteps), edgSteps.slice(0, 70));
+  ok('the two browsers are not handed identical instructions',
+     edgSteps.trim() !== safSteps.trim());
+  await edg.ctx.close();
+
+  const dsk = await openUA(UA.laptop);
+  ok('a laptop is never shown a Home Screen prompt',
+     !/Home Screen/i.test(await dsk.page.locator('#obBody').innerText().catch(() => '')));
+  ok('no errors on desktop', dsk.errors.length === 0, dsk.errors[0] || '');
+  await dsk.ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n13. A score landing must move the Grid and the Standings, live');
+{
+  /* THE WHOLE LIVE PATH WAS UNTESTED because it was untestable: the
+     stub's watchWeek/watchRevealed logged their name and threw the
+     callback away, so nothing in this suite had ever seen a score
+     arrive. app-serve.mjs now hands those callbacks out on window.
+
+     This is the thing the pool will actually be looking at on a Sunday
+     afternoon — cells turning green, players overtaking each other —
+     and until now the only evidence it worked was that the code looked
+     like it should. */
+  const started = new Date(Date.now() - 3 * 3600e3).toISOString();
+  const { ctx, page, errors } = await open(
+    { startISO: started, weeks: 2, gamesPerWeek: 6, playerCount: 8 });
+  await page.waitForTimeout(600);
+
+  const snap = () => page.evaluate(() => ({
+    cells: [...document.querySelectorAll('#gridBody tbody tr:first-child .cell')]
+             .map(c => c.className),
+    board: [...document.querySelectorAll('#board .row .pts b')].map(e => e.textContent.trim()),
+  }));
+
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const before = await snap();
+  ok('the live listener is actually registered',
+     await page.evaluate(() => typeof window.__pushWeek === 'function'));
+
+  await page.evaluate(() => window.__pushWeek(window.__weekGames().map(g =>
+    ({ ...g, status: 'final', awayScore: 24, homeScore: 17, winner: g.away }))));
+  await page.waitForTimeout(800);
+  const after = await snap();
+
+  ok('the Grid recolours without a reload',
+     JSON.stringify(before.cells) !== JSON.stringify(after.cells),
+     after.cells.slice(0, 4).join(','));
+  ok('and settles into decided cells, not pending ones',
+     after.cells.some(c => /hit|miss/.test(c)) && !after.cells.some(c => /pend/.test(c)),
+     after.cells.join(','));
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const board = (await snap()).board;
+  ok('the Standings carry real totals once games are final',
+     board.length > 0 && board.some(v => +v > 0), board.slice(0, 4).join(','));
+  ok('and are ordered high to low',
+     board.map(Number).every((v, i, a) => i === 0 || a[i - 1] >= v), board.join(','));
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n14. The week summary and the consensus bar must survive real data');
+{
+  /* THE BUG: the Grid header printed "6 final · -5 live · 5 to come".
+
+     `isFinal` reads the status field and `isLive` is only
+     `Date.now() >= kickoff`, so a game can be final AND not yet kicked
+     off — which is not hypothetical, because import_schedule.py
+     deliberately preserves `status: final` while refreshing kickoff on a
+     re-import. The counts were `started - finals` and
+     `gs.length - started`, which double-counted that game and went
+     negative. Three disjoint buckets now. */
+  const { ctx, page, errors } = await open(
+    { startISO: new Date(Date.now() - 3 * 3600e3).toISOString(),
+      weeks: 2, gamesPerWeek: 6, playerCount: 8 });
+  await page.waitForTimeout(600);
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(300);
+  // Every game final while five kickoffs are still in the future.
+  await page.evaluate(() => window.__pushWeek(window.__weekGames().map(g =>
+    ({ ...g, status: 'final', awayScore: 24, homeScore: 17, winner: g.away }))));
+  await page.waitForTimeout(700);
+  const sub = await page.locator('#gridSub').innerText().catch(() => '');
+  ok('the week summary never prints a negative count', !/-\d/.test(sub), sub);
+  ok('and the three buckets add up to the slate',
+     (() => { const n = (sub.match(/\d+/g) || []).map(Number);
+              return n.length === 3 && n[0] + n[1] + n[2] === 6; })(), sub);
+
+  /* THE OTHER BUG: the consensus bar paints each side in the club's own
+     colour, and 151 of the 496 possible matchups put those two colours
+     under 1.3:1 against each other — six pairs are the SAME HEX (Dallas
+     and the Rams are both #003594). Those games rendered as one solid
+     block with two labels floating in it. A gap makes the split visible
+     whatever the two clubs wear. */
+  await page.click('[data-tab="picks"]').catch(() => {});
+  await page.waitForTimeout(300);
+  const bar = await page.evaluate(() => {
+    const g = window.__weekGames(); const a = g[0];
+    g[0] = { ...a, away: 'DAL', home: 'LAR', status: 'scheduled',
+             winner: null, awayScore: null, homeScore: null };
+    window.__pushWeek(g);
+    const rows = [];
+    for (let i = 0; i < 8; i++)
+      rows.push({ uid: 'u_' + i, name: 'P' + i, gameId: a.id,
+                  winner: i < 4 ? 'DAL' : 'LAR', weight: i + 1 });
+    window.__pushRevealed(rows);
+    return new Promise(r => setTimeout(() => {
+      const b = document.querySelector('.cbar');
+      r(b ? { gap: getComputedStyle(b).gap,
+              bgs: [...b.querySelectorAll('.cseg')]
+                     .map(s => getComputedStyle(s).backgroundColor) } : null);
+    }, 500));
+  });
+  ok('two clubs in the identical colour still render two segments',
+     !!bar && bar.bgs.length === 2, JSON.stringify(bar));
+  ok('and are separated by a gap that does not depend on colour',
+     !!bar && parseFloat(bar.gap) > 0 && bar.bgs[0] === bar.bgs[1],
+     bar ? `${bar.gap} / ${bar.bgs[0]}` : 'no bar');
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n15. Typing the last PIN digit must not wipe the screen');
+{
+  /* REPORTED TWICE, by two different people, in almost the same words:
+     "they entered the pin, it emptied the boxes, sat there a few seconds,
+     then let them in." Nothing was ever actually wrong — only the screen.
+
+     Firebase fires onAuthStateChanged the INSTANT signInWithToken()
+     resolves, which is several lines before the PIN screen's own go()
+     finishes. boot()'s watchAuth callback therefore runs mid-sign-in,
+     finds no pool yet, and calls showOnboarding(false) — which called
+     obRender() unconditionally, rebuilding #obBody and #obFoot. The six
+     digits vanished and the button reverted from "Signing you in" to
+     "Let me in", which reads as a tap that never registered. That is why
+     people tapped again.
+
+     An earlier fix guarded the REWIND (obStep = 0) for this exact race
+     and stopped there; the redraw was the other half of it.
+
+     This needs the stub to re-fire watchAuth on sign-in the way the real
+     SDK does — app-serve.mjs does that now. Mutation-tested: restore the
+     unconditional obRender() and this fails with digits "" and the
+     button back to "Let me in". */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  // Hold sign-in open so go() is still in flight when the callback fires.
+  await page.request.post(BASE + '/__plan',
+    { data: { signedOut: true, noPool: true, delay: { signInWithToken: 3000 } } });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1000);
+
+  await page.fill('#obNameIn', 'Lee').catch(() => {});
+  await page.fill('#obMailIn', 'lee@example.com').catch(() => {});
+  await page.waitForTimeout(150);
+  await page.click('#obGo').catch(() => {});
+  await page.waitForTimeout(700);
+  for (let i = 0; i < 6; i++) {
+    await page.fill('#pin' + i, String(i + 1)).catch(() => {});
+    await page.waitForTimeout(40);
+  }
+  await page.click('#obGo').catch(() => {});
+  await page.waitForTimeout(400);
+
+  const read = () => page.evaluate(() => ({
+    digits: [...Array(6)].map((_, i) => (document.getElementById('pin' + i) || {}).value || '').join(''),
+    btn: (document.getElementById('obGo') || {}).textContent || '',
+  }));
+  const before = await read();
+  ok('the six digits are on screen before the race',
+     before.digits === '123456', JSON.stringify(before));
+
+  // What Firebase does the moment the custom token is accepted.
+  await page.evaluate(() => window.__authCb && window.__authCb({ uid: 'u_0' }));
+  await page.waitForTimeout(500);
+  const after = await read();
+  ok('the digits survive onAuthStateChanged firing mid-sign-in',
+     after.digits === '123456', JSON.stringify(after));
+  ok('and the button still says it is working, not "Let me in"',
+     /signing/i.test(after.btn), JSON.stringify(after.btn));
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n16. The two Standings tables must not borrow each other\'s history');
+{
+  /* THE TRAP, named before the code was written and then proved.
+
+     Season and This-week rank the SAME fifty people on DIFFERENT numbers,
+     so they produce different orders. `lastRank` drives the green/red
+     movement arrows by remembering where everyone sat last render — and
+     with ONE shared map, every switch between tabs writes the other
+     view's positions. Come back and the table paints arrows for movement
+     that never happened. It looks plausible, it is wrong, and nothing
+     ever throws.
+
+     Mutation-tested rather than assumed: collapsing the two maps into one
+     put fake arrows on 46 of 50 rows from a single there-and-back. Keyed
+     by view, it is 0. */
+  const { ctx, page, errors } = await open(
+    { playerCount: 50, weeks: 6,
+      startISO: new Date(Date.now() - 40 * 864e5).toISOString() });
+  await page.waitForTimeout(900);
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(600);
+
+  const read = () => page.evaluate(() => ({
+    rows: document.querySelectorAll('#board .row').length,
+    order: [...document.querySelectorAll('#board .row .who b')].map(e => e.textContent.trim()),
+    top: (document.querySelector('#board .row .pts b') || {}).textContent || '',
+    arrows: document.querySelectorAll('#board .row .arrow').length,
+    lead: (document.querySelector('#board .leadtag') || {}).textContent || '',
+    seals: document.querySelectorAll('#board .row svg').length,
+    wbw: !!document.querySelector('.wbw'),
+    me: (document.getElementById('meBar') || {}).innerText || '',
+  }));
+
+  /* THIS WEEK IS THE INTENDED DEFAULT, but it cannot be blind: the week
+     on screen is the UPCOMING one, so Tuesday to Saturday it holds no
+     finals at all. Hardcoding it opened Standings onto an empty table
+     for most players on most days — nine checks across three files went
+     to zero rows and that is how it was caught.
+
+     This fixture's week HAS results, so it must land on the week. The
+     other suites' fixtures do not, and they assert the season table
+     loads there instead — between them the two behaviours are pinned. */
+  const landed = await read();
+  ok('a week with results opens on This week, not Season',
+     /week \d+ leader/i.test(landed.lead), landed.lead);
+
+  await page.click('[data-stand="season"]').catch(() => {});
+  await page.waitForTimeout(600);
+  const season = await read();
+  ok('Season lists everyone', season.rows === 50, String(season.rows));
+  ok('and names the season leader', /season leader/i.test(season.lead), season.lead);
+  ok('and carries the 1st/2nd/perfect seals',
+     season.seals > 0, String(season.seals));
+
+  await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(600);
+  const week = await read();
+  ok('This week lists everyone too', week.rows === 50, String(week.rows));
+  ok('names the WEEK leader, not the season one',
+     /week \d+ leader/i.test(week.lead), week.lead);
+  ok('ranks them on a different order',
+     JSON.stringify(week.order) !== JSON.stringify(season.order));
+  ok('on smaller numbers than the season total',
+     Number(week.top) < Number(season.top), `${week.top} vs ${season.top}`);
+  /* Seals are season honours. Repeating them inside one week's table
+     answers a question that table is not asking. */
+  ok('and drops the season seals', week.seals === 0, String(week.seals));
+  ok('the pinned bar follows the view',
+     /week/i.test(week.me) && !/week/i.test(season.me),
+     JSON.stringify([season.me.slice(0, 40), week.me.slice(0, 40)]));
+
+  ok('the old week-by-week winners list is gone from both',
+     !season.wbw && !week.wbw);
+
+  // There and back. Nobody has moved, so nothing may claim they did.
+  await page.click('[data-stand="season"]').catch(() => {});
+  await page.waitForTimeout(500);
+  await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(500);
+  await page.click('[data-stand="season"]').catch(() => {});
+  await page.waitForTimeout(600);
+  const after = await read();
+  ok('no invented movement arrows after switching tabs',
+     after.arrows === 0, `${after.arrows} arrows`);
+  ok('and the order is untouched',
+     JSON.stringify(after.order) === JSON.stringify(season.order));
+
+  /* THE SAME BUG ONE LEVEL DOWN, found by reading a screenshot rather
+     than the code: ranked 7th in week 3 and 9th in week 2, hopping
+     between the two weeks drew a DOWN arrow. Two different tables
+     compared as one. Nobody moved — they were never in the same race.
+     The week history is keyed by WEEK, not just by view. */
+  await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(500);
+  await page.click('.wk[data-wk="2"]').catch(() => {});
+  await page.waitForTimeout(800);
+  await page.click('.wk[data-wk="1"]').catch(() => {});
+  await page.waitForTimeout(900);
+  const hopped = await read();
+  ok('and none after hopping between weeks either',
+     hopped.arrows === 0, `${hopped.arrows} arrows`);
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n17. The app must not abandon a week the moment its last game starts');
+{
+  /* THE BUG: the opening week was "the first week still holding a game
+     that has not kicked off", so the app left a week the INSTANT its
+     last game started. Monday Night Football kicks at 8:15pm and from
+     that second everyone was looking at next week's empty slate, with
+     this week's standings still settling — and because next week has no
+     results, the Standings tab fell back to Season too. The one night
+     the whole pool is watching.
+
+     A week now stays current while any game is unresolved AND still
+     plausibly being played. The six-hour clamp is the safety: without
+     it a single postponed game that never resolves would pin everybody
+     on that week forever, in December, with no way out from inside the
+     app. */
+  const KICK = Date.parse('2026-09-10T00:20:00Z');       // stub's week-1 Thursday
+  const MNF  = KICK + 4 * 864e5 + 15000000;              // its Monday-night game
+  const at = async (nowMs) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await ctx.newPage();
+    await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+    await page.request.post(BASE + '/__plan',
+      { data: { weeks: 3, gamesPerWeek: 16, playerCount: 10,
+                startISO: new Date(KICK + (Date.now() - nowMs)).toISOString() } });
+    await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
+    const wk = await page.evaluate(() =>
+      (document.querySelector('.wk.on') || {}).textContent.trim() || '?');
+    await ctx.close();
+    return wk;
+  };
+
+  ok('during Monday Night Football it stays on that week',
+     (await at(MNF + 3600e3)) === '1', 'week ' + (await at(MNF + 3600e3)));
+  ok('and moves on once the week has finished',
+     (await at(MNF + 7 * 3600e3)) === '2');
+  ok('before the season it opens on week 1',
+     (await at(KICK - 6 * 3600e3)) === '1');
+
+  /* The clamp itself, asserted as arithmetic rather than as a fixture —
+     the stub finals its own games on a timer, so a genuinely stranded
+     postponement cannot be staged through it. */
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const clamp = await page.evaluate(() => {
+    const SIX = 6 * 3600e3, now = Date.now();
+    const open = (isFinal, kickedAgo) => !isFinal && now < (now - kickedAgo) + SIX;
+    return { live: open(false, 3600e3), mnf: open(false, 3 * 3600e3),
+             postponed: open(false, 20 * 864e5), done: open(true, 3600e3) };
+  });
+  ok('a game in progress holds the week open', clamp.live && clamp.mnf);
+  ok('a postponement 20 days stale does NOT strand the pool', !clamp.postponed);
+  ok('and a finished game holds nothing open', !clamp.done);
   await ctx.close();
 }
 

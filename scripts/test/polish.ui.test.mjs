@@ -50,13 +50,20 @@ console.log('\n2. Season standings use the scored totals, not one week');
     return { n: rows.length,
       pts: rows.map(r => +r.querySelector('.pts b').textContent),
       subs: rows.map(r => r.querySelector('.who .mono')?.textContent || ''),
-      weekByWeek: document.querySelectorAll('.wbw-r').length };
+      seals: document.querySelectorAll('#board .row svg').length };
   });
   ok('every player is listed', st.n === 8, String(st.n));
   ok('totals are real season numbers, not zero', st.pts.every(p => p > 0), JSON.stringify(st.pts));
   ok('table is sorted high to low', st.pts.every((p,i) => i === 0 || st.pts[i-1] >= p));
   ok('"x of y correct" is populated', st.subs.every(s => /\d+ of \d+ correct/.test(s)), st.subs[0]);
-  ok('week-by-week has a row per scored week', st.weekByWeek >= 5, String(st.weekByWeek));
+  /* WAS: 'week-by-week has a row per scored week'. That list is gone —
+     every winner already wears a 1ST seal here with a count, and a
+     runner-up a 2ND, so it repeated itself below fifty rows nobody
+     scrolled past. Assert the thing that replaced it: the honours are on
+     the rows. The live half of what it did is the This-week tab now, and
+     regress.ui case 16 covers that. */
+  ok('weekly honours ride on the season rows as seals',
+     st.seals > 0, String(st.seals));
   await ctx.close();
 }
 
@@ -163,6 +170,18 @@ console.log('\n7. Controls are big enough to hit');
       .slice(0,5).map(e => (e.id || e.className || e.tagName) + ':' + Math.round(e.getBoundingClientRect().height)));
     if (s.length) small[t] = s;
   }
+  ok('the kickoff countdown is never clipped',
+     await page.evaluate(() => {
+       const el = document.querySelector('#countdown .txt');
+       return !el || el.scrollWidth <= el.clientWidth + 1;
+     }),
+     /* It was, on every phone made. The header used full nicknames —
+        "Commanders @ Buccaneers · 2d 23h" is 33 characters wanting
+        259px in a 220px slot at 390px wide, and 137px at 320px. Half
+        the clock that tells you when your picks lock, behind an
+        ellipsis. Abbreviations fit, and they are what the cards and the
+        Grid already use. */
+     await page.evaluate(() => (document.querySelector('#countdown .txt')||{}).textContent || ''));
   ok('no control under 36px tall', Object.keys(small).length === 0, JSON.stringify(small));
   await ctx.close();
 }

@@ -14,9 +14,23 @@ import {
   getFirestore, doc, getDoc, setDoc, collection, query, where,
   getDocs, onSnapshot, serverTimestamp, Timestamp, writeBatch, updateDoc, arrayUnion
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import {
-  getMessaging, getToken, isSupported
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
+/* MESSAGING LOADS ON DEMAND, NOT ON ARRIVAL.
+
+   This was a static import, so every visitor downloaded and parsed the
+   whole FCM module before the page could finish booting — including the
+   first-time visitor, who by definition has not granted notification
+   permission and cannot possibly need it yet.
+
+   Every one of the three call sites already returns early for exactly
+   that person: alertsHealthy() and refreshPushToken() both check
+   Notification.permission before going near messaging, and enablePush()
+   only runs when somebody taps the button. So nobody who needs it is
+   made to wait, and nobody who does not need it pays for it at all.
+   Once they do turn alerts on it is fetched once and cached like
+   anything else. */
+let _messaging = null;
+const fcm = () => (_messaging ||=
+  import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js'));
 import {
   signInWithCustomToken
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
@@ -131,6 +145,7 @@ async function alertsHealthy() {
     // No worker means push cannot be delivered at all — report it as the
     // fault it is rather than hanging on a promise that never settles.
     if (!reg) return { ok: false, reason: 'no-worker' };
+    const { getMessaging, getToken } = await fcm();
     const token = await getToken(getMessaging(app),
       { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     return token ? { ok: true } : { ok: false, reason: 'no-token' };
@@ -283,6 +298,7 @@ async function refreshPushToken() {
   if (!user || !poolId) return;
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   try {
+    const { getMessaging, getToken, isSupported } = await fcm();
     if (!(await isSupported())) return;
     const reg = await swReady();
     if (!reg) return null;   // no worker = no push; never hang waiting for one
@@ -707,6 +723,7 @@ async function setScoringMode(mode, fromWeek) {
    PUSH NOTIFICATIONS
    ============================================================ */
 async function enablePush() {
+  const { getMessaging, getToken, isSupported } = await fcm();
   if (!(await isSupported())) throw new Error('This browser cannot do push.');
 
   const standalone = window.matchMedia('(display-mode: standalone)').matches

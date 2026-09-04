@@ -16,7 +16,29 @@ Do this before you invite anybody.
 
 ---
 
-## 1. Get the records from Resend
+## STATUS — checked live on 4 Sep 2026
+
+Two of the three are already done. Only DMARC is missing.
+
+| Record | Name | State |
+|---|---|---|
+| SPF | `send.nflweeklypickem.com` TXT | **LIVE** — `v=spf1 include:amazonses.com ~all` |
+| Return path | `send.nflweeklypickem.com` MX | **LIVE** — `10 feedback-smtp.ap-northeast-1.amazonses.com` |
+| DKIM | `resend._domainkey.nflweeklypickem.com` TXT | **LIVE** — 1024-bit RSA key, complete, not truncated |
+| DMARC | `_dmarc.nflweeklypickem.com` TXT | **MISSING — this is the whole job** |
+
+The DKIM value was decoded and checked, not just eyeballed: 216 characters,
+162 bytes, valid `SubjectPublicKeyInfo` DER wrapper, `rsaEncryption` OID
+present, length header agrees with the payload. A truncated paste would
+fail all four of those. It is intact.
+
+So **skip sections 1 and 2 below** — they describe work already finished,
+and are kept only for the day the domain or the mail provider changes. Go
+straight to section 3.
+
+---
+
+## 1. Get the records from Resend — ALREADY DONE
 
 Resend generates a DKIM key that is unique to your domain — nobody can give
 you that value in advance, you have to read it from their dashboard.
@@ -25,7 +47,7 @@ you that value in advance, you have to read it from their dashboard.
    `nflweeklypickem.com` if it is not there yet)
 2. Resend shows a table of DNS records to create. Leave that tab open.
 
-## 2. Add them in Cloudflare
+## 2. Add them in Cloudflare — ALREADY DONE
 
 Cloudflare dashboard → **nflweeklypickem.com** → **DNS** → **Records**.
 
@@ -56,11 +78,25 @@ and it is the one most often skipped.
 |---|---|
 | Type | `TXT` |
 | Name | `_dmarc` |
-| Content | `v=DMARC1; p=none; rua=mailto:anconalee@yahoo.com; fo=1` |
+| Content | `v=DMARC1; p=none;` |
 
 `p=none` means "authenticate, report, but do not reject yet" — the correct
 starting point. It gets you the Gmail/Yahoo compliance tick without any
 risk of your own mail being bounced while the setup settles.
+
+**Why there is no `rua=` in that record.** An earlier draft of this file
+said `rua=mailto:anconalee@yahoo.com`. That address is on `yahoo.com`,
+which is a different organisational domain from `nflweeklypickem.com`, and
+RFC 7489 §7.1 requires the *receiving* domain to publish a record
+authorising the report — specifically
+`nflweeklypickem.com._report._dmarc.yahoo.com`. Yahoo does not publish
+that for third-party domains and there is no way to ask them to. So the
+reports would simply never be sent, and the line would sit in the record
+looking like it was working. It does no harm, but it does nothing, and a
+setting that silently does nothing is worse than one that is absent.
+
+DMARC enforcement — the part that actually decides inbox versus spam —
+does not depend on `rua` at all. Leave it out.
 
 Once you have run a couple of weeks with no problems, tighten it to
 `p=quarantine`, and later `p=reject`, which is what stops somebody

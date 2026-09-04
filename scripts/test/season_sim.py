@@ -517,14 +517,40 @@ def main():
 
     # ---- notifications ---------------------------------------------------
     print("\nNotifications")
-    SENT.clear()
     reports = _quiet(db, 1)
-    score_week.notify(reports)
-    ok("a full pool of 50 produces notifications", len(SENT) > 0, len(SENT))
-    ok("nobody without a token is messaged",
-       len(SENT) <= sum(1 for i in range(N_PLAYERS) if i % 3), len(SENT))
-    ok("opting out of results is respected",
-       all("tok_0" != m.get("token") for m in SENT))
+
+    # THIS BLOCK USED TO FAIL FOR NINE HOURS OUT OF EVERY DAY.
+    #
+    # notify() honours quiet hours (QUIET_START/QUIET_END = 22..07 local,
+    # matching remind.py), and every seeded player carries
+    # tz="America/New_York". So running the suite between 10pm and 7am
+    # Eastern correctly suppressed every message, SENT stayed empty, and
+    # "a full pool of 50 produces notifications" failed — an app that was
+    # working perfectly, reported as broken, on a clock. Caught at 05:47
+    # ET. A suite that cries wolf overnight is how real failures start
+    # getting waved through.
+    #
+    # Pin the clock instead of depending on it, and while we are here,
+    # assert the quiet-hours behaviour itself in both directions — it was
+    # never covered, which is why nothing noticed it was driving this
+    # result.
+    real_quiet_now = score_week.quiet_now
+    try:
+        score_week.quiet_now = lambda tz: False        # daytime, everywhere
+        SENT.clear()
+        score_week.notify(reports)
+        ok("a full pool of 50 produces notifications", len(SENT) > 0, len(SENT))
+        ok("nobody without a token is messaged",
+           len(SENT) <= sum(1 for i in range(N_PLAYERS) if i % 3), len(SENT))
+        ok("opting out of results is respected",
+           all("tok_0" != m.get("token") for m in SENT))
+
+        score_week.quiet_now = lambda tz: True         # the middle of the night
+        SENT.clear()
+        score_week.notify(reports)
+        ok("nobody is buzzed during quiet hours", len(SENT) == 0, len(SENT))
+    finally:
+        score_week.quiet_now = real_quiet_now
     ordinals = [score_week.ordinal(i) for i in (1, 2, 3, 4, 11, 12, 13, 21, 22, 50)]
     ok("ordinals are right past 10th",
        ordinals == ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th",

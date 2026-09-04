@@ -5,7 +5,7 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.3.2';
+const VERSION = 'v1.8.0';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not
@@ -128,20 +128,46 @@ self.addEventListener('fetch', e => {
   };
 
   if (isShell) {
-    /* NETWORK FIRST for app code.
-       This is why updates land quickly: we always try the network,
-       and only fall back to cache when the phone is offline. */
+    /* STALE-WHILE-REVALIDATE for app code.
+
+       This was NETWORK FIRST, and on a phone that is the difference
+       between an app and a website. index.html is ~195KB and
+       firebase-init.js is another 39KB, and network-first means every
+       single launch AWAITS both over whatever signal the person happens
+       to have before the browser is allowed to paint one pixel. Players
+       reported 10-15 seconds of white screen opening the installed app
+       on 4G, then the loading cover on top of that — and the cached copy
+       that would have rendered instantly was sitting right there
+       untouched the whole time, because nothing consulted it until the
+       network had already failed.
+
+       Now: answer from cache IMMEDIATELY when there is a cached copy, and
+       refresh it in the background for next time. Launch becomes as fast
+       as the phone can parse the file, offline included.
+
+       The tradeoff is one launch of staleness after a deploy, and this
+       app already has the machinery for exactly that: the background
+       fetch below re-caches the new bytes, the waiting worker triggers
+       the "Update now" prompt (see registerSW in firebase-init.js), and
+       tapping it posts SKIP_WAITING and reloads into the new version.
+       Anyone who does not tap it gets the update on their next launch.
+       That is a far better deal than making all 50 players wait out a
+       network round trip every time they open the app to check a score. */
     e.respondWith((async () => {
-      try {
-        const fresh = await fetch(req);
-        await store(fresh);
-        return fresh;
-      } catch {
-        return (await caches.match(req)) ||
-               (await caches.match('./index.html')) ||
-               new Response('Offline', { status: 503,
-                 headers: { 'Content-Type': 'text/plain' } });
+      const hit = await caches.match(req);
+      const fresh = fetch(req).then(res => { store(res); return res; })
+                              .catch(() => null);
+      if (hit) {
+        // Don't let the background refresh die with the response we just
+        // returned — waitUntil keeps the worker alive long enough to
+        // finish writing the new bytes for next launch.
+        e.waitUntil(fresh);
+        return hit;
       }
+      return (await fresh) ||
+             (await caches.match('./index.html')) ||
+             new Response('Offline', { status: 503,
+               headers: { 'Content-Type': 'text/plain' } });
     })());
     return;
   }

@@ -1,6 +1,6 @@
 # Tests
 
-368 checks. Nothing here touches Firebase, Resend, KV or the live site.
+424 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -14,14 +14,14 @@
     node invite.ui.test.mjs      #  5  bare-domain invite links
 
     node app-serve.mjs &
-    node polish.ui.test.mjs      # 40  layout, states, degradation, edges
+    node polish.ui.test.mjs      # 41  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 24  bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 78  bugs that shipped, so they cannot return
     node sw.push.test.mjs        # 16  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
-    python season_sim.py         # 117 the REAL scorer, 50 players, 18 weeks
+    python season_sim.py         # 118 the REAL scorer, 50 players, 18 weeks
 
 `season_sim.py` needs no Firebase and no credentials: `fakestore.py` is an
 in-memory stand-in for the Firestore client, so `score_week.py` runs
@@ -205,6 +205,109 @@ what made this easy to miss testing alone. `watchMembers()` is a live
 listener now, subscribed once at boot, guarded on its own so a missing
 or failing roster listener degrades the roster refresh rather than
 failing the whole boot.
+
+**Every player was shown an invented season for the first seconds of
+every launch, and it was reported twice as a caching bug.** index.html
+builds a mock season at module scope — `slateFor()` shuffles matchups,
+`SLATES` hard-codes weeks 1-4, and `W1OFF` places kickoffs at minute
+offsets from `Date.now()`. That loop ran unconditionally, `DEMO` or not.
+The first EIGHT week-1 offsets are negative, and `isLive()` is nothing
+but `Date.now() >= g.kick`, so half of week 1 was "IN PROGRESS · LOCKED"
+the instant the page parsed, under teams who are not playing each other,
+until `loadSeason()` finished its round trips and swapped the real
+schedule in underneath. Tapping to week 2 and back appeared to fix it and
+fixed nothing — it forced a render against data that had since become
+real. Two separate investigations went looking at service-worker caching,
+Firestore consistency and listener teardown before anyone looked at what
+fills `WEEKS` *before* the first read returns. Live, `WEEKS` now stays
+empty until real games arrive; `render()` and `tick()` return early on an
+empty schedule.
+
+The test for it is worth reading before writing another like it. Two
+earlier versions asserted on the rendered slate, and BOTH stayed green
+with the bug fully reintroduced: nothing paints `#slate` until boot
+finishes, so against a local stub the assertion always ran after the real
+schedule had replaced the mockup. The working version asserts on
+`#countdown`, which `tick()` writes every second from module scope with
+no sign-in and no boot required, while `getAllWeeks` is held open by the
+stub's `delay`. Mutation-tested in both directions.
+
+**The Home Screen prompt described a browser the reader was not using.**
+The first person outside the owner to be sent the link gave up on "tap
+the three dots, tap Share, scroll, Add to Home Screen" — instructions
+written for Safari, being read in Edge. Safari puts Share in the toolbar;
+Chrome, Edge and Firefox on iOS each bury it behind their own menu first.
+The steps are now chosen from the user agent, Android gets the real
+`beforeinstallprompt` dialog instead of any instructions at all, laptops
+are never shown the screen, and there is always a "Just use the browser"
+way past it — everything except the kickoff alert works fine in a tab,
+and a forced install wall in front of a stranger is how you lose them.
+iPhone cannot install from a button: Apple ships no API for it, so
+accurate per-browser instructions are the whole of what is possible.
+
+**The scoring-mode switch is gone, and the test that guarded it had to be
+re-pointed rather than deleted.** Straight-up / Confidence was owner-only,
+changed how the whole pool scored for the rest of the season, and sat one
+tab away from the timezone picker. There is one scoring system now.
+`regress.ui.test.mjs` case 6 used to assert which `.mbtn` carried the `on`
+class; the bug underneath — the client reading the wrong Firestore path,
+silently falling through to 'straight', and wiping every ranked point
+while `score_week.py` settled the season in confidence — is *more*
+dangerous without a switch on screen, because nothing is left to reveal
+the mismatch. It now asserts what the mode DOES (stake bars, the `#modeTag`
+badge) in both directions, plus that the switch stays gone.
+
+**A test that failed for nine hours out of every day.** `notify()` honours
+quiet hours (22:00–07:00 local, matching `remind.py`) and every seeded
+player in `season_sim.py` carries `tz="America/New_York"` — so running the
+suite overnight correctly suppressed every message, `SENT` stayed empty,
+and "a full pool of 50 produces notifications" failed on an app that was
+working perfectly. Caught at 05:47 ET. `score_week.quiet_now` is now
+pinned for that block instead of being depended on, and quiet hours are
+asserted in both directions, which nothing had ever covered. A suite that
+cries wolf overnight is how real failures start getting waved through.
+
+**The whole live path was untested, because it was untestable.** The stub's
+`watchWeek` and `watchRevealed` logged their own name and threw the callback
+away, so nothing in this suite had ever seen a score arrive — the one thing
+fifty people will be staring at on a Sunday afternoon. `app-serve.mjs` now
+hands those callbacks out on `window` (`__pushWeek`, `__pushRevealed`,
+`__weekGames`), and case 13 pushes a week to final and asserts the Grid
+recolours and the Standings reorder without a reload.
+
+**The Grid header printed a negative number.** "6 final · -5 live · 5 to
+come". `isFinal` reads the status field, `isLive` is only
+`Date.now() >= kickoff`, and a game can be BOTH final and not yet kicked
+off — `import_schedule.py` deliberately preserves `status: final` while
+refreshing kickoff on a re-import, so correcting a kickoff after the game
+was played produces exactly that, as does a postponement rescheduled
+forward. The counts were `started - finals` and `gs.length - started`,
+which double-counted such a game. Three disjoint buckets now, and case 14
+asserts they sum to the slate and never go negative.
+
+**Two clubs in the same colour made the consensus bar unreadable.** Each
+side of "How the pool picked" is painted in that club's own colour, and the
+NFL has a lot of navy. Measured across all 496 possible matchups, 151 put
+the two colours under 1.3:1 against each other and six pairs are the SAME
+HEX — Dallas and the Rams are both `#003594`, Denver and Tennessee both
+`#0C2340`, New England and Seattle both `#002244`, and Las Vegas, New
+Orleans and Pittsburgh are all `#101820`. Those games rendered as one
+unbroken block with two labels floating in it, the split invisible. A 3px
+gap fixes every one of them and depends on no colour at all.
+
+**The app abandoned a week the moment its last game kicked off.** The
+opening week was "the first week still holding a game that has not
+started", so at 8:15pm on Monday — the second MNF kicked — every player
+was moved to next week's empty slate, while this week's standings were
+still settling. Standings then fell back to Season too, because a week
+with no results has nothing to show. The one night the whole pool is
+watching. A week now stays current while any game is unresolved AND
+kicked off less than six hours ago. That clamp is the entire safety of
+it: "not final" alone would strand all 50 players on week 3 forever the
+first time a game was postponed and never resolved, with no way out from
+inside the app. Case 17 covers it, and the mutation check is real — put
+the old rule back and "during Monday Night Football it stays on that
+week" reports `week 2`.
 
 ## Known limit, deliberately not "fixed" in code
 
