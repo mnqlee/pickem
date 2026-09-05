@@ -4227,9 +4227,33 @@ const obScreens=()=>[
             t=setTimeout(()=>{const e=new Error('slow');e.__timeout=1;rej(e);},ms);});
           return Promise.race([pr,timeout]).finally(()=>clearTimeout(t));
         };
+        /* SEVEN SECONDS FOR THE PAIR, not fifteen then ten.
+
+           The first Firestore call of a session carries the cost of
+           opening the connection, and on a slow mobile network that is
+           most of the wait — so this is the one place a bound actually
+           decides what the player experiences. Fifteen seconds was chosen
+           to be safely longer than a normal join; it is also longer than
+           anybody will sit still for after typing a code they know was
+           right. Seven is the agreed ceiling: long enough that a merely
+           sluggish network still completes inside it and nobody is handed
+           a half-finished join to recover from, short enough that the
+           screen never feels stuck.
+
+           Bounding the PAIR rather than each call matters: they run in
+           sequence (the roster write needs the membership to exist), so
+           two separate bounds could add up to twenty-five seconds.
+
+           Nothing is abandoned. A timeout only means the wizard stops
+           waiting — the writes carry on, and startApp()'s ensureJoined()
+           makes the membership certain before the app opens. A genuine
+           rejection still falls through to the catch below and its
+           message, exactly as before. */
         try{
-          if(join)await bounded(PS.joinPool(join),15000);
-          await bounded(PS.upsertRoster({name:obName.trim()}),10000);
+          await bounded((async()=>{
+            if(join)await PS.joinPool(join);
+            await PS.upsertRoster({name:obName.trim()});
+          })(),7000);
         }catch(slowErr){
           if(!slowErr||!slowErr.__timeout)throw slowErr;
           console.warn('pool join is slow; finishing it in the background',slowErr);
@@ -4410,9 +4434,14 @@ function obRender(){
        session can be slow on some mobile networks; that is not something
        this screen can fix, but it can stop pretending nothing is
        happening. */
+    /* 2.5s, not 6s. The PIN step now gives up waiting on the join after
+       five seconds, so a six-second label could never appear on the one
+       screen it was written for — it would have been dead code that looked
+       like a feature. Two and a half seconds is also simply better: past
+       about two, a motionless button is already being tapped again. */
     const slow=setTimeout(()=>{
       if($('#obGo')===btn&&btn.disabled)btn.textContent=s.slow||'Still working…';
-    },6000);
+    },2500);
     let ok=true;
     try{ if(s.go) ok=(await s.go())!==false; }
     finally{

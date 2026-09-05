@@ -1213,7 +1213,10 @@ console.log('\n22. A slow pool join must not freeze the wizard (this takes ~20s)
   for (let i = 0; i < 6; i++) await page.fill('#pin' + i, '123456'[i]);
 
   // The reassurance must appear rather than a motionless button.
-  await page.waitForTimeout(8000);
+  /* 3.5s: after the 2.5s slow label appears, before the 5s bound releases
+     the wizard. An earlier version looked at 7s and caught the NEXT
+     screen's button instead, reporting "Keep me honest". */
+  await page.waitForTimeout(4000);
   const midLabel = await page.evaluate(() =>
     (document.querySelector('#obGo')?.textContent || '').trim());
   ok('the button names what is actually slow, instead of sitting mute',
@@ -1226,7 +1229,10 @@ console.log('\n22. A slow pool join must not freeze the wizard (this takes ~20s)
      the stalled step and the case passed with the bound removed. The
      question is whether the wizard moves on BY ITSELF once the bound
      expires, so ask it while touching nothing: is the PIN screen gone? */
-  await page.waitForTimeout(10000);              // ~18s in; the bound is 15s
+  /* ~11s in against a 7s bound. Deliberately not 7.5s: a half-second of
+     margin either side of the thing being measured is a coin toss, and
+     this file already has one lesson about that. */
+  await page.waitForTimeout(7000);
   const movedOn = await page.evaluate(() => !document.querySelector('#pin0'));
   ok('the wizard leaves the PIN screen on its own once the join overruns',
      movedOn === true, 'still on the keypad');

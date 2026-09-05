@@ -496,6 +496,27 @@ to distrust the alert that actually arrives. Case 24 is a STATIC check
 comparing index.html's preview against `compose()` in the Worker, so it
 fails if either side drifts from the other.
 
+**The first Firestore call of a session cost about thirty seconds.** The
+loading screen naming its step is what found it: a player on 4G sat on
+"Checking your spot in the pool…" — that is `getMembers()`, a handful of
+documents — while everything after it was quick. A few documents cannot
+take thirty seconds; opening the connection can, and only the first one
+has to. That is the signature of Firestore's streaming transport being
+degraded by a network, with the SDK waiting the stream out before falling
+back to long polling. `initializeFirestore(app, {
+experimentalAutoDetectLongPolling: true })` makes it probe and pick
+instead. NOT VERIFIABLE FROM THE SANDBOX — there is no route to Firestore
+here — so it is one line, reversible, and the evidence merely pointed here
+harder than anywhere else.
+
+The post-PIN wait is bounded at seven seconds for the join and roster write
+TOGETHER, not fifteen and ten separately: they run in sequence, so separate
+bounds could add to twenty-five. Nothing is abandoned on a timeout — the
+writes continue and `ensureJoined()` makes membership certain before the
+app opens. The "still working" button label moved from 6s to 2.5s in the
+same change, because a 6s label can never appear on a step that gives up at
+5s: it would have been dead code that read as a feature.
+
 ## Known limit, deliberately not "fixed" in code
 
 KV has no atomic increment, so the failed-attempt counters lose a race

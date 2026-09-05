@@ -11,7 +11,7 @@ import {
   onAuthStateChanged, signOut
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
-  getFirestore, doc, getDoc, setDoc, collection, query, where,
+  getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, query, where,
   getDocs, onSnapshot, serverTimestamp, Timestamp, writeBatch, updateDoc, arrayUnion
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 /* MESSAGING LOADS ON DEMAND, NOT ON ARRIVAL.
@@ -64,7 +64,29 @@ const CLOCK_SKEW_MS = 120000;
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
+/* AUTO-DETECT THE TRANSPORT, DO NOT ASSUME THE STREAMING ONE WORKS.
+
+   Evidence, not a guess. The loading screen names the step it is on, and a
+   player on 4G in Japan sat on "Checking your spot in the pool…" for about
+   thirty seconds — that is `getMembers()`, a handful of documents, and the
+   FIRST Firestore call of the session. Everything after it was quick. A
+   read of a few documents cannot take thirty seconds; establishing the
+   connection can, and only the first one has to.
+
+   That is the signature of Firestore's default streaming transport being
+   degraded or blocked by a network — common on mobile carriers and behind
+   proxies. The SDK eventually gives up and falls back to long polling, and
+   the giving-up is what the player is watching.
+
+   `experimentalAutoDetectLongPolling` makes the SDK probe and pick quickly
+   instead of waiting out the stream. It is Firebase's own supported option
+   for exactly this, and it is a no-op on networks where streaming is fine.
+
+   HONEST CAVEAT: this cannot be verified from the build sandbox, which has
+   no route to Firestore at all. If a first launch is still slow after this,
+   the setting is one line and reverting it changes nothing else — the
+   evidence just pointed here more strongly than anywhere else. */
+const db   = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 
 let user = null;
 let poolId = localStorage.getItem('ps_pool') || null;
