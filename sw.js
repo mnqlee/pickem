@@ -5,7 +5,7 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.8.0';
+const VERSION = 'v1.9.4';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not

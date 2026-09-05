@@ -797,6 +797,319 @@ console.log('\n17. The app must not abandon a week the moment its last game star
   await ctx.close();
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\n18. The alerts panel is five switches and nothing else');
+{
+  /* TWO CONTROLS HAVE NOW BEEN REMOVED FROM THIS PANEL, for related reasons.
+
+     First there was an "All alerts" switch whose position was DERIVED from
+     the five categories under it — on only when every one was on. Truthful,
+     and it still felt broken: turning your last individual category back on
+     made a control the player had not touched slide over by itself. A switch
+     is a promise that it holds a setting of its own; that one never did. It
+     also INVERTED (`next = !every(on)`), so one tap meant opposite things
+     depending on state you could not read off the control.
+
+     Then it became an All on / All off button pair. That fixed the movement
+     but added a second row of controls competing with the five that matter,
+     in a box and type size that matched nothing else on the screen.
+
+     Both are gone. Every category starts ON, and the five switches are the
+     only controls here. This case asserts the panel STAYS that way: the
+     temptation to re-add a convenience control above the list is exactly
+     what produced two rounds of this. */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.request.post(BASE + '/__plan', { data: {} });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  await page.click('.tab[data-tab="settings"]');
+  await page.waitForTimeout(400);
+
+  const states = () => page.evaluate(() =>
+    [...document.querySelectorAll('#prefs [data-pref]')].map(b => b.classList.contains('on')));
+
+  ok('the derived master switch is gone',
+     await page.evaluate(() => !document.querySelector('#prefsAll')));
+  ok('and so is the All on / All off pair',
+     await page.evaluate(() => !document.querySelector('[data-bulk]')
+                            && !document.querySelector('.pref-bulk')));
+
+  /* A fresh player, no stored preferences: everything on. */
+  const first = await states();
+  ok('a new player gets all five alerts on', first.length === 5 && first.every(v => v === true),
+     first.join(','));
+
+  /* The alerts box must contain the five switches and NOTHING else that a
+     player could press. A stray button here is how both removed controls
+     got in. */
+  const strays = await page.evaluate(() => {
+    const box = document.querySelector('#prefs').closest('.opt');
+    return [...box.querySelectorAll('button')].filter(b => !b.hasAttribute('data-pref')).length;
+  });
+  ok('no other pressable control shares the panel', strays === 0, `${strays} extra`);
+
+  /* The regression that started all of this: tapping one switch must leave
+     the other four exactly where they were. */
+  await page.click('#prefs [data-pref]');
+  await page.waitForTimeout(300);
+  const after = await states();
+  ok('tapping one category flips only that one',
+     after[0] === false && after.slice(1).every(v => v === true), after.join(','));
+  await page.click('#prefs [data-pref]');
+  await page.waitForTimeout(300);
+  ok('and tapping it back restores it, alone',
+     (await states()).every(v => v === true));
+
+  /* A stored object missing a key must not silently disable that alert —
+     the failure mode when a sixth category is added later. */
+  const merged = await page.evaluate(async () => {
+    localStorage.setItem('ps_prefs', JSON.stringify({ open: false }));
+    location.reload();
+  }).catch(() => {});
+  await page.waitForTimeout(1800);
+  await page.click('.tab[data-tab="settings"]');
+  await page.waitForTimeout(400);
+  const restored = await states();
+  ok('a stored preference file missing keys defaults them ON, not off',
+     restored[0] === false && restored.slice(1).every(v => v === true), restored.join(','));
+
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n19. The sheets must not flash a cream panel over a dark app');
+{
+  /* Both bottom sheets were --paper cream on a --shell app. The unpicked-picks
+     prompt is the worse of the two: it appears at the exact moment somebody is
+     being told they still owe picks, which is not the moment to flash-bang
+     them, and it read as a different product from the page behind it.
+
+     Asserted as a LUMINANCE ceiling rather than an exact hex, so a future
+     palette tweak is free but a return to a light panel is not. */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  await page.request.post(BASE + '/__plan', { data: {} });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+
+  const lum = await page.evaluate(() => {
+    const rel = (css) => {
+      const [r, g, b] = css.match(/\d+/g).slice(0, 3).map(Number).map(v => {
+        v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+      });
+      return .2126 * r + .7152 * g + .0722 * b;
+    };
+    const out = {};
+    for (const id of ['sheet', 'fillSheet']) {
+      const el = document.querySelector('#' + id);
+      el.hidden = false;                       // measure without driving the UI
+      out[id] = rel(getComputedStyle(el).backgroundColor);
+      el.hidden = true;
+    }
+    out.body = rel(getComputedStyle(document.body).backgroundColor);
+    return out;
+  });
+
+  ok('the rank picker is a dark surface', lum.sheet < 0.05, lum.sheet.toFixed(3));
+  ok('the unpicked-picks prompt is too', lum.fillSheet < 0.05, lum.fillSheet.toFixed(3));
+  ok('both sit close to the page behind them',
+     Math.abs(lum.sheet - lum.body) < 0.04 && Math.abs(lum.fillSheet - lum.body) < 0.04);
+
+  /* THE PAYOUT LABEL UNDER EACH RANK, measured rather than eyeballed.
+
+     Moving the sheet to a dark ground quietly broke this. `.num small`
+     carried opacity:.75 — harmless on the old cream panel — and it now
+     stacked on a numeral colour ALREADY softened for the dark background.
+     Two softenings multiply: "16 pts" landed at 4.35:1 and the team code on
+     an already-spent rank at 2.03:1, less than half the floor, on the only
+     record anywhere of which ranks are gone.
+
+     Asserted against the real computed styles, opacity included, because
+     the bug lived in the interaction between two rules that each looked
+     perfectly reasonable on its own. */
+  const contrast = await page.evaluate(() => {
+    const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; };
+    const rel = ([r, g, b]) => .2126 * lin(r) + .7152 * lin(g) + .0722 * lin(b);
+    /* Both alphas, and this mattered. An earlier version of this helper
+       took only the first three numbers and threw the colour's OWN alpha
+       away, so `rgba(250,247,241,.30)` was measured as solid cream. It
+       reported 6.7:1 for a label actually sitting at 2.03:1 — the test
+       passed while looking straight at the defect it was written for.
+       The effective alpha is the colour's alpha times the element's. */
+    const parse = css => css.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const alphaOf = css => { const n = css.match(/[\d.]+/g); return n.length > 3 ? Number(n[3]) : 1; };
+    const over = (fg, bg, a) => fg.map((f, i) => f * a + bg[i] * (1 - a));
+    const ratio = (a, b) => { const [x, y] = [rel(a), rel(b)].sort((m, n) => n - m);
+                              return (x + .05) / (y + .05); };
+
+    const sheet = document.querySelector('#sheet');
+    sheet.hidden = false;
+    const bg = parse(getComputedStyle(sheet).backgroundColor);
+
+    // one available rank and one already spent, styled exactly as shipped
+    const mk = (dis) => {
+      const b = document.createElement('button');
+      b.className = 'num'; if (dis) b.disabled = true;
+      b.innerHTML = '1<small>16 pts</small>';
+      document.querySelector('#numgrid').appendChild(b);
+      const s = getComputedStyle(b.querySelector('small'));
+      const c = parse(s.color), a = alphaOf(s.color) * parseFloat(s.opacity);
+      const px = parseFloat(s.fontSize);
+      b.remove();
+      return { ratio: ratio(over(c, bg, a), bg), px };
+    };
+    const open = mk(false), used = mk(true);
+    sheet.hidden = true;
+    return { open, used };
+  });
+
+  ok('the payout label clears 4.5:1 on the dark sheet',
+     contrast.open.ratio >= 4.5, contrast.open.ratio.toFixed(2) + ':1');
+  ok('and so does the team code on a rank already spent',
+     contrast.used.ratio >= 4.5, contrast.used.ratio.toFixed(2) + ':1');
+  ok('neither is smaller than 8px', contrast.open.px >= 8 && contrast.used.px >= 8,
+     `${contrast.open.px}px / ${contrast.used.px}px`);
+
+  /* THE TWO MESSAGES IN THE UNPICKED-PICKS SHEET ARE ONE PAIR.
+
+     They drifted apart in three ways at once, and not one of them was
+     visible in the CSS, because the two rules sat forty lines apart and
+     each was perfectly reasonable on its own:
+
+       text left edge   14px vs 26px   the note's own padding pushed its
+                                       text in while the message above
+                                       started at the sheet's edge
+       line-height      1.45 vs 1.5    16.675px against 17.25px
+       heading size     11px vs 11.5px a third size in a two-size block
+
+     The font-size property matched throughout, which is why "same font
+     size" was true and the blocks still did not look like a pair. This
+     asserts the rendered geometry, not the declarations. */
+  const pair = await page.evaluate(() => {
+    const sh = document.querySelector('#fillSheet'); sh.hidden = false;
+    const sub = document.querySelector('#fillSub'), note = document.querySelector('#fillNote');
+    sub.textContent = 'a';
+    note.innerHTML = '<b>Heading</b>b';
+    const probe = el => { const s = document.createElement('span'); s.textContent = 'I';
+      el.insertBefore(s, el.firstChild);
+      const x = +s.getBoundingClientRect().left.toFixed(1); s.remove(); return x; };
+    const g = el => { const s = getComputedStyle(el), r = el.getBoundingClientRect();
+      return { font: s.fontSize, lh: s.lineHeight,
+               left: +r.left.toFixed(1), width: +r.width.toFixed(1) }; };
+    const out = { sub: g(sub), note: g(note) };
+    out.sub.textLeft = probe(sub); out.note.textLeft = probe(note);
+
+    /* EVERY HEADING IN THIS SHEET IS ONE TYPE STYLE.
+       They shared a font FAMILY and differed on five other properties —
+       size, weight, case, tracking and left edge — which is exactly how
+       two headings in the same family end up looking like two typefaces.
+       Family alone is not the assertion; all six are. */
+    const type = el => { const s = getComputedStyle(el);
+      const sp = document.createElement('span'); sp.textContent = 'I';
+      el.insertBefore(sp, el.firstChild);
+      const left = +sp.getBoundingClientRect().left.toFixed(1); sp.remove();
+      return { family: s.fontFamily.split(',')[0].trim(), size: s.fontSize,
+               weight: s.fontWeight, case: s.textTransform,
+               track: s.letterSpacing, left }; };
+    sub.innerHTML = '<b>Heading one</b>a';
+    out.heads = {
+      title: type(document.querySelector('#fillTitle')),
+      subHead: type(sub.querySelector('b')),
+      noteHead: type(note.querySelector('b')),
+    };
+    // the action below them must share the same edges
+    out.button = g(document.querySelector('#fillAuto'));
+    out.titleAlign = getComputedStyle(document.querySelector('#fillTitle')).textAlign;
+    out.buttonColour = getComputedStyle(document.querySelector('#fillAuto')).backgroundColor;
+    out.headColours = [document.querySelector('#fillTitle'),
+                       sub.querySelector('b'), note.querySelector('b')]
+                      .map(e => getComputedStyle(e).color);
+    sh.hidden = true; return out;
+  });
+
+  ok('both messages start their text on the same left edge',
+     pair.sub.textLeft === pair.note.textLeft,
+     `${pair.sub.textLeft} vs ${pair.note.textLeft}`);
+  ok('both are the same width', pair.sub.width === pair.note.width,
+     `${pair.sub.width} vs ${pair.note.width}`);
+  ok('both run on the same line rhythm', pair.sub.lh === pair.note.lh,
+     `${pair.sub.lh} vs ${pair.note.lh}`);
+  ok('both are the same type size', pair.sub.font === pair.note.font,
+     `${pair.sub.font} vs ${pair.note.font}`);
+  /* TYPE STYLE is asserted for all three headings; LEFT EDGE only for the two
+     inside the panels. The title is deliberately centred — it names the whole
+     dialog rather than a section of it — so its left edge is a function of the
+     text length and asserting it would be asserting the copy. Everything else
+     about it still has to match. */
+  const H = pair.heads, props = ['family','size','weight','case','track'];
+  const differs = (a, b) => props.filter(k => a[k] !== b[k]);
+  const d1 = differs(H.title, H.noteHead), d2 = differs(H.title, H.subHead);
+  ok('the sheet title and the box heading are the same type style',
+     d1.length === 0,
+     d1.map(k => `${k}: ${H.title[k]} vs ${H.noteHead[k]}`).join('; '));
+  ok('and so is the heading on the other box',
+     d2.length === 0,
+     d2.map(k => `${k}: ${H.title[k]} vs ${H.subHead[k]}`).join('; '));
+  ok('the panel headings begin on the same left edge as the body under them',
+     H.subHead.left === pair.sub.textLeft && H.noteHead.left === pair.note.textLeft,
+     `${H.subHead.left} / ${H.noteHead.left} vs body ${pair.sub.textLeft}`);
+  ok('and the title is centred, not left-aligned with them',
+     pair.titleAlign === 'center', pair.titleAlign);
+
+  /* RED MEANS TAPPABLE, AND ONLY TAPPABLE.
+     Red is the app's one action colour: the button here, the CONF badge, the
+     rank borders. Painting a heading in it would put the button's colour on
+     text that does nothing, on the one screen whose whole job is getting the
+     button pressed. Asserted as "the headings are not the button's colour"
+     rather than a specific hex, so the palette can move. */
+  ok('no heading wears the action colour',
+     pair.headColours.every(c => c !== pair.buttonColour),
+     `${pair.headColours.join(' / ')} vs button ${pair.buttonColour}`);
+  ok('and the button below lines up with both',
+     pair.button.left === pair.sub.left && pair.button.width === pair.sub.width,
+     `${pair.button.left}/${pair.button.width} vs ${pair.sub.left}/${pair.sub.width}`);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n20. Help must say what was actually agreed');
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  await page.request.post(BASE + '/__plan', { data: {} });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  await page.click('.tab[data-tab="help"]');
+  await page.waitForTimeout(350);
+  const txt = await page.evaluate(() => document.querySelector('#v-help').innerText);
+
+  for (const s of ['select your team', 'pays 16 points', 'pays 1 point',
+                   'Monday Night Football', 'grid view then opens'])
+    ok(`Help says "${s}"`, txt.includes(s));
+
+  /* Every payout figure carries its unit. "pays 16" on its own was the
+     complaint: a bare number next to a rank that is also a number. */
+  /* \b after \d+ is load-bearing. Without it the engine backtracks: on
+     "pays 16 points" the greedy \d+ takes "16", the lookahead sees " points"
+     and rejects, so it retries with "1", the lookahead then sees "6" instead
+     of " point" and HAPPILY MATCHES — reporting a bare payout inside a string
+     that spells the unit out. The word boundary refuses the short match. */
+  const bare = (txt.match(/pays \d+\b(?! ?points?\b)/gi) || []);
+  ok('no payout is left as a bare number', bare.length === 0, bare.join(' / '));
+
+  /* The em dash sweep. Placeholder dashes (an empty countdown, an unscored
+     cell) are a different thing and are left alone; this asserts the prose. */
+  ok('no em dashes in the Help prose', !txt.includes('—'));
+  await ctx.close();
+}
+
 /* NOT COVERED HERE, deliberately, and worth knowing about.
 
    weekSum() now prefers the server's figure for any week that is not the

@@ -419,8 +419,8 @@ async function savePicks(wk, picks, games) {
      never happened — the card even printed the rank it had not saved. */
   if (!jobs.length && locked.length) {
     const err = new Error(locked.length === 1
-      ? 'That game has kicked off — the pick is final.'
-      : 'Those games have kicked off — those picks are final.');
+      ? 'That game has kicked off. The pick is final.'
+      : 'Those games have kicked off. Those picks are final.');
     err.failed = locked.map(gameId => ({ gameId, reason: 'locked' }));
     throw err;
   }

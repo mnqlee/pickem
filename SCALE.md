@@ -187,19 +187,54 @@ drop-in with unlimited bandwidth.
 
 ## Costs
 
-| | Free tier | 300 players | 1,000 players |
-|---|---|---|---|
-| Firestore reads | 50k/day | ~750 | ~2,500 |
-| Firestore writes | 20k/day | ~5k on Sundays | ~16k |
-| FCM | unlimited | free | free |
-| Actions (public repo) | unlimited | free | free |
+**The table that used to be here was wrong, and wrong in the dangerous
+direction.** It said ~750 reads/day at 300 players and concluded "writes
+are the ceiling, not reads — stay on the Spark plan." Both claims assumed
+the snapshot architecture was serving the client. It is not. See the
+header of `scripts/build_snapshot.py`: the migration never happened, and
+`index.html` reads the raw `picks` collection through
+`getRevealed()`/`watchRevealed()` instead. So the real read count is
+roughly two orders of magnitude above what that table claimed.
 
-**Writes are the ceiling, not reads.** Every pick is a write, and
-snapshot rebuilds write a few documents per pool per run. At around a
-thousand players in one pool you'd want to slow the cron to every 10
-minutes outside the final tier.
+What one app open actually costs, per the queries in `firebase-init.js`:
 
-Stay on the Spark plan. Nothing here needs Cloud Functions.
+| Query | Docs read |
+|---|---|
+| `getAllWeeks()` — the whole `games` collection | ~272 (18 wks x 16) |
+| `watchWeek()` — this week's games | 16 |
+| `watchMembers()` — the roster | = player count |
+| `watchRevealed()` — one doc per player per game | players x 16 |
+| standings | = player count |
+| pool doc + own tiebreak | 2 |
+
+At 50 players that is roughly **1,200 reads per open** — dominated by the
+800 pick documents, because a pick is stored one document per player per
+game (`{uid}_{gameId}`).
+
+| | Spark free tier | 50 players |
+|---|---|---|
+| Reads, one open each | 50k/day | ~60,000 — **already over** |
+| Reads, a normal Sunday (~5 opens each) | 50k/day | ~300,000 — **6x over** |
+| Writes | 20k/day | ~800 on Sundays — comfortable |
+
+**Reads are the ceiling, not writes.** That is the exact inversion of what
+this file used to say.
+
+**Do not stay on Spark at 50 players.** When Spark hits the read ceiling it
+does not throttle, it *stops* — reads fail until the quota resets at
+midnight Pacific, and the app shows an error screen for the rest of the
+day. On a Sunday that is the whole event.
+
+On Blaze the same 50k/day is still free and overage is charged at roughly
+$0.03–$0.06 per 100,000 reads depending on region, so a 300,000-read
+Sunday costs about **8 to 15 cents**. The upgrade is a safety valve, not a
+running cost. Nothing here needs Cloud Functions either way.
+
+The real fix is to wire the client to the snapshot documents that
+`build_snapshot.py` already writes correctly — that collapses ~1,200 reads
+per open into about 5. It is deliberately deferred: it touches the Grid,
+the Standings and `firestore.rules` at once, which is exactly the kind of
+change not to make in-season. Blaze removes the cliff in the meantime.
 
 **If the repo is private, Actions minutes will run out.** Every 5
 minutes across four days is roughly 1,150 runs a week. Make it public —

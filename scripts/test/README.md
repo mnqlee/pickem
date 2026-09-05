@@ -1,6 +1,6 @@
 # Tests
 
-424 checks. Nothing here touches Firebase, Resend, KV or the live site.
+455 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -17,7 +17,7 @@
     node polish.ui.test.mjs      # 41  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 78  bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 109 bugs that shipped, so they cannot return
     node sw.push.test.mjs        # 16  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
@@ -308,6 +308,78 @@ first time a game was postponed and never resolved, with no way out from
 inside the app. Case 17 covers it, and the mutation check is real — put
 the old rule back and "during Monday Night Football it stays on that
 week" reports `week 2`.
+
+**A master switch that moved on its own, twice.** "All alerts" was a switch
+whose position was DERIVED from the five categories below it — on only when
+every one was on. Truthful, and it still felt broken: flipping your last
+individual category made a control the player had not touched slide over by
+itself. A switch is a promise that it holds a setting of its own, and this one
+never did. It also INVERTED (`next = !every(on)`), so one tap meant opposite
+things depending on state you could not read off the control.
+
+Replacing it with an All on / All off button pair fixed the movement and
+introduced a second problem: a row of controls competing with the five that
+matter, in a box and type size that matched nothing else on the screen. Both
+are gone now. Every category defaults ON — merged over the stored object
+rather than replacing it, so a preferences file written before a category
+existed can only fall back to on, never silently off — and case 18 asserts the
+panel contains the five switches and NO other pressable control. That last
+assertion is the point: the urge to add a convenience control above the list
+is what produced two rounds of this.
+
+**A contrast bug created by fixing a colour bug.** `.num small` — the payout
+under each rank, and the team code on a rank already spent — carried
+`opacity:.75`. Harmless on the cream sheet. On the dark sheet it stacked with
+a numeral colour ALREADY softened for the dark ground, and two softenings
+multiply: 4.35:1 for the payout, **2.03:1** for the team code, which is the
+only record anywhere of which ranks are spent. Case 19 measures the real
+computed styles. Note the helper reads BOTH alphas — the colour's own and the
+element's `opacity`. The first version took only the RGB triple, scored a
+2.03:1 label as 6.7:1, and passed while looking straight at the defect.
+
+**Two cream sheets over a dark app.** Both bottom sheets were `--paper` on a
+`--shell` page. The unpicked-picks prompt is the worse of the two: it appears
+at the moment somebody is being told they still owe picks. Case 19 asserts a
+luminance CEILING rather than an exact hex, so a palette tweak stays free but
+a return to a light panel does not.
+
+**Two paragraphs that were "the same size" and still not a pair.** The
+unpicked-picks sheet holds two message blocks. Their `font-size` matched
+exactly, which is why every reading of the CSS said they agreed, and they
+still did not look alike. Measured on the shipping build at 390px: the text
+left edges were **14px and 26px** (the boxed one's own padding pushed its
+text in while the message above began at the sheet's edge), the line-heights
+were **1.45 and 1.5**, and the heading inside the box was a **third size** at
+11px against 11.5px body. The two rules sat forty lines apart and each was
+perfectly defensible alone.
+
+They are one declaration now. Case 19 asserts the RENDERED geometry — text
+left edge, width, line-height, type size, and that the button beneath shares
+the same edges — because asserting the declarations is what missed it.
+
+**"Same font" was true and the screen still showed two typefaces.** The sheet
+title and the panel heading both resolved to Archivo, so every check of the
+font family agreed. They differed on everything else: **16px/800/sentence
+case/-0.32px tracking** against **11.5px/700/UPPERCASE/+0.69px**, starting
+14px and 26px from the left. Uppercase at wide tracking in a lighter weight
+does not read as the same face whatever the family says. All headings in the
+sheet are one style now, and the title is indented by the panels' own padding
+so every line of text in the dialog begins on one left edge. The assertion
+compares family, size, weight, case, tracking AND left edge, and names each
+mismatch — family alone is what let this through.
+
+**Red is the action colour, and case 19 keeps it that way.** Red marks the
+thing you tap — the button, the CONF badge, the rank borders — and a player
+learns that in about two screens without being told. Painting a panel heading
+in it was considered and rejected: it would put the button's own colour on
+text that does nothing, on the single screen whose entire purpose is getting
+that button pressed. The assertion compares each heading's colour against the
+button's COMPUTED background rather than a hard-coded hex, so the palette can
+move without the rule going stale. Worth knowing if a heading ever needs an
+accent: the brand red `#C8342A` is only **3.19:1** on the panel background,
+and these headings are 16px — under the 18.66px where WCAG's large-text
+allowance begins — so they need 4.5:1. `#E4564A` is the nearest step that
+passes, at 4.59:1.
 
 ## Known limit, deliberately not "fixed" in code
 

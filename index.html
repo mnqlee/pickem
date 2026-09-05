@@ -492,7 +492,20 @@ tbody tr.me td.tot{background:#241F1E}
 .scrim{position:fixed;inset:0;z-index:60;background:rgba(10,10,9,.62);opacity:0;
   pointer-events:none;transition:opacity .22s}
 .scrim.on{opacity:1;pointer-events:auto}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--paper);color:var(--ink);
+/* DARK, LIKE THE REST OF THE APP.
+
+   This was --paper cream on a --shell app: a bright panel sliding up over a
+   dark screen at the exact moment somebody is being told they have games
+   left to pick, which is the worst possible moment to flash-bang them. It
+   also made the sheet read as a different product from the page behind it.
+
+   It now uses --shell-2, the same surface as a game card, with a hairline
+   top edge and a shadow so it still reads as a layer ON the page rather
+   than part of it. Everything inside had to move with it: cream-on-cream
+   text, the .fillnote panel, the rank grid and the two footer buttons all
+   had ink colours that vanish on a dark ground. */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--shell-2);color:var(--paper);
+  border-top:1px solid rgba(250,247,241,.10);box-shadow:0 -18px 40px rgba(0,0,0,.5);
   border-radius:18px 18px 0 0;padding:16px var(--pad) calc(20px + env(safe-area-inset-bottom));
   transform:translateY(102%);transition:transform .28s cubic-bezier(.3,0,.2,1);max-height:82vh;overflow:auto}
 .sheet.on{transform:translateY(0)}
@@ -501,38 +514,105 @@ tbody tr.me td.tot{background:#241F1E}
    taps over the middle of the viewport and still held a focusable
    button in the tab order. */
 .sheet[hidden]{display:none}
-.grab{width:34px;height:4px;border-radius:2px;background:rgba(21,23,27,.18);margin:0 auto 13px}
+.grab{width:34px;height:4px;border-radius:2px;background:rgba(250,247,241,.22);margin:0 auto 13px}
 /* An explicit close, because the scrim above a 560px sheet is a sliver. */
 .sheet-x{position:absolute;top:10px;right:10px;width:44px;height:44px;border:0;
-  background:none;color:var(--ink-soft);font-size:16px;cursor:pointer;
+  background:none;color:var(--chalk-soft);font-size:16px;cursor:pointer;
   display:grid;place-items:center;border-radius:50%;font-family:inherit}
-.sheet-x:hover{background:rgba(21,23,27,.06)}
+.sheet-x:hover{background:rgba(250,247,241,.10)}
 /* The unranked-picks prompt. Deliberately built from the same .sheet as
    the rank picker rather than a new modal: one dialog idiom in the app,
    and it already handles the scrim, Escape, and the slide-up. */
-.fillnote{background:rgba(21,23,27,.05);border-radius:9px;padding:11px 12px;
-  font-size:11.5px;line-height:1.5;color:var(--ink-soft);margin-bottom:14px}
-.fillnote b{color:var(--ink);display:block;margin-bottom:3px;font-size:11px;
-  letter-spacing:.06em;text-transform:uppercase}
+/* THE TWO MESSAGES IN THIS SHEET ARE ONE PAIR, MEASURED THE SAME.
+
+   They were not. Three separate mismatches, none of them visible in the
+   CSS because the two rules sat forty lines apart and each looked fine
+   alone. Measured on the shipping build at 390px:
+
+     text left edge   sub 14px   note 26px   <- 12px apart, the note's
+                                                own padding pushing its
+                                                text in while the message
+                                                above it started at the
+                                                sheet's edge
+     line-height      1.45       1.5         <- 16.675px against 17.25px,
+                                                so the two blocks ran on
+                                                different rhythms
+     heading size     -          11px        <- a third size, against
+                                                11.5px body
+
+   Nominally identical font sizes, and still visibly not a pair. The fix
+   is one shared declaration rather than two rules that happen to agree:
+   both blocks are now the same box, the same padding, and therefore the
+   same text left edge. Scoped to #fillSheet so the rank picker's single
+   paragraph is not boxed for no reason. */
+#fillSheet .sub,
+.fillnote{background:var(--shell-3);border-radius:9px;padding:11px 12px;
+  font-size:11.5px;line-height:1.5;color:var(--chalk-soft);margin-bottom:11px}
+.fillnote{margin-bottom:14px}
+/* THE TWO HEADINGS IN THIS SHEET ARE ONE TYPE STYLE, NOT TWO.
+
+   They shared a font FAMILY (Archivo) and nothing else, which is why
+   "same font" kept looking true in the CSS while the screen plainly
+   showed two different typefaces. Measured on the shipping build:
+
+                       sheet title        box heading
+     size              16px               11.5px
+     weight            800                700
+     case              sentence           UPPERCASE
+     letter-spacing    -0.32px            +0.69px
+     text left edge    14px               26px
+
+   Uppercase at +0.69px tracking and a lighter weight does not read as
+   the same face as sentence case at -0.32px, whatever the family says.
+   Five differences, and every one of them had to go.
+
+   Both are now the same declaration. The title is indented by the box's
+   own padding so that the title, both box headings and both bodies all
+   begin on ONE left edge at 26px, rather than the title starting at the
+   sheet's edge while everything under it started 12px further in. */
+/* Centred on request. The title names the whole dialog rather than a
+   section of it, so it is the one line here that is not part of the
+   left-aligned column below. Keeps the 12px inset so it never sits wider
+   than the panels. */
+#fillSheet h3{padding-left:12px;padding-right:12px;text-align:center}
+#fillSheet .sub b,
+.fillnote b{color:var(--paper);display:block;margin-bottom:5px;
+  font-size:16px;font-weight:800;letter-spacing:-.02em;text-transform:none}
 .fill-go{width:100%;padding:15px;border:0;border-radius:10px;background:var(--stamp);
   color:#FFF8F0;font-family:inherit;font-size:13px;font-weight:800;letter-spacing:.07em;
   text-transform:uppercase;cursor:pointer;-webkit-appearance:none;appearance:none}
 .fill-own{width:100%;margin-top:8px;padding:13px;border:0;border-radius:10px;
-  background:transparent;color:var(--ink-soft);font-family:inherit;font-size:12px;
+  background:transparent;color:var(--chalk-soft);font-family:inherit;font-size:12px;
   font-weight:700;letter-spacing:.05em;cursor:pointer;-webkit-appearance:none;appearance:none}
-.fill-own:hover{background:rgba(21,23,27,.05)}
+.fill-own:hover{background:rgba(250,247,241,.08)}
 .sheet h3{margin:0 0 3px;font-size:16px;font-weight:800;letter-spacing:-.02em}
-.sheet .sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:14px;line-height:1.45}
+/* 1.5, matching .fillnote — see the note above it. */
+.sheet .sub{font-size:11.5px;color:var(--chalk-soft);margin-bottom:14px;line-height:1.5}
 .numgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
 .num{aspect-ratio:1;border-radius:8px;border:2px solid var(--stamp);background:transparent;
-  color:var(--stamp);font-family:inherit;font-size:19px;font-weight:900;cursor:pointer;
+  color:#F0857C;font-family:inherit;font-size:19px;font-weight:900;cursor:pointer;
   display:grid;place-items:center;position:relative}
-.num:disabled{border-color:rgba(21,23,27,.13);color:rgba(21,23,27,.2);border-style:dashed;cursor:not-allowed}
-.num small{position:absolute;bottom:4px;font-size:7px;font-weight:700;opacity:.75;letter-spacing:.02em}
+/* The NUMERAL is lifted off the brand red; the border is not.
+   --stamp #C8342A measures 4.9:1 on the old cream sheet but only 3.2:1 on
+   --shell-2, under the floor for text this size, and this numeral is the
+   one thing in the dialog you are actually reading. #F0857C is 6.7:1 and
+   still unmistakably the same red. A border carries no text, so it keeps
+   the exact brand colour. */
+.num:disabled{border-color:rgba(250,247,241,.15);color:rgba(250,247,241,.30);border-style:dashed;cursor:not-allowed}
+/* NO OPACITY HERE, AND THE SIZE IS UP FROM 7px.
+   The fade was harmless on the old cream sheet. On the dark sheet it
+   stacked with a colour ALREADY softened for the same reason, and two
+   softenings multiply: the payout label measured 4.35:1 (under the 4.5
+   floor) and the team code on a taken rank measured 2.03:1 — less than
+   half the floor, on the only record of which ranks are already spent.
+   Hierarchy here comes from position, not fade: the label sits under a
+   numeral nearly three times its size. */
+.num small{position:absolute;bottom:4px;font-size:8px;font-weight:700;letter-spacing:.02em}
+.num:disabled small{color:rgba(250,247,241,.62)}
 .heatlabel{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--ink-soft);margin:10px 2px 0;font-weight:700}
-.clearw{width:100%;margin-top:12px;padding:11px;border-radius:8px;border:1px solid rgba(21,23,27,.18);
-  background:transparent;color:var(--ink-soft);font-family:inherit;font-size:11px;font-weight:700;
+  text-transform:uppercase;color:var(--chalk-soft);margin:10px 2px 0;font-weight:700}
+.clearw{width:100%;margin-top:12px;padding:11px;border-radius:8px;border:1px solid rgba(250,247,241,.24);
+  background:transparent;color:var(--chalk-soft);font-family:inherit;font-size:11px;font-weight:700;
   letter-spacing:.09em;text-transform:uppercase;cursor:pointer}
 
 .board{padding:6px var(--pad) 0}
@@ -603,10 +683,9 @@ tbody tr.me td.tot{background:#241F1E}
    underneath this design's own border, which is what made the list look
    offset and uneven instead of like flat rows in one list. */
 .pref:first-child{border-top:0}
-/* The master switch sits above the list, not inside .prefs, so it never
-   gets the :first-child rule above — give it the same flat top and a
-   line of its own underneath so it doesn't read as one more list row. */
-.pref-all{border-top:0;border-bottom:1px solid rgba(250,247,241,.14);padding-bottom:14px}
+/* The alerts panel is five switches and nothing else. Both previous
+   attempts at a master control (a derived "All alerts" switch, then an
+   All on / All off button pair) are gone — see the note in the markup. */
 .pref-t{flex:1;min-width:0;padding-top:2px}
 .pref-t b{display:block;font-size:13px;font-weight:600;letter-spacing:-.01em}
 .pref-t span{display:block;font-size:11px;color:var(--chalk);margin-top:2px;line-height:1.4}
@@ -1117,18 +1196,18 @@ tbody tr.me td.tot{background:#241F1E}
            repeated in a section further down. What survives is the part
            somebody would get WRONG if nobody told them. -->
       <li><b>Pick a winner</b>
-        <span>Tap either team to back it, and tap again to change your mind.</span></li>
+        <span>Tap either team to select your team, if you change your mind tap it again.</span></li>
       <li><b>Rank it 1 to 16</b>
-        <span><b>Rank 1 is the game you'd bet the house on and pays 16; rank 16 is your
-        coin flip and pays 1.</b> Each number is used exactly once.</span></li>
+        <span><b>Rank 1 is the game you'd bet the house on and pays 16 points; rank 16 is your
+        coin flip and pays 1 point.</b> Each number is used exactly once.</span></li>
       <li><b>Beat the kickoff</b>
         <span>Every game locks the moment it starts, and an unpicked game scores zero.</span></li>
       <li><b>Call the tiebreaker</b>
-        <span>At the foot of Picks, guess the combined score of the week's last game — it
-        only matters if you finish level with somebody.</span></li>
+        <span>At the bottom of the weekly slate, guess the total score of the Monday Night
+        Football game, it only matters if you finish the week tied with someone.</span></li>
       <li><b>Watch the Grid</b>
-        <span>Your sheet stays editable until each kickoff; the Grid opens everyone else's
-        one game at a time as they start.</span></li>
+        <span>Your weekly picks can be modified all the way to each kickoff, the grid view
+        then opens with everyone's selection as each game starts.</span></li>
     </ol>
 
     <details class="hp-sec">
@@ -1252,10 +1331,10 @@ tbody tr.me td.tot{background:#241F1E}
            disagree about a pool that already has one recorded; it simply
            cannot be changed from in here any more. -->
       <h4>Scoring</h4>
-      <p>Rank 1 is your surest game and pays 16 points. Rank 16 is your coin flip and pays 1.
-        A perfect week is 136.</p>
+      <p>Rank 1 is your surest game and pays 16 points. Rank 16 is your coin flip and pays 1 point.
+        A perfect week is 136 points.</p>
       <p style="margin-top:9px">Staking is optional. Pick a team without ranking it and a
-        correct call is worth 1 point — the same as your lowest rank. Nothing is lost by
+        correct call is worth 1 point, the same as your lowest rank. Nothing is lost by
         leaving a game unstaked, but nothing is won either: the points are in the ranking.</p>
     </div>
     <div class="opt">
@@ -1267,9 +1346,22 @@ tbody tr.me td.tot{background:#241F1E}
     <div class="opt">
       <h4>Alerts</h4>
       <p>You only ever hear about games you haven't picked. Finish the week early and these stay quiet.</p>
-      <button type="button" class="pref pref-all" id="prefsAll" role="switch" aria-checked="true">
-        <div class="pref-t"><b>All alerts</b><span>Turn every category below on or off at once</span></div>
-        <div class="sw"></div></button>
+      <!-- NO MASTER CONTROL HERE, AND THAT IS THE DESIGN.
+
+           There was an "All alerts" switch, then a pair of All on / All off
+           buttons that replaced it. Both are gone.
+
+           The switch was derived from the five categories below it, so
+           flipping your last category made a control you had not touched
+           move by itself. The buttons fixed that but introduced their own
+           problem: a second row of controls competing with the five that
+           actually matter, in a box size and type size that matched nothing
+           else on the screen.
+
+           Every category now starts ON for a new player (see the prefs
+           default below), which is what the buttons were mostly used for
+           anyway, and the five switches are the only controls in this
+           panel. Nothing can move except the one that was tapped. -->
       <div class="prefs" id="prefs"></div>
     </div>
     <div class="opt"><h4>Kickoff lock</h4>
@@ -1345,7 +1437,7 @@ tbody tr.me td.tot{background:#241F1E}
   <h3 id="sheetTitle">Rank this pick</h3>
   <div class="sub" id="sheetSub"></div>
   <div class="numgrid" id="numgrid"></div>
-  <div class="heatlabel"><span id="heatLo">1 · surest</span><span id="heatHi">coin flip · pays 1</span></div>
+  <div class="heatlabel"><span id="heatLo">1 · surest</span><span id="heatHi">coin flip · pays 1 point</span></div>
   <button class="clearw" id="clearw">Take the stamp back</button>
 </div>
 
@@ -2164,7 +2256,7 @@ $('#abFix').addEventListener('click',async()=>{
       const w=$('#abWhy');
       if(w)w.textContent="Alerts are blocked for this app at the phone/browser level. Open your "
         +"device's own Settings app (not this app's Settings tab) → Notifications, find this app, "
-        +"and turn them back on — it can't ask again once it has been refused.";
+        +"and turn them back on. It can't ask again once it has been refused.";
       btn.style.display='none';
       return;
     }
@@ -2543,9 +2635,9 @@ function renderBoard(){
     $('#board').innerHTML=view==='week'
       ? `<div class="empty"><h4>Week ${wk} has not started</h4>
          <p>This table fills in as the games go final. Until then there is
-         nothing to rank — the Season tab has the standing so far.</p></div>`
+         nothing to rank. The Season tab has the standing so far.</p></div>`
       : `<div class="empty"><h4>Nothing scored yet</h4>
-         <p>The table opens after the first game goes final. Get your picks in —
+         <p>The table opens after the first game goes final. Get your picks in,
          Week ${state.week} is what starts it.</p></div>`;
     return;
   }
@@ -2601,7 +2693,7 @@ function renderBoard(){
       const r=rows[mi], was=prev[r.p];
       const mv=was===undefined?'':(was>mi+1?'up':was<mi+1?'down':'');
       const gap=mi===0?'' : ` · ${rows[mi-1].pts-r.pts} behind ${NAME(rows[mi-1].p)}`;
-      const lead=view==='week'?` — week ${wk} leader`:' — season leader';
+      const lead=view==='week'?` · week ${wk} leader`:' · season leader';
       meBar.innerHTML=`<div class="rank mono">${mi+1}${mv?`<i class="arrow">${
           mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
         <div class="who"><b>You${mi===0?lead:''}</b>
@@ -2663,7 +2755,7 @@ function renderPayTable(){
   const N=nGames(state.week);
   const t=$('#payTable'); if(!t)return;
   t.innerHTML=Array.from({length:N},(_,i)=>i+1).map(r=>
-    `<div class="hp-cell"><b>${r}</b><span>pays ${pay(r,N)}</span></div>`).join('');
+    `<div class="hp-cell"><b>${r}</b><span>${pay(r,N)} ${pay(r,N)===1?"point":"points"}</span></div>`).join('');
   // Show the actual badge art in Help rather than describing it in words.
   const art=[['#bdg1',SEAL1],['#bdg2',SEAL2],['#bdg3',TROPHY]];
   art.forEach(([id,svg])=>{const e=$(id); if(e)e.innerHTML=svg;});
@@ -2784,7 +2876,7 @@ function tick(){
          nothing at all. */
       if(state.openGame===g.id){
         closeSheet();
-        toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} kicked off — that pick is final.`,'fail');
+        toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} kicked off. That pick is final.`,'fail');
       }
     }
     // A game going final is what actually moves the standings.
@@ -2923,8 +3015,8 @@ function commitPicks(attempt=0){
          itself; anything else is unknown and gets the generic line. */
       saveFailed(
         err&&err.failed          ? err.message :
-        /permission/i.test(code) ? "That game is locked — picks are final at kickoff." :
-        /unavailable|network/i.test(code) ? "No connection — your picks aren't saved yet." :
+        /permission/i.test(code) ? "That game is locked. Picks are final at kickoff." :
+        /unavailable|network/i.test(code) ? "No connection. Your picks aren't saved yet." :
         "Your picks didn't save. Check your connection.");
     });
 }
@@ -2941,13 +3033,13 @@ $('#slate').addEventListener('click',e=>{
     /* renderSlate is up to a second stale, so a card can still look live
        when it is not. Silently dropping the tap made the app look broken
        at the moment of highest stakes; the user just taps harder. */
-    if(isLive(g)){ render(); toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} has kicked off — that pick is final.`,'fail'); return; }
+    if(isLive(g)){ render(); toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} has kicked off. That pick is final.`,'fail'); return; }
     openSheet(g.id);return;
   }
   const s=e.target.closest('.side');if(!s)return;
   const card=s.closest('.card'),g=slate().find(x=>x.id===card.dataset.game);
   if(!g)return;
-  if(isLive(g)){ render(); toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} has kicked off — that pick is final.`,'fail'); return; }
+  if(isLive(g)){ render(); toast(`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} has kicked off. That pick is final.`,'fail'); return; }
   const w=s.dataset.side==='a'?g.a:g.h,prev=state.picks[g.id];
   if(prev&&prev.winner===w){
     delete state.picks[g.id];
@@ -2966,7 +3058,7 @@ function openSheet(gid){
   $('#sheetTitle').textContent=`${TEAM(p.winner)[1]} to win`;
   const NN=nGames(state.week);
   $('#sheetSub').textContent=`Rank 1 is your surest game and pays ${NN} points. `
-    +`Rank ${NN} is your coin flip and pays 1. Wrong pays nothing either way, `
+    +`Rank ${NN} is your coin flip and pays 1 point. Wrong pays nothing either way, `
     +`and each rank is used once per week.`;
   const ids=new Set(slate().map(g=>g.id)),used=new Map();
   Object.entries(state.picks).forEach(([k,v])=>{if(v.weight&&k!==gid&&ids.has(k))used.set(v.weight,v.winner);});
@@ -2975,8 +3067,8 @@ function openSheet(gid){
     h+=`<button class="num" data-w="${i}"${u?' disabled':''}>${i}
       <small>${u?u:`${pay(i,N)} pts`}</small></button>`;}
   $('#numgrid').innerHTML=h;
-  $('#heatLo').textContent=`1 · surest, pays ${NN}`;
-  $('#heatHi').textContent=`${NN} · coin flip, pays 1`;
+  $('#heatLo').textContent=`1 · surest, pays ${NN} points`;
+  $('#heatHi').textContent=`${NN} · coin flip, pays 1 point`;
   $('#clearw').style.display=p.weight?'block':'none';
   sheetOpener=document.activeElement;
   const sh=$('#sheet');
@@ -3093,7 +3185,7 @@ $('#weeks').addEventListener('click',async e=>{
     try{ await loadWeek(n); }
     catch(err){
       console.error('loadWeek failed for week',n,err);
-      toast(`Week ${n} didn't load — check your connection.`,'fail');
+      toast(`Week ${n} didn't load. Check your connection.`,'fail');
     }
     if(strip)strip.removeAttribute('aria-busy');
     // Re-point the live listeners at the week now on screen. Without this
@@ -3152,12 +3244,15 @@ function openFillSheet(){
   const most=free.length?pay(free[0],N):0;
   $('#fillTitle').textContent=miss.length===1
     ? 'One game has no rank' : `${miss.length} games have no rank`;
-  $('#fillSub').textContent='Every pick is in. These just have no confidence '
+  /* Both panels carry a heading in the SAME type style as the sheet title —
+     see the note on #fillSheet .sub b. One panel labelled and the other not
+     is what made the two read as different typefaces. */
+  $('#fillSub').innerHTML='<b>Every pick is in</b>These just have no confidence '
     +'rank on them yet.';
   $('#fillNote').innerHTML=`<b>What it costs to leave them</b>`
-    +`Unranked, each of these is worth <b style="display:inline;text-transform:none;`
-    +`letter-spacing:0;font-size:11.5px">1 point</b> if it wins. Your best unused rank `
-    +`still pays ${most}. Filling them in cannot lower your score — the ranks are `
+    +`Unranked, each of these is worth <b style="display:inline;font-size:inherit;font-weight:800;`
+    +`letter-spacing:inherit;margin:0">1 point</b> if it wins. Your best unused rank `
+    +`still pays ${most} ${most===1?"point":"points"}. Filling them in cannot lower your score, the ranks are `
     +`already yours, spent or not.`;
   $('#fillAuto').textContent='Fill them in for me';
   $('#fillAuto').dataset.act='rank';
@@ -3175,13 +3270,18 @@ function openPickSheet(blank){
   /* LEAD WITH THE REASSURANCE. This is the moment someone is wondering
      whether any of it counted, and it is the only moment the app gets to
      answer that question where they are actually looking. */
-  $('#fillSub').textContent=done
-    ? `Your other ${done} ${done===1?'is':'are'} already saved — they were saved the `
-      +`moment you tapped them. Nothing here is submitted; there is nothing to submit.`
-    : 'Nothing is picked yet. Whatever you tap saves straight away.';
+  /* "Nothing here is submitted; there is nothing to submit" was cut. It was
+     answering a question in the language of the machine rather than the
+     player's: nobody looking at this screen is wondering whether a submit
+     step exists, and naming one only invents the doubt. The first sentence
+     already says the thing that matters. */
+  $('#fillSub').innerHTML=done
+    ? `<b>Already saved</b>Your other ${done} ${done===1?'is':'are'} already saved, `
+      +`they were saved the moment you tapped them.`
+    : '<b>Nothing picked yet</b>Whatever you tap saves straight away.';
   $('#fillNote').innerHTML=`<b>What it costs to leave them</b>`
-    +`An unpicked game scores <b style="display:inline;text-transform:none;`
-    +`letter-spacing:0;font-size:11.5px">0</b>, guaranteed — there is no late entry once `
+    +`An unpicked game scores <b style="display:inline;font-size:inherit;font-weight:800;`
+    +`letter-spacing:inherit;margin:0">0</b>, guaranteed, and there is no late entry once `
     +`it kicks off. Even your worst rank on a bad guess costs you nothing by comparison.`;
   // No "do it for me" here, on purpose — see the note above openFillSheet.
   $('#fillAuto').textContent='Take me to the first one';
@@ -3845,13 +3945,13 @@ const obScreens=()=>[
         <ol class="ob-steps">${installSteps()}</ol>
         <div class="ob-note"><b>Then open it from the new icon</b>
           Sign in there rather than here, and you'll only ever do it once.
-          Signing in on this tab first means doing it twice — iPhone keeps
+          Signing in on this tab first means doing it twice. iPhone keeps
           the two completely separate.</div>
         ${iosBrowser==='safari'?'':`<p class="ob-p" style="margin-top:12px">Fewer
           taps in Safari, if you'd rather open it there.</p>`}`;
       return `<div class="ob-kicker">First thing</div>
         <h1 class="ob-h">Put it on your<br>Home Screen</h1>
-        <p class="ob-p">It opens full screen like a normal app — and it's the only
+        <p class="ob-p">It opens full screen like a normal app, and it's the only
           way your phone will let us tap you on the shoulder before a game locks.</p>
         <div class="ob-facts">
           <div class="ob-fact"><b>1</b><span>Tap to<br>open it</span></div>
@@ -3859,7 +3959,7 @@ const obScreens=()=>[
           <div class="ob-fact"><b>30s</b><span>Before<br>kickoff alerts</span></div>
         </div>
         <div class="ob-note"><b>Not interested? That's fine.</b>
-          Everything works in the browser — picks, the Grid, standings, all of it.
+          Everything works in the browser: picks, the Grid, standings, all of it.
           The only thing you give up is the reminder before kickoff, and you can
           add it to your Home Screen later from Settings.</div>`;
     },
@@ -4054,7 +4154,7 @@ const obScreens=()=>[
               return;
             }
             pinNote(d.throttled
-              ? 'Your code is already on its way — check your inbox, and spam.'
+              ? 'Your code is already on its way. Check your inbox, and spam.'
               : 'Sent. Check your inbox.',{ok:true});
           }
           obTick=60;
@@ -4090,7 +4190,7 @@ const obScreens=()=>[
         pinNote(
           d.error==='wrong_code'   ? `That code isn't right. ${d.left} ${d.left===1?'try':'tries'} left.` :
           d.error==='locked'       ? 'Too many tries. Ask for a new code in a few minutes.' :
-          d.error==='bad_request'  ? 'A code is six digits — check you got them all.' :
+          d.error==='bad_request'  ? 'A code is six digits. Check you got them all.' :
                                      'Something went wrong on our end. Try that once more.',
           {shake:true, clear:d.error==='wrong_code'});
         return false;
@@ -4321,7 +4421,7 @@ function saving(){
   toast('Saving…','wait',true);
   // If it has not settled in 8s the connection is gone. Say so, rather
   // than spinning forever: an offline write never resolves OR rejects.
-  slowTimer=setTimeout(()=>toast("Still trying — you may be offline. Your picks are on this phone only.",'fail',true),8000);
+  slowTimer=setTimeout(()=>toast("Still trying. You may be offline. Your picks are on this phone only.",'fail',true),8000);
 }
 
 function flashSaved(){
@@ -4336,7 +4436,7 @@ function saveFailed(msg){
   clearTimeout(slowTimer);
   // Sticky: a write that did not land is the one message that must not
   // fade before it has been read.
-  toast(msg||"Not saved — check your connection",'fail',true);
+  toast(msg||"Not saved. Check your connection",'fail',true);
   renderBar();
 }
 
@@ -4363,7 +4463,24 @@ const PREFS=[
    the first-run bootstrap all silently never got wired up. */
 let prefs;
 try{ prefs=JSON.parse(localStorage.getItem('ps_prefs')||'null'); }catch{ prefs=null; }
-if(!prefs||typeof prefs!=='object')prefs=Object.fromEntries(PREFS.map(([k])=>[k,true]));
+/* EVERY CATEGORY STARTS ON, AND MERGES RATHER THAN REPLACES.
+
+   The old line took a stored object wholesale. Two ways that bit:
+
+     1. A stored object written before a category existed has no key for
+        it, so `prefs.results` was undefined, which is falsy, so that alert
+        was silently OFF for every existing player while reading as a
+        deliberate choice. Adding a sixth category later would do the same
+        again.
+     2. A truncated or partially-written value survived as a real object
+        and pinned whatever it happened to contain.
+
+   Spreading the all-true defaults FIRST and the stored values over the top
+   means a missing key can only ever fall back to on, and an explicit false
+   the player actually chose is still honoured. */
+const PREF_DEFAULTS=Object.fromEntries(PREFS.map(([k])=>[k,true]));
+prefs=(prefs&&typeof prefs==='object'&&!Array.isArray(prefs))
+  ? {...PREF_DEFAULTS,...prefs} : {...PREF_DEFAULTS};
 
 function renderPrefs(){
   const el=$('#prefs'); if(!el)return;
@@ -4375,17 +4492,6 @@ function renderPrefs(){
        role="switch" aria-checked="${prefs[k]?'true':'false'}">
       <div class="pref-t"><b>${t}</b><span>${d}</span></div>
       <div class="sw"></div></button>`).join('');
-  renderPrefsAll();
-}
-/* The master switch is derived, never its own source of truth: it just
-   reflects whether every category below happens to be on right now. Called
-   from renderPrefs() so both the individual toggles and a page reload keep
-   it in sync automatically, rather than needing its own separate state. */
-function renderPrefsAll(){
-  const el=$('#prefsAll'); if(!el)return;
-  const allOn=PREFS.every(([k])=>prefs[k]);
-  el.classList.toggle('on',allOn);
-  el.setAttribute('aria-checked',allOn?'true':'false');
 }
 /* Shared by one category and "all of them": same optimistic-update,
    same revert-and-toast on a failed write, so a dropped connection can
@@ -4399,7 +4505,7 @@ async function savePrefs(before){
     console.warn('pref write failed',err);
     prefs=before;
     renderPrefs();
-    toast("That didn't save — check your connection and try again.",'fail');
+    toast("That didn't save. Check your connection and try again.",'fail');
     return;
   }
   localStorage.setItem('ps_prefs',JSON.stringify(prefs));
@@ -4408,12 +4514,6 @@ $('#prefs').addEventListener('click',e=>{
   const el=e.target.closest('[data-pref]'); if(!el)return;
   const k=el.dataset.pref, before={...prefs};
   prefs[k]=!prefs[k];
-  savePrefs(before);
-});
-$('#prefsAll').addEventListener('click',()=>{
-  const before={...prefs};
-  const next=!PREFS.every(([k])=>prefs[k]);
-  PREFS.forEach(([k])=>{prefs[k]=next;});
   savePrefs(before);
 });
 renderPrefs();
