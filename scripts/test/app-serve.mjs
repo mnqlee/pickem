@@ -86,11 +86,28 @@ window.PS = {
     if (window.__authCb) setTimeout(() => window.__authCb(this.user), 0);
     return this.user;
   },
-  async joinPool(c){ await call('joinPool'); window.__joined = true;
+  /* Under newUser, joinPool takes a beat — as a real network write does.
+     Without this the stub resolved joinPool BEFORE the queued auth
+     callback ran, which is the lucky ordering and the one that hides the
+     bug. Firebase fires onAuthStateChanged locally the moment the token
+     is accepted; the join is a round trip to Firestore after it. The
+     callback wins that race in the real app, every time, for a new user. */
+  async joinPool(c){ await call('joinPool');
+    if (P.newUser) await new Promise(r => setTimeout(r, P.slowJoinMs || 400));
+    window.__joined = true;
     return { id:'p_test', name:"Weekly NFL Pick'em" }; },
   async upsertRoster(x){ await call('upsertRoster'); },
+  /* plan.newUser reproduces the ONE ordering that matters and that a
+     static flag cannot express: a person who has never joined. Firebase
+     fires onAuthStateChanged the instant signInWithToken resolves, which
+     is several lines before the PIN screen's go() reaches joinPool() — so
+     boot's watchAuth asks for the pool and there genuinely is not one yet.
+     Returning null until joinPool has run is exactly what the real
+     ensureCurrentPool does for a brand-new player. */
   async ensureCurrentPool(){ await call('ensureCurrentPool');
-    return P.noPool ? null : { id:'p_test', name:"Weekly NFL Pick'em", season:'2026' }; },
+    if (P.noPool) return null;
+    if (P.newUser && !window.__joined) return null;
+    return { id:'p_test', name:"Weekly NFL Pick'em", season:'2026' }; },
   async getPool(){ return { id:'p_test', name:"Weekly NFL Pick'em", season:'2026' }; },
   async getAllWeeks(){
     await call('getAllWeeks');
@@ -123,19 +140,35 @@ window.PS = {
     if (P.noPicks) return {};
     const o = {}; GAMES.filter(g=>g.wk===wk).forEach((g,i) => {
       if (i < (P.myPickCount == null ? 16 : P.myPickCount))
-        o[g.id] = { winner: i%2 ? g.home : g.away, weight: i+1 };
+        o[g.id] = P.promo
+          ? { winner: (((i*2654435761 + wk*97) >>> 4) % 100 < 62 ? g.home : g.away),
+              weight: ((i*7+wk)%16)+1 }
+          : { winner: i%2 ? g.home : g.away, weight: i+1 };
     }); return o; },
   /* Rows carry uid AND name, exactly as firebase-init.js returns them.
      The stub used to omit uid, which started mattering the moment the app
      keyed players by uid instead of by display name: a stub answering in a
      shape the real data layer never produces makes the whole suite agree
      with itself about something untrue. */
+  /* plan.promo — MARKETING SCREENSHOTS ONLY, and opt-in for a reason.
+
+     The default generators alternate strictly by index, which is fine for
+     tests (deterministic, easy to assert) and useless for a screenshot: it
+     makes half the pool go 16/16 and the other half 0/16, which looks like
+     a broken app rather than a real week. promo swaps in a hashed spread
+     that produces plausible 7-to-12-correct rows and a believable spread of
+     points. Nothing reads it unless a plan sets it, so every existing
+     assertion still sees the old deterministic data. Used by the invite
+     screenshots; see the note at the top of shots.mjs. */
   async getRevealed(wk){ await call('getRevealed');
     if (P.noRevealed) return [];
     const rows = []; GAMES.filter(g=>g.wk===wk).forEach((g,i) =>
       MEMBERS.forEach((m,mi) => { if (g.kickoff.toMillis() < Date.now())
         rows.push({ uid:m.uid, name:m.name, gameId:g.id,
-                    winner: (i+mi)%2 ? g.home : g.away, weight:(i+mi)%16+1 }); }));
+                    winner: (P.promo
+                      ? (((i*2654435761 + mi*40503 + wk*97) >>> 4) % 100 < 62 ? g.home : g.away)
+                      : ((i+mi)%2 ? g.home : g.away)),
+                    weight: P.promo ? ((i*7+mi*13+wk)%16)+1 : (i+mi)%16+1 }); }));
     return rows; },
   async getTiebreaks(wk){ await call('getTiebreaks');
     return MEMBERS.map((m,i) => ({ uid:m.uid, name:m.name, total: 44 + i*3, mine: i===0 })); },

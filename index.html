@@ -1070,16 +1070,16 @@ tbody tr.me td.tot{background:#241F1E}
 .arch-foot{margin:16px 0 4px;padding:11px 12px;border-radius:9px;background:var(--shell-2);
   font-size:11.5px;line-height:1.5;color:var(--chalk)}
 
-.alertbar{display:flex;align-items:center;gap:12px;margin:13px var(--pad) 0;
-  padding:11px 13px;border-radius:10px;background:rgba(224,163,46,.11);
-  border:1px solid rgba(224,163,46,.42)}
-.ab-t{flex:1;min-width:0}
-.ab-t b{display:block;font-size:12.5px;font-weight:800;color:var(--lock)}
-.ab-t span{display:block;font-size:11px;line-height:1.45;color:#E4CE9C;margin-top:2px}
-.ab-b{flex:0 0 auto;border:0;border-radius:7px;padding:9px 14px;background:var(--lock);
-  color:#231F16;font-family:inherit;font-size:11px;font-weight:800;letter-spacing:.07em;
-  text-transform:uppercase;cursor:pointer}
-
+/* The kickoff-reminder banner used to live here. Removed on request, and
+   the reason it had to go is worth keeping: it reported the DEVICE's
+   notification permission, while the five switches in Settings are the
+   player's own preferences. Those are genuinely different things, so the
+   banner could truthfully say "reminders are off" while every switch in
+   Settings was on — which reads as the app contradicting itself. One of
+   the two had to stop talking, and the switches are the ones a player
+   actually controls. Alerts are still requested during onboarding and
+   still switchable in Settings; there is simply no longer a bar on the
+   Picks tab second-guessing them. */
 /* The update prompt. Deliberately the same shape as the alert bar
    rather than a modal: a new version being ready is information, not an
    interruption, and a dialog that steals focus mid-pick is worse than a
@@ -1128,11 +1128,6 @@ tbody tr.me td.tot{background:#241F1E}
 </div>
 
 <div id="v-picks">
-  <div class="alertbar hide" id="alertbar">
-    <div class="ab-t"><b>Kickoff reminders are off</b>
-      <span id="abWhy">You will not be warned before games lock.</span></div>
-    <button class="ab-b" id="abFix">Turn on</button>
-  </div>
   <div class="updbar hide" id="updbar" role="status">
     <div class="upd-t"><b>A new version is ready</b>
       <span>Your picks are already saved. This takes a second.</span></div>
@@ -2192,88 +2187,6 @@ function renderTray(){
    A missing token is invisible from the outside — the person simply
    stops hearing from the app and assumes it is broken. So check on every
    render and say so plainly, with a one-tap repair. */
-const ALERT_STATE = DEMO ? 'permission' : null;   // demo: force the banner
-let alertsChecked=false;
-/* Called from boot() and on resume — NOT from render().
-   render() runs on every tick and every Firestore snapshot, and each call
-   awaited a service-worker ready plus an FCM getToken(): dozens of network
-   round trips a minute on a live Sunday, with the banner flickering as
-   they raced. */
-async function renderAlerts(force){
-  const bar=$('#alertbar'); if(!bar)return;
-  if(alertsChecked&&!force)return;
-  alertsChecked=true;
-  let reason=ALERT_STATE;
-  if(!DEMO){
-    const h=await PS.alertsHealthy()||{ok:false,reason:'no-token'};
-    reason=h.ok?null:h.reason;
-  }
-  bar.classList.toggle('hide',!reason);
-  if(!reason)return;
-  const why={
-    permission:'Notifications are switched off for this app.',
-    'no-token':'This device is not registered with the pool yet.',
-    'no-worker':'This browser could not start the background worker alerts need. A normal (not private) window is required.',
-    unsupported:'This browser cannot send alerts. Add the app to your Home Screen.',
-    'signed-out':'Sign in to get reminders.'
-  }[reason]||'';
-  $('#abWhy').textContent=why+' You will not be warned before games lock.';
-}
-
-/* Turning alerts on has three outcomes and used to report all of them as
-   "Done": granted, denied, and "the browser could not register at all".
-   Denied is the one that mattered — the warning banner stayed up with a
-   button underneath it reading Done, tapping it again did nothing
-   (browsers will not re-prompt after a refusal), and nothing on screen
-   said the fix now lives in the operating system's settings. */
-$('#abFix').addEventListener('click',async()=>{
-  const btn=$('#abFix'); if(!btn||btn.disabled)return;
-  const label=btn.textContent;
-  btn.disabled=true; btn.textContent='One moment';
-  try{
-    if(DEMO){ btn.textContent='Done'; return; }
-    /* iOS Safari has no `Notification` global at all until the app is
-       added to the Home Screen — it is not merely denied, the whole API
-       does not exist yet. Calling straight into it threw a raw
-       ReferenceError ("Can't find variable: Notification") that landed,
-       word for word, in this banner: the same ugly-error-as-UI-copy bug
-       already fixed once for enablePush() in firebase-init.js, just not
-       here too. Check for the API before ever touching it. */
-    if(typeof Notification==='undefined'){
-      const w=$('#abWhy');
-      if(w)w.textContent="This iPhone can't send alerts from a browser tab. Add the app to "
-        +"your Home Screen first (Share, then Add to Home Screen), then turn alerts on from there.";
-      btn.style.display='none';
-      return;
-    }
-    const perm=await Notification.requestPermission();
-    if(perm!=='granted'){
-      // Write into the text node, not the bar — replacing the bar's HTML
-      // would delete this very button along with it.
-      // "Device settings" reads, to most people, as this app's own
-      // Settings tab a swipe away — so a refusal sent them looking for a
-      // switch that was never going to fix it. Name the real place.
-      const w=$('#abWhy');
-      if(w)w.textContent="Alerts are blocked for this app at the phone/browser level. Open your "
-        +"device's own Settings app (not this app's Settings tab) → Notifications, find this app, "
-        +"and turn them back on. It can't ask again once it has been refused.";
-      btn.style.display='none';
-      return;
-    }
-    await PS.enablePush();            // throws with a readable reason
-    await renderAlerts();
-    btn.textContent='Done';
-  }catch(e){
-    console.warn('enable alerts failed',e);
-    btn.textContent=label;
-    const w=$('#abWhy');
-    if(w)w.textContent=(e&&e.message)||"Alerts couldn't be turned on. Try again in a moment.";
-  }finally{
-    if(btn.textContent==='One moment')btn.textContent=label;
-    btn.disabled=false;
-  }
-});
-
 /* ---------- THE UPDATE PROMPT ----------
 
    Without this, a deployed fix reached a phone only when every window of
@@ -2855,11 +2768,6 @@ function render(){
   if(!Object.keys(WEEKS).length)return;
   renderWeeks();renderSlate();renderTray();renderBar();renderGrid();
   renderBoard();renderTZ();renderPayTable();renderInPlay();renderArchive();}
-/* renderAlerts() is deliberately NOT in render() — see its own comment.
-   It is a once-per-session question, and render() runs on every tick. */
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'&&!DEMO)renderAlerts(true);
-});
 
 function tick(){
   // Same reason as render(): this runs on an interval from page load, and
@@ -3406,6 +3314,12 @@ function renderTZ(){
 /* ---------- the boot cover ---------- */
 const bootEl=()=>document.getElementById('boot');
 function bootHide(){ const b=bootEl(); if(b)b.classList.add('hide'); }
+/* Put the cover BACK. Used when the wizard finishes and startApp() still
+   has work to do: without it the player is dropped onto the app's static
+   markup — no week strip, no games — while the load runs underneath, which
+   is the exact "stuck" screen this whole round was about. A loading cover
+   is honest; a bare shell is not. */
+function bootShow(){ const b=bootEl(); if(b){ b.classList.remove('hide','err'); } }
 function bootFail(msg,err){
   const b=bootEl(); if(!b)return;
   b.classList.remove('hide'); b.classList.add('err');
@@ -3429,6 +3343,94 @@ function bootFail(msg,err){
   }
 }
 
+/* THE LOAD, LIFTED OUT OF watchAuth SO SOMETHING ELSE CAN CALL IT.
+
+   It used to live entirely inside the auth callback, and that stranded
+   every brand-new player on an empty app.
+
+   The order for somebody who has never joined is fixed and unavoidable:
+   Firebase fires onAuthStateChanged the instant the token is accepted,
+   which is several lines BEFORE the PIN screen's go() reaches joinPool().
+   So this ran, ensureCurrentPool() honestly answered "no pool", and it
+   bailed to the onboarding — correctly. The bug is what came next:
+   NOTHING. Joining a pool is not an auth event, so watchAuth never fired
+   again, obAdvance's last step only hid the wizard, and the player was
+   dropped onto the app with WEEKS empty. render() early-returns on an
+   empty WEEKS, so they got the raw static markup — the hardcoded "16
+   left", the hardcoded "Week 1", no week strip, no games — with no error
+   and no spinner. It looked stuck because it was stuck, and only a reload
+   fixed it.
+
+   Invisible in testing, because it needs the one launch where you are not
+   yet a member. Everybody already in the pool boots fine forever after. */
+let appBooting=false, appBooted=false, obWizardActive=false;
+
+async function startApp({fromOnboarding=false}={}){
+  if(appBooting||appBooted)return appBooted;
+  appBooting=true;
+  try{
+    // ensureCurrentPool (not getPool) so a pool id left over from an
+    // earlier/different season gets cleared instead of silently loading
+    // stale data — see firebase-init.js's SEASON HANDOVER note.
+    const pool=await PS.ensureCurrentPool();
+    if(!pool){
+      bootHide();
+      /* Reaching here FROM the finished wizard means the join genuinely
+         failed — sending them back to a sign-in screen they just
+         completed would be a loop. Say so, and leave the retry. */
+      if(fromOnboarding)
+        bootFail("You're signed in, but we couldn't open the pool. "
+                +"Reload and it will pick up where it left off.");
+      /* Do NOT rewind: this also fires mid-sign-in, before joinPool() has
+         returned, and rewinding threw the user back to a blank PIN
+         screen. See showOnboarding(). */
+      else showOnboarding(false);
+      return false;
+    }
+    // Owner-only affordances (hidden archives, the scoring-mode switch)
+    // need to know who the owner actually is.
+    IS_OWNER = !!(pool.ownerUid && PS.user && pool.ownerUid===PS.user.uid);
+
+    const roster=await ensureJoined();
+    await loadSeason(roster);
+    await loadWeek(state.week);
+    render(); tick();
+    watchLive();
+      /* Roster-wide, not per-week, so it is subscribed once here rather
+         than inside watchLive() — that resubscribes on every week switch,
+         and a members listener does not need to. Guarded on its own,
+         separate from the try/catch around the rest of boot(): this is
+         an enhancement (new members appear without a reload), not
+         something the app needs to have a week to show. Letting it throw
+         here would fail the ENTIRE boot over a feature that is allowed
+         to simply not be there. */
+    try{ PS.watchMembers(members=>{ applyMembers(members); render(); }); }
+    catch(e){ console.warn('watchMembers unavailable',e); }
+    /* Only now is there an app worth showing. Hiding onboarding any
+       earlier meant a failed load left the user staring at nothing, with
+       no route back to the sign-in screen.
+
+       But NOT while the wizard is being worked through. A token refresh
+       can land in the middle of the install or alerts screens, and this
+       used to yank the whole wizard away mid-sentence. If the player is
+       still in it, load everything underneath and let obAdvance close it
+       when they are actually done. */
+    if(fromOnboarding||!obWizardActive)
+      document.getElementById('ob').classList.add('hide');
+    bootHide();
+    appBooted=true;
+    return true;
+  }catch(e){
+    /* Every one of these reads used to be unguarded. A single failure —
+       a dropped connection, a rules hiccup, a cold Firestore — left the
+       user on an empty shell forever with nothing to read and nothing
+       to press. */
+    console.error('boot failed',e);
+    bootFail("We couldn't load your week. Check your connection and try again.",e);
+    return false;
+  }finally{ appBooting=false; }
+}
+
 async function boot(){
   if(DEMO){ bootHide(); render(); tick(); return; }
 
@@ -3444,56 +3446,10 @@ async function boot(){
      state, on sign-in, and again on every token refresh. Running the whole
      load each time is how a player mid-sign-in got the onboarding yanked
      out from under them — PIN in their inbox, nowhere left to type it. */
-  let booting=false, booted=false;
-
   PS.watchAuth(async u=>{
-    if(booting||booted)return;
-    try{
-      if(!u){ bootHide(); showOnboarding(); return; }
-      booting=true;
-      // ensureCurrentPool (not getPool) so a pool id left over from an
-      // earlier/different season gets cleared instead of silently loading
-      // stale data — see firebase-init.js's SEASON HANDOVER note.
-      const pool=await PS.ensureCurrentPool();
-      if(!pool){
-        /* Do NOT rewind: this fires mid-sign-in, before joinPool() has
-           returned, and rewinding threw the user back to a blank PIN
-           screen. See showOnboarding(). */
-        bootHide(); showOnboarding(false); return;
-      }
-      // Owner-only affordances (hidden archives, the scoring-mode switch)
-      // need to know who the owner actually is.
-      IS_OWNER = !!(pool.ownerUid && u && pool.ownerUid===u.uid);
-
-      const roster=await ensureJoined();
-      await loadSeason(roster);
-      await loadWeek(state.week);
-      render(); tick(); renderAlerts(true);
-      watchLive();
-      /* Roster-wide, not per-week, so it is subscribed once here rather
-         than inside watchLive() — that resubscribes on every week switch,
-         and a members listener does not need to. Guarded on its own,
-         separate from the try/catch around the rest of boot(): this is
-         an enhancement (new members appear without a reload), not
-         something the app needs to have a week to show. Letting it throw
-         here would fail the ENTIRE boot over a feature that is allowed
-         to simply not be there. */
-      try{ PS.watchMembers(members=>{ applyMembers(members); render(); }); }
-      catch(e){ console.warn('watchMembers unavailable',e); }
-      // Only now is there an app worth showing. Hiding onboarding any
-      // earlier meant a failed load left the user staring at nothing,
-      // with no route back to the sign-in screen.
-      document.getElementById('ob').classList.add('hide');
-      bootHide();
-      booted=true;
-    }catch(e){
-      /* Every one of these reads used to be unguarded. A single failure —
-         a dropped connection, a rules hiccup, a cold Firestore — left the
-         user on an empty shell forever with nothing to read and nothing
-         to press. */
-      console.error('boot failed',e);
-      bootFail("We couldn't load your week. Check your connection and try again.",e);
-    }finally{ booting=false; }
+    if(appBooting||appBooted)return;
+    if(!u){ bootHide(); showOnboarding(); return; }
+    startApp();
   });
 }
 
@@ -4014,7 +3970,7 @@ const obScreens=()=>[
         <div class="ob-help">Six digits, no password. Nothing to forget, nothing to reset.</div>
       </div>
       <div class="ob-err" id="obSignErr" style="display:none"></div>`,
-    btn:'Deal me in', wait:'Sending your code',
+    btn:'Deal me in', wait:'Sending your code', slow:'Still sending',
     can:()=>obName.trim().length>0&&/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(obEmail.trim()),
     after(){
       const n=$('#obNameIn'), m=$('#obMailIn');
@@ -4068,7 +4024,12 @@ const obScreens=()=>[
         <button id="obEdit">Change</button></div>
       <div class="ob-resend">Didn't get it?
         <button id="obResend" disabled>Resend</button><span id="obCd"></span></div>`,
-    btn:'Let me in', wait:'Signing you in', can:()=>pinValue().length===6,
+    btn:'Let me in', wait:'Signing you in',
+    /* Shown only if the wait runs past six seconds. Names the thing that
+       is actually slow — the first read of the pool and the season — so a
+       long pause reads as work rather than a hang. */
+    slow:'Loading season schedule',
+    can:()=>pinValue().length===6,
     after(){
       const boxes=[...Array(6)].map((_,i)=>$('#pin'+i));
 
@@ -4208,14 +4169,42 @@ const obScreens=()=>[
         // on its own — update DEFAULT_JOIN here if you ever spin up
         // a second pool and need the code to matter again.
         const join=new URLSearchParams(location.search).get('join')||DEFAULT_JOIN;
-        if(join)await PS.joinPool(join);
-        await PS.upsertRoster({name:obName.trim()});
+        /* A SLOW JOIN MUST NOT LOOK LIKE A BROKEN SIGN-IN.
+
+           The code is already accepted by this point and the session
+           exists — the only thing left is a Firestore write, and the
+           first Firestore call of a session is the one that occasionally
+           stalls on a mobile network. Waiting on it unbounded held the
+           whole wizard on "Signing you in" with nothing moving.
+
+           So: bound it. A genuine REJECTION still falls through to the
+           catch below and its message, unchanged. Only a hang is treated
+           as "carry on" — and carrying on is safe because startApp() ends
+           the wizard by calling ensureJoined(), which writes the
+           membership if it is still missing. The work finishes either
+           way; the player just stops staring at a dead button. */
+        const bounded=(pr,ms)=>{
+          let t; const timeout=new Promise((_,rej)=>{
+            t=setTimeout(()=>{const e=new Error('slow');e.__timeout=1;rej(e);},ms);});
+          return Promise.race([pr,timeout]).finally(()=>clearTimeout(t));
+        };
+        try{
+          if(join)await bounded(PS.joinPool(join),15000);
+          await bounded(PS.upsertRoster({name:obName.trim()}),10000);
+        }catch(slowErr){
+          if(!slowErr||!slowErr.__timeout)throw slowErr;
+          console.warn('pool join is slow; finishing it in the background',slowErr);
+        }
         /* Tidy the address bar. Because of DEFAULT_JOIN above, the bare
            domain is already a complete invite — ?join= only matters if a
            second pool ever exists. So once it has been used there is no
            reason to leave it sitting in the URL: what gets bookmarked,
            shared onward or screenshotted should just be the domain. */
         if(location.search)history.replaceState({},'',location.pathname);
+        /* From here the player is signed in and joined but still has
+           screens to go. A token refresh landing now must not close the
+           wizard underneath them — see startApp(). */
+        obWizardActive=true;
       }catch(e){
         console.error('signed in, but opening the pool failed',e);
         pinNote("You're signed in, but we couldn't open the pool. Reload the page "
@@ -4338,9 +4327,24 @@ function obRender(){
     const btn=$('#obGo'), label=btn.textContent;
     obBusy=true;
     btn.disabled=true; btn.classList.add('busy'); btn.textContent=s.wait||'One moment';
+    /* SAY SOMETHING AFTER SIX SECONDS.
+
+       A player reported typing the code, waiting about thirty seconds,
+       and tapping the button over and over because nothing happened. The
+       button was working correctly the whole time — it is disabled while
+       a step is in flight, which is exactly why tapping it did nothing —
+       but "Signing you in" sitting motionless for half a minute is
+       indistinguishable from a frozen app. The first Firestore call of a
+       session can be slow on some mobile networks; that is not something
+       this screen can fix, but it can stop pretending nothing is
+       happening. */
+    const slow=setTimeout(()=>{
+      if($('#obGo')===btn&&btn.disabled)btn.textContent=s.slow||'Still working…';
+    },6000);
     let ok=true;
     try{ if(s.go) ok=(await s.go())!==false; }
     finally{
+      clearTimeout(slow);
       obBusy=false;
       // s.go() may have re-rendered the screen underneath us, in which case
       // this button is detached and there is nothing left to restore.
@@ -4366,8 +4370,22 @@ function heroLoop(){
 
 function obAdvance(sc){
   if(obStep<sc.length-1){obStep++;obRender();window.scrollTo(0,0);}
-  else{clearInterval(heroTimer);localStorage.setItem('ps_onboarded','1');
-       $('#ob').classList.add('hide');}
+  else{
+    clearInterval(heroTimer);
+    localStorage.setItem('ps_onboarded','1');
+    obWizardActive=false;
+    $('#ob').classList.add('hide');
+    // Cover the app while the first load runs — see bootShow().
+    if(!appBooted)bootShow();
+    /* THE LOAD NOBODY ELSE WAS GOING TO DO.
+
+       This branch used to hide the wizard and stop, which for a
+       brand-new player meant being handed an app that had never loaded
+       a schedule: no week strip, no games, no error. boot()'s watchAuth
+       had already run and bailed because joinPool() had not finished
+       yet, and it does not fire again for a join. See startApp(). */
+    if(!appBooted)startApp({fromOnboarding:true});
+  }
 }
 
 /* ---------- autosave indicator ----------

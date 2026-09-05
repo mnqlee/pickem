@@ -1,6 +1,6 @@
 # Tests
 
-455 checks. Nothing here touches Firebase, Resend, KV or the live site.
+464 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -17,7 +17,7 @@
     node polish.ui.test.mjs      # 41  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 109 bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 118 bugs that shipped, so they cannot return
     node sw.push.test.mjs        # 16  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
@@ -380,6 +380,67 @@ accent: the brand red `#C8342A` is only **3.19:1** on the panel background,
 and these headings are 16px — under the 18.66px where WCAG's large-text
 allowance begins — so they need 4.5:1. `#E4564A` is the nearest step that
 passes, at 4.59:1.
+
+**Every brand-new player landed on an empty app.** The worst bug in the
+project, and it only existed on the ONE launch where you are not yet a
+member — which is why nobody testing it ever saw it, and why every single
+invitee would have.
+
+`boot()` loaded the season inside `watchAuth`. Firebase fires
+`onAuthStateChanged` the instant the token is accepted, several lines
+before the PIN screen's `go()` reaches `joinPool()`, so
+`ensureCurrentPool()` truthfully answered "no pool" and boot bailed to the
+onboarding. Correct so far. The bug was what came next: nothing. Joining a
+pool is not an auth event, so `watchAuth` never fired again, and
+`obAdvance`'s final branch only did `$('#ob').classList.add('hide')`. The
+player finished the wizard and was dropped onto the app with `WEEKS`
+empty. `render()` early-returns on an empty `WEEKS`, so what they saw was
+the raw static markup — the hardcoded `16 left` in the tray, the hardcoded
+`Week 1` in the Grid heading, no week strip, no games — with no error and
+no spinner. Only a reload fixed it.
+
+The load is now `startApp()`, called from `watchAuth` AND from the end of
+the wizard, guarded so it runs once. Case 21 walks the real invitee path.
+
+**Reproducing it needed the stub to lose a race on purpose.** The first
+version of case 21 passed against the broken code, because `signInWithToken`
+queued its auth callback with `setTimeout(…, 0)` and `joinPool` resolved
+immediately — so the callback landed AFTER the join, which is the lucky
+ordering and the one that hides the bug. `plan.newUser` now makes `joinPool`
+take a beat, the way a real Firestore write does, so the callback wins the
+race exactly as it does in production. A test that cannot lose the race
+cannot see the bug.
+
+**A slow join looked exactly like a broken sign-in.** A player typed the
+code and watched a motionless "Signing you in" for about thirty seconds,
+tapping the button over and over. The button was correct — it disables
+while a step is in flight, which is precisely why tapping did nothing —
+but the join it awaited had stalled, and an unbounded await on the first
+Firestore call of a session is indistinguishable from a crash. The wait is
+now bounded: a genuine rejection still surfaces its own message, but a
+HANG lets the wizard continue, because `startApp()` finishes the
+membership via `ensureJoined()` anyway. The button also admits it is
+"Still working…" after six seconds.
+
+Case 22 needed three attempts to become honest, and each failure is worth
+remembering. It first stalled the join for 16s while the test itself
+waited 18s — so the join completed on its own and the case passed with the
+fix removed. Lengthening the stall was not enough either: the assertion
+came AFTER a loop that clicks through the remaining screens, and the PIN
+step has a Skip button, so the loop hopped straight over the stalled step.
+The assertion now runs before anything is clicked and asks the only
+question that matters — did the wizard leave the keypad BY ITSELF. Finally,
+the last assertion had to be weakened from "the app is loaded" to "the
+player is never left on a bare shell", because with a genuinely stalled
+join the season cannot load, and asserting otherwise would have been
+asserting a lie. That last correction is what produced `bootShow()`.
+
+**The kickoff-reminder banner is gone.** It reported the DEVICE's
+notification permission while the five switches in Settings are the
+player's own preferences — two different things — so it could truthfully
+say "reminders are off" with every switch in Settings on. The app appeared
+to contradict itself. Alerts are still requested during onboarding and
+still switchable in Settings.
 
 ## Known limit, deliberately not "fixed" in code
 

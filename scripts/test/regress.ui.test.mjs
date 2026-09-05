@@ -1110,6 +1110,155 @@ console.log('\n20. Help must say what was actually agreed');
   await ctx.close();
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\n21. A brand-new player must land in a WORKING app, not an empty shell');
+{
+  /* THE BUG, and it hit every single person invited to the pool.
+
+     boot() loads the season inside watchAuth. For somebody who has never
+     joined, that callback fires the instant signInWithToken() resolves —
+     several lines BEFORE the PIN screen's own go() reaches joinPool() —
+     so ensureCurrentPool() honestly answers "no pool", boot bails to
+     showOnboarding(false), and loadSeason() never runs.
+
+     Nothing ever ran it afterwards. Joining a pool is not an auth event,
+     so watchAuth did not fire again, and obAdvance's last step only did
+     `$('#ob').classList.add('hide')`. The player finished onboarding and
+     was dropped onto the app with WEEKS empty. render() early-returns on
+     an empty WEEKS, so what they saw was the raw static markup: the "16
+     left" hardcoded in the tray, "Week 1" hardcoded in the Grid heading,
+     no week strip, no games, no error, no spinner. It looked stuck
+     because it was stuck.
+
+     Invisible to everyone testing it, because it only happens on the ONE
+     launch where you are not yet a member. Every reload afterwards finds
+     the pool and works. */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.request.post(BASE + '/__plan', { data: { newUser: true, signedOut: true } });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+  // Walk the onboarding the way a real invitee does.
+  await page.waitForSelector('#obNameIn', { timeout: 15000 });
+  await page.fill('#obNameIn', 'New Player');
+  await page.fill('#obMailIn', 'new@example.com');
+  await page.click('#obGo');
+  await page.waitForSelector('#pin0', { timeout: 15000 });
+  for (let i = 0; i < 6; i++) await page.fill('#pin' + i, '123456'[i]);
+  await page.waitForTimeout(1200);
+
+  // Then click through whatever screens remain, exactly as they would.
+  for (let i = 0; i < 8; i++) {
+    const done = await page.evaluate(() =>
+      document.querySelector('#ob')?.classList.contains('hide'));
+    if (done) break;
+    const btn = await page.$('#obNext, #obSkip, .ob-btn');
+    if (!btn) break;
+    await btn.click().catch(() => {});
+    await page.waitForTimeout(500);
+  }
+  await page.waitForTimeout(2500);
+
+  const state = await page.evaluate(() => ({
+    obHidden: document.querySelector('#ob')?.classList.contains('hide'),
+    weeks:    document.querySelectorAll('#weeks .wk').length,
+    games:    document.querySelectorAll('#slate .card').length,
+    slateText:(document.querySelector('#slate')?.innerText || '').trim().length,
+    bootShown:!document.querySelector('#boot')?.classList.contains('hide'),
+  }));
+
+  ok('the onboarding actually finishes', state.obHidden === true, JSON.stringify(state));
+  ok('the week strip is populated, not blank',
+     state.weeks > 0, `${state.weeks} week buttons`);
+  ok('and the slate has real games in it',
+     state.games > 0 || state.slateText > 0, JSON.stringify(state));
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n22. A slow pool join must not freeze the wizard (this takes ~20s)');
+{
+  /* A player typed the code and then watched a dead button for about
+     thirty seconds, tapping it repeatedly. The button was behaving
+     correctly — it disables while a step is in flight — but the join it
+     was waiting on had stalled, and an unbounded await on the first
+     Firestore call of a session is indistinguishable from a crash.
+
+     The sign-in is already complete by that point; only the membership
+     write is outstanding. So the wait is bounded, and startApp() finishes
+     the job at the end of the wizard via ensureJoined(). This asserts the
+     player still lands in a loaded app when the join overruns. */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.request.post(BASE + '/__plan',
+    { data: { newUser: true, signedOut: true, slowJoinMs: 60000 } });
+  /* Sixty seconds, deliberately longer than anything this test will wait
+     for. An earlier draft used 16s — just under the test's own 18s of
+     patience — so the join completed on its own and the case passed with
+     the bound removed. A stall the test can outlast is not a stall. */
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+  await page.waitForSelector('#obNameIn', { timeout: 15000 });
+  await page.fill('#obNameIn', 'Slow Join');
+  await page.fill('#obMailIn', 'slow@example.com');
+  await page.click('#obGo');
+  await page.waitForSelector('#pin0', { timeout: 15000 });
+  for (let i = 0; i < 6; i++) await page.fill('#pin' + i, '123456'[i]);
+
+  // The reassurance must appear rather than a motionless button.
+  await page.waitForTimeout(8000);
+  const midLabel = await page.evaluate(() =>
+    (document.querySelector('#obGo')?.textContent || '').trim());
+  ok('the button names what is actually slow, instead of sitting mute',
+     /loading season schedule/i.test(midLabel), midLabel);
+
+  /* THE ASSERTION THAT MATTERS, and it has to come BEFORE any clicking.
+
+     An earlier draft went straight to clicking through the remaining
+     screens — and the PIN step has a Skip button, so the loop hopped over
+     the stalled step and the case passed with the bound removed. The
+     question is whether the wizard moves on BY ITSELF once the bound
+     expires, so ask it while touching nothing: is the PIN screen gone? */
+  await page.waitForTimeout(10000);              // ~18s in; the bound is 15s
+  const movedOn = await page.evaluate(() => !document.querySelector('#pin0'));
+  ok('the wizard leaves the PIN screen on its own once the join overruns',
+     movedOn === true, 'still on the keypad');
+
+  for (let i = 0; i < 8; i++) {
+    const done = await page.evaluate(() =>
+      document.querySelector('#ob')?.classList.contains('hide'));
+    if (done) break;
+    const btn = await page.$('#obNext, #obSkip, .ob-btn');
+    if (!btn) break;
+    await btn.click().catch(() => {});
+    await page.waitForTimeout(500);
+  }
+  await page.waitForTimeout(3000);
+
+  const st = await page.evaluate(() => ({
+    obHidden: document.querySelector('#ob')?.classList.contains('hide'),
+    weeks:    document.querySelectorAll('#weeks .wk').length,
+    covered:  !document.querySelector('#boot')?.classList.contains('hide'),
+  }));
+  ok('the wizard still finishes', st.obHidden === true, JSON.stringify(st));
+  /* With the join still stalled the season genuinely cannot be loaded yet,
+     and pretending otherwise would be the wrong assertion. What must NEVER
+     happen is the player being dropped onto the bare static markup — the
+     "16 left, no games, no explanation" screen. Either the app is up, or a
+     loading cover is. */
+  ok('and the player is never left on a bare empty shell',
+     st.weeks > 0 || st.covered === true, JSON.stringify(st));
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
 /* NOT COVERED HERE, deliberately, and worth knowing about.
 
    weekSum() now prefers the server's figure for any week that is not the
