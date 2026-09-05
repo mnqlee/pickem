@@ -1,6 +1,6 @@
 # Tests
 
-474 checks. Nothing here touches Firebase, Resend, KV or the live site.
+480 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -17,7 +17,7 @@
     node polish.ui.test.mjs      # 41  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 122 bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 128 bugs that shipped, so they cannot return
     node sw.push.test.mjs        # 22  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
@@ -484,6 +484,17 @@ short even with every read slowed. Its first draft used 2.5s reads and
 produced 4646ms without the fix against a 4500ms threshold — a coin toss,
 not a test. The delays are 5s now, so the mutation reports 7939ms against
 the same threshold.
+
+**The alert preview contradicted the alerts.** The onboarding screen that
+promises "every alert we will ever send you" said "First kickoff Sunday
+1:00 PM". Nearly every NFL week opens on Thursday night, week 1 included,
+so that was wrong almost every week of the season. The alerts themselves
+were never affected — `worker/live.js` groups by kickoff SLOT and formats
+the real timestamp in each player's own timezone — but a preview that
+contradicts the real thing teaches people to expect the wrong day and then
+to distrust the alert that actually arrives. Case 24 is a STATIC check
+comparing index.html's preview against `compose()` in the Worker, so it
+fails if either side drifts from the other.
 
 ## Known limit, deliberately not "fixed" in code
 

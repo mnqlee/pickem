@@ -3313,7 +3313,8 @@ function renderTZ(){
    ============================================================ */
 /* ---------- the boot cover ---------- */
 const bootEl=()=>document.getElementById('boot');
-function bootHide(){ const b=bootEl(); if(b)b.classList.add('hide'); }
+function bootHide(){ clearTimeout(bootStageTimer);
+  const b=bootEl(); if(b)b.classList.add('hide'); }
 /* Put the cover BACK. Used when the wizard finishes and startApp() still
    has work to do: without it the player is dropped onto the app's static
    markup — no week strip, no games — while the load runs underneath, which
@@ -3325,8 +3326,28 @@ function bootShow(){ const b=bootEl(); if(b){ b.classList.remove('hide','err'); 
    it genuinely can take that long: a cold Firestore connection, the whole
    season's schedule, the roster, the standings and the week's picks, none
    of which exist on the device yet. */
-function bootSay(msg){ const m=document.getElementById('bootMsg');
-  if(m&&!bootEl()?.classList.contains('err'))m.textContent=msg; }
+let bootStageTimer=null;
+function bootSay(msg){
+  const m=document.getElementById('bootMsg');
+  if(m&&!bootEl()?.classList.contains('err'))m.textContent=msg;
+  /* Every stage change also resets the long-wait line below. The stages
+     are REAL — each one is set at the point that work actually starts — so
+     the message never claims progress that has not happened. What it can't
+     do is promise a stage will be quick, and on a first launch the season
+     read genuinely can hold for twenty seconds. So if one stage outlasts
+     nine seconds, say why, once, instead of letting a true message go
+     stale and start looking frozen again. */
+  const w=document.getElementById('bootWhy');
+  if(w){ w.classList.add('hide'); w.textContent=''; }
+  clearTimeout(bootStageTimer);
+  bootStageTimer=setTimeout(()=>{
+    const el=document.getElementById('bootWhy');
+    if(el&&!bootEl()?.classList.contains('err')){
+      el.textContent='First launch downloads the whole season. It only happens once.';
+      el.classList.remove('hide');
+    }
+  },9000);
+}
 function bootFail(msg,err){
   const b=bootEl(); if(!b)return;
   b.classList.remove('hide'); b.classList.add('err');
@@ -3399,11 +3420,13 @@ async function startApp({fromOnboarding=false,background=false}={}){
     // need to know who the owner actually is.
     IS_OWNER = !!(pool.ownerUid && PS.user && pool.ownerUid===PS.user.uid);
 
+    bootSay('Checking your spot in the pool…');
     const roster=await ensureJoined();
     bootSay('Loading the season schedule…');
     await loadSeason(roster);
-    bootSay('Getting your picks…');
+    bootSay(`Setting up week ${state.week}…`);
     await loadWeek(state.week);
+    bootSay('Almost ready…');
     render(); tick();
     watchLive();
       /* Roster-wide, not per-week, so it is subscribed once here rather
@@ -4265,8 +4288,18 @@ const obScreens=()=>[
       </div>
       <p class="ob-lbl">Every alert we will ever send you</p>
       <div class="ntwrap">
-        ${nt('Tue','Week 4 is open','16 games to pick. First kickoff Sunday 1:00 PM.')}
-        ${nt('Sat','Week 4, 6 left',"You still need 6 picks before Sunday 1:00 PM.")}
+        <!-- These four are a PREVIEW of real alerts, so they have to match
+             what compose() in worker/live.js actually sends. They said
+             "First kickoff Sunday 1:00 PM", which is wrong for almost every
+             week of the season: nearly every week opens with Thursday night
+             football, and week 1 certainly does. The real alerts were never
+             affected — they are grouped per kickoff SLOT and formatted from
+             the true timestamp in each player's own timezone — but a
+             preview that contradicts the thing it previews teaches people
+             to expect the wrong day. Wording below now mirrors compose()
+             exactly, Thursday opener included. -->
+        ${nt('Tue','Week 4 is open','16 games to pick. First kickoff Thu, 8:20 PM your time.')}
+        ${nt('Wed','Week 4, 6 left',"You still need 6 picks before Thu, 8:20 PM.")}
         ${nt('Sun','3 unpicked','2 hours until kickoff. After that they score zero.')}
         ${nt('Sun','Last call, 3 games','Kickoff in 30 minutes. Unpicked games score zero.')}
       </div>

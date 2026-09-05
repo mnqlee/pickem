@@ -105,7 +105,8 @@ console.log('\n4. Loading and failure are both visible');
      a motionless message reads as a hang. This asserts it says one of
      them, not which, so the wording can change without a false failure. */
   ok('and it says what is happening',
-     /getting your week|opening your pool|season schedule|your picks/i.test(mid.msg),
+     /getting your week|opening your pool|your spot|season schedule|setting up week|almost ready/i
+       .test(mid.msg),
      mid.msg);
   await page.waitForTimeout(2000);
   const done = await page.evaluate(() => ({

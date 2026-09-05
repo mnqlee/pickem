@@ -1335,6 +1335,43 @@ console.log('\n23. The app must load WHILE the wizard is being read, not after i
   await ctx.close();
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\n24. The alert preview must not contradict the alerts it previews');
+{
+  /* The onboarding screen that shows "every alert we will ever send you"
+     said "First kickoff Sunday 1:00 PM". Nearly every NFL week opens on
+     Thursday night, week 1 included, so that was wrong almost every week
+     of the season.
+
+     The alerts themselves were never affected — worker/live.js groups by
+     kickoff SLOT and formats the real timestamp in each player's own
+     timezone — but a preview that contradicts the real thing teaches
+     people to expect the wrong day and then to distrust the alert that
+     arrives. Static check on purpose: it compares the two files, so it
+     fails if either the preview or compose() drifts from the other. */
+  const fs = await import('node:fs');
+  const app  = fs.readFileSync('/root/work/pickem/index.html', 'utf8');
+  const live = fs.readFileSync('/root/work/pickem/worker/live.js', 'utf8');
+
+  const preview = (app.match(/\$\{nt\((.|\n)*?\)\}/g) || []).join(' ');
+  ok('the preview exists to check', preview.length > 0);
+  ok('it no longer claims the week opens on Sunday',
+     !/First kickoff Sunday/i.test(preview), preview.slice(0, 120));
+  ok('it names a Thursday opener, like the real schedule',
+     /Thu,/.test(preview));
+
+  /* Shape check against the sender: compose() writes "First kickoff ${w}
+     your time." — the preview must use the same sentence, or it is
+     previewing something the app does not send. */
+  ok('compose() still phrases it the way the preview does',
+     /First kickoff \$\{w\} your time\./.test(live));
+  ok('and the preview matches that phrasing',
+     /First kickoff [^.]+ your time\./.test(preview), preview.slice(0, 200));
+  ok('the last-call wording matches too',
+     /Kickoff in \$\{mins\} minutes\. Unpicked games score zero\./.test(live) &&
+     /Kickoff in 30 minutes\. Unpicked games score zero\./.test(preview));
+}
+
 /* NOT COVERED HERE, deliberately, and worth knowing about.
 
    weekSum() now prefers the server's figure for any week that is not the
