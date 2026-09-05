@@ -1360,7 +1360,12 @@ tbody tr.me td.tot{background:#241F1E}
       <div class="prefs" id="prefs"></div>
     </div>
     <div class="opt"><h4>Last load</h4>
-      <p id="diagLine">No timings recorded yet.</p></div>
+      <!-- pre-line so the second line (the per-read breakdown written by
+           renderDiag) actually lands on its own line. It is set with
+           textContent, deliberately: these numbers are read back off a
+           screenshot, and nothing in here should ever be able to render
+           as markup. -->
+      <p id="diagLine" style="white-space:pre-line">No timings recorded yet.</p></div>
     <div class="opt"><h4>Kickoff lock</h4>
       <p>Each game closes the moment it kicks off. Anything you have not picked by then scores zero. There is no late entry.</p></div>
     <div class="opt"><h4>Pick visibility</h4>
@@ -3300,8 +3305,15 @@ function renderDiag(){
   try{ t=JSON.parse(localStorage.getItem('ps_boot_timings')||'null'); }catch(_){}
   if(!t||!t.steps||!t.steps.length){ el.textContent='No timings recorded yet.'; return; }
   const total=t.steps.reduce((a,b)=>a+(b.ms||0),0);
+  /* Two lines, because they answer two different questions. The stages are
+     what the player waited through; the calls are which read was slow, and
+     a bounded stage can no longer tell you that on its own. */
   el.textContent=`${Math.round(total/100)/10}s total — `
-    +t.steps.map(x=>`${x.k} ${Math.round((x.ms||0)/100)/10}s`).join(', ');
+    +t.steps.map(x=>`${x.k} ${Math.round((x.ms||0)/100)/10}s`).join(', ')
+    +((t.calls&&t.calls.length)
+      ? `\nReads: `+t.calls.map(x=>`${x.k} ${Math.round((x.ms||0)/100)/10}s`
+          +(x.ok===false?' (failed)':'')).join(', ')
+      : '');
 }
 function renderTZ(){
   const first=[...slate()].sort((a,b)=>a.show-b.show)[0];
@@ -3330,8 +3342,9 @@ function bootHide(){ clearTimeout(bootStageTimer); clearInterval(bootTick);
   bootMark();
   try{ if(bootMarks.length)
     localStorage.setItem('ps_boot_timings',
-      JSON.stringify({at:Date.now(),steps:bootMarks})); }catch(_){}
+      JSON.stringify({at:Date.now(),steps:bootMarks,calls:netMarks})); }catch(_){}
   if(bootMarks.length)console.info('boot timings:',bootTimings());
+  if(netMarks.length)console.info('call timings:',netTimings());
   /* Refresh the Settings line now rather than leaving it showing the
      PREVIOUS launch: render() runs before this point, so without it the
      numbers a player would screenshot are always one load out of date. */
@@ -3365,6 +3378,28 @@ function bootMark(){
     bootMarks[bootMarks.length-1].ms=Date.now()-bootStageAt;
 }
 function bootTimings(){ return bootMarks.map(m=>`${m.k} ${Math.round((m.ms||0)/100)/10}s`).join(' · '); }
+
+/* PER-CALL TIMING, separate from the stage timing above.
+
+   The stages tell you how long the player waited. They stopped telling
+   you WHY the moment the pool read was bounded — a capped stage always
+   reports the cap. This wraps the individual network calls instead, so a
+   slow launch can be reported as "pool 27.4s" rather than "it took a
+   while", and so the next change is aimed at a measurement instead of a
+   theory. Purely observational: it returns the same promise, resolves and
+   rejects identically, and a failure is recorded with an x rather than
+   swallowed. */
+let netMarks=[];
+function timed(label,p){
+  const t0=Date.now();
+  const done=ok=>{ netMarks.push({k:label,ms:Date.now()-t0,ok}); };
+  return p.then(v=>{ done(true); return v; },
+                e=>{ done(false); throw e; });
+}
+function netTimings(){
+  return netMarks.map(m=>`${m.k} ${Math.round(m.ms/100)/10}s${m.ok?'':' (failed)'}`)
+                 .join(', ');
+}
 function bootSay(msg){
   const m=document.getElementById('bootMsg');
   bootMark();
@@ -3463,11 +3498,58 @@ async function startApp({fromOnboarding=false,background=false}={}){
        starts here and loadSeason awaits whatever is already in flight
        rather than issuing its own. Worst case it is no slower; best case
        it is free. */
-    seasonPrefetch=PS.getAllWeeks().catch(e=>{ seasonPrefetch=null; throw e; });
+    seasonPrefetch=timed('schedule',PS.getAllWeeks())
+                     .catch(e=>{ seasonPrefetch=null; throw e; });
     // ensureCurrentPool (not getPool) so a pool id left over from an
     // earlier/different season gets cleared instead of silently loading
     // stale data — see firebase-init.js's SEASON HANDOVER note.
-    const pool=await PS.ensureCurrentPool();
+    /* AND IT IS BOUNDED, because on a first launch this ONE document read
+       has been measured at 25-30 seconds while the 272-document schedule
+       read beside it finishes in three. The cause is still not understood
+       — three explanations have been wrong so far — so this does not
+       pretend to fix it. It stops it from being the player's problem.
+
+       What the read decides: whether the stored pool still exists and is
+       this season, and who owns it. The FIRST is already known well enough
+       to proceed — the id came from localStorage, which is only ever
+       written after a successful join — and the second is cosmetic. So
+       when the read is slow, carry on with the stored id and let the
+       verification land whenever it lands (see poolLate below). If it
+       comes back "not your pool", THAT is when the join screen appears.
+
+       Nothing is trusted that was not trusted before: every read after
+       this point is still checked by firestore.rules on the server, so a
+       pool this player is not in fails there, exactly as it would have. */
+    /* PS.poolId, not localStorage: it is the id every read after this one
+       will actually use, so proceeding on anything else would be
+       proceeding on a different pool than the app is about to query. It is
+       seeded from localStorage at module load and cleared on sign-out, and
+       it is read HERE, before the race, because ensureCurrentPool clears
+       it as part of deciding the answer. */
+    const knownPoolId=PS.poolId||null;
+    const poolRead=timed('pool',PS.ensureCurrentPool());
+    const pool=await Promise.race([
+      poolRead,
+      /* With no pool id there is nothing to proceed ON — that is a genuine
+         "you are not in a pool yet", not a slow read — so resolve to null
+         and let the join screen appear as it always did. */
+      new Promise(r=>setTimeout(()=>r(knownPoolId
+        ? { id:knownPoolId, provisional:true } : null), 3500))
+    ]);
+    if(pool&&pool.provisional){
+      console.warn('pool read is slow; continuing on the stored pool id');
+      /* The verification still matters, it just no longer holds the door.
+         A pool that has been deleted or rolled to a new season clears the
+         stored id inside ensureCurrentPool, and an app pointed at a pool
+         that is gone can do nothing useful — so send them to the join
+         screen rather than leave them somewhere broken. */
+      poolRead.then(late=>{
+        if(!late){ appBooted=false; showOnboarding(false); return; }
+        if(late.ownerUid&&PS.user&&late.ownerUid===PS.user.uid){
+          IS_OWNER=true; try{ render(); }catch(_){}
+        }
+      }).catch(e=>console.warn('late pool read failed',e));
+    }
     if(!pool){
       bootHide();
       /* Reaching here FROM the finished wizard means the join genuinely
@@ -3487,11 +3569,11 @@ async function startApp({fromOnboarding=false,background=false}={}){
     IS_OWNER = !!(pool.ownerUid && PS.user && pool.ownerUid===PS.user.uid);
 
     bootSay('Checking your spot in the pool…');
-    const roster=await ensureJoined();
+    const roster=await timed('roster',ensureJoined());
     bootSay('Loading the season schedule…');
-    await loadSeason(roster);
+    await timed('season',loadSeason(roster));
     bootSay(`Setting up week ${state.week}…`);
-    await loadWeek(state.week);
+    await timed('week',loadWeek(state.week));
     bootSay('Almost ready…');
     render(); tick();
     watchLive();

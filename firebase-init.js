@@ -132,26 +132,42 @@ function watchAuth(cb) {
       poolId = null;
       try { localStorage.removeItem('ps_pool'); } catch {}
     }
-    if (u) {
-      /* Guarded, because cb(u) is the contract and it has to fire.
-         ensureCurrentPool() and ensureMember() have no internal try/catch,
-         so a single denied read or one offline moment used to throw
-         straight past the callback: boot() never heard that anyone had
-         signed in, and the app sat on its loading screen forever with no
-         error, no retry and nothing in the UI to say why. Setup failing is
-         recoverable; never being told about the sign-in is not. */
-      try {
-        const pool = await ensureCurrentPool();   // clears a stale pool id
-        if (pool) {
-          await ensureMember();
-          await upsertRoster();                   // name + timezone
-          await refreshPushToken();               // re-arm alerts for THIS pool
-        }
-      } catch (e) {
-        console.warn('post-sign-in setup failed', e);
-      }
-    }
+    /* THE CALLBACK FIRES FIRST. NOTHING GOES IN FRONT OF IT.
+
+       This chain used to be AWAITED here, ahead of cb(u) — four sequential
+       round trips (pool, membership, roster write, push token) plus an FCM
+       registration, every one of them in front of the app being allowed to
+       begin loading. Measured on a real launch, that was most of a
+       thirty-second wait spent staring at the cover; refreshPushToken() is
+       the worst of it, because getToken() registers a push subscription
+       with Google and on iOS that alone can take tens of seconds. None of
+       it is needed to show somebody their week.
+
+       All of it still runs, and it is all still safe to repeat: startApp()
+       does its own ensureCurrentPool(), and ensureJoined() covers
+       membership and the roster. So this is maintenance, and maintenance
+       belongs behind the app rather than in front of it.
+
+       Still guarded, for the original reason: cb(u) is the contract and it
+       has to fire. These functions have no internal try/catch, so one
+       denied read or one offline moment used to throw straight past the
+       callback — boot() never heard that anyone had signed in, and the app
+       sat on its loading screen forever with no error and no retry. */
     cb(u);
+    if (u) {
+      (async () => {
+        try {
+          const pool = await ensureCurrentPool();   // clears a stale pool id
+          if (pool) {
+            await ensureMember();
+            await upsertRoster();                   // name + timezone
+            await refreshPushToken();               // re-arm alerts for THIS pool
+          }
+        } catch (e) {
+          console.warn('post-sign-in setup failed', e);
+        }
+      })();
+    }
   });
 }
 
@@ -276,7 +292,27 @@ function watchMembers(cb) {
    Somebody who never taps the new invite link still points at the old
    pool. Once that pool is deleted every read fails and they see an empty
    app with no explanation. Check on launch and clear it. */
-async function ensureCurrentPool() {
+/* ONE READ, however many callers ask for it.
+
+   Two places legitimately want this on the same launch: the post-sign-in
+   maintenance chain in watchAuth, and startApp() in the page, which is the
+   one that acts on the answer. Before, that was two separate reads of the
+   same document racing each other — and worse than wasteful, because
+   either one can CLEAR the stored pool id, so the loser could pull the
+   pool out from under a load the winner had already waved through.
+
+   Sharing the in-flight promise makes them a single read with a single
+   outcome: both callers see the same answer, the clear happens once, and
+   startApp() cannot be surprised by it. Cleared afterwards so a later
+   check (a season handover mid-session) is a real read, not a memory. */
+let poolCheck = null;
+function ensureCurrentPool() {
+  if (poolCheck) return poolCheck;
+  poolCheck = readCurrentPool().finally(() => { poolCheck = null; });
+  return poolCheck;
+}
+
+async function readCurrentPool() {
   if (!poolId) return null;
   let snap;
   try {
