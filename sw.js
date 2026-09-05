@@ -5,14 +5,19 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.10.2';
+const VERSION = 'v1.11.0';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not
    listed still works, it just comes from the network. */
+/* './index.html' is deliberately NOT here, and neither is it the app's
+   start_url any more. Cloudflare Pages canonicalises /index.html to /, so
+   requesting it follows a REDIRECT — and a redirected response is the one
+   thing a service worker may not hand back for a navigation. See the
+   navigation guard in the fetch handler. './' is the canonical URL and
+   redirects nowhere. */
 const SHELL = [
   './',
-  './index.html',
   './firebase-init.js',
   './manifest.json',
   './icons/icon-192.png',
@@ -127,6 +132,31 @@ self.addEventListener('fetch', e => {
     try { (await caches.open(CACHE)).put(req, res.clone()); } catch (_) {}
   };
 
+  /* A NAVIGATION MAY NEVER BE ANSWERED WITH A REDIRECTED RESPONSE.
+
+     Safari enforces this and says so in as many words: "Response served by
+     service worker has redirections". The whole app then fails to open,
+     with no way back in except deleting the Home Screen icon.
+
+     It happened because the manifest's start_url was './index.html' while
+     Cloudflare Pages canonicalises /index.html to /. So every launch of the
+     installed app was a navigation whose fetch followed a redirect, and
+     handing that back from here is a network error in WebKit. start_url is
+     './' now, which fixes new installs — but anyone who installed the old
+     one keeps launching /index.html until they reinstall, and any future
+     redirect (apex to www, http to https, a trailing slash) would do the
+     same thing again.
+
+     So sanitise instead of relying on the manifest: rebuilding the response
+     from its own body, status and headers produces an identical answer with
+     the redirect flag cleared. Only ever does work when the flag is set. */
+  const noRedirect = async (res) => {
+    if (!res || req.mode !== 'navigate' || !res.redirected) return res;
+    const body = await res.blob();
+    return new Response(body, { status: res.status,
+      statusText: res.statusText, headers: res.headers });
+  };
+
   if (isShell) {
     /* STALE-WHILE-REVALIDATE for app code.
 
@@ -162,10 +192,10 @@ self.addEventListener('fetch', e => {
         // returned — waitUntil keeps the worker alive long enough to
         // finish writing the new bytes for next launch.
         e.waitUntil(fresh);
-        return hit;
+        return await noRedirect(hit);
       }
-      return (await fresh) ||
-             (await caches.match('./index.html')) ||
+      return (await noRedirect(await fresh)) ||
+             (await noRedirect(await caches.match('./'))) ||
              new Response('Offline', { status: 503,
                headers: { 'Content-Type': 'text/plain' } });
     })());

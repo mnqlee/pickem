@@ -1,6 +1,6 @@
 # Tests
 
-464 checks. Nothing here touches Firebase, Resend, KV or the live site.
+470 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -18,7 +18,7 @@
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
     node regress.ui.test.mjs     # 118 bugs that shipped, so they cannot return
-    node sw.push.test.mjs        # 16  service worker push + what it may cache
+    node sw.push.test.mjs        # 22  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
     python season_sim.py         # 118 the REAL scorer, 50 players, 18 weeks
@@ -441,6 +441,25 @@ player's own preferences — two different things — so it could truthfully
 say "reminders are off" with every switch in Settings on. The app appeared
 to contradict itself. Alerts are still requested during onboarding and
 still switchable in Settings.
+
+**The installed app would not open at all: "Response served by service
+worker has redirections".** Safari's own words, and the only way back in
+was deleting the Home Screen icon.
+
+The manifest's `start_url` was `./index.html`, and Cloudflare Pages
+canonicalises `/index.html` to `/`. So every launch of the installed app
+was a NAVIGATION whose fetch followed a redirect — and WebKit refuses a
+redirected response served by a service worker for a navigation. It only
+showed up on the installed app, because that is the only thing that
+launches `start_url`; the browser tab goes to `/` and never redirects.
+
+Fixed twice over, because the manifest alone is not enough: `start_url` is
+`./` now, AND the worker rebuilds any redirected navigation response from
+its own body and headers so the flag is cleared. Anyone who installed the
+old manifest keeps requesting `/index.html` until they reinstall, and an
+apex-to-www or http-to-https redirect would reproduce it on a fresh
+install. `./index.html` is also out of the precache list and the offline
+fallback is `./`, since adding it followed the same redirect.
 
 ## Known limit, deliberately not "fixed" in code
 

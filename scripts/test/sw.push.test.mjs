@@ -114,5 +114,45 @@ function boot(fetchStub){
   ok('a 404 is never written to the cache', t.put.length === 0, t.put.join(','));
 }
 
+{
+  /* A NAVIGATION ANSWERED WITH A REDIRECTED RESPONSE KILLS THE APP IN SAFARI.
+
+     "Safari can't open the page. The error was: Response served by service
+     worker has redirections." The installed app would not launch at all,
+     and the only way back in was deleting the Home Screen icon.
+
+     Cause: manifest start_url was './index.html', and Cloudflare Pages
+     canonicalises /index.html to /. So every launch was a navigation whose
+     fetch followed a redirect, and WebKit refuses that from a worker.
+     start_url is './' now, but this asserts the WORKER never hands one
+     back either — anyone still on the old install keeps requesting
+     /index.html, and apex-to-www or http-to-https would do it again. */
+  const body = 'hello';
+  const redirected = {
+    ok:true, status:200, statusText:'OK', headers:{}, redirected:true,
+    clone:()=>({ ok:true, status:200 }),
+    blob:async()=>body
+  };
+  const t = boot(async () => redirected);
+  const res = await t.hit('https://x.com/index.html','navigate');
+  ok('a navigation never returns a redirected response',
+     res && res.redirected !== true, 'redirected=' + (res && res.redirected));
+  ok('and the answer itself still comes back', !!res);
+
+  // A non-navigation is left exactly as it was — no needless rebuilding.
+  const t2 = boot(async () => redirected);
+  const sub = await t2.hit('https://x.com/firebase-init.js','cors');
+  ok('a sub-resource is passed through untouched', sub === redirected);
+}
+{
+  /* './index.html' must not be precached: adding it follows the same
+     redirect, and the offline fallback should be the canonical './'. */
+  const shell = src.slice(src.indexOf('const SHELL'), src.indexOf('];', src.indexOf('const SHELL')));
+  ok('index.html is not in the precache list', !shell.includes("'./index.html'"), shell);
+  ok('the canonical root is', shell.includes("'./'"));
+  ok('the offline fallback is the root, not index.html',
+     src.includes("caches.match('./')") && !src.includes("caches.match('./index.html')"));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
