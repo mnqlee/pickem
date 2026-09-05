@@ -1,6 +1,6 @@
 # Tests
 
-470 checks. Nothing here touches Firebase, Resend, KV or the live site.
+474 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -17,7 +17,7 @@
     node polish.ui.test.mjs      # 41  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 118 bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 122 bugs that shipped, so they cannot return
     node sw.push.test.mjs        # 22  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
@@ -460,6 +460,30 @@ old manifest keeps requesting `/index.html` until they reinstall, and an
 apex-to-www or http-to-https redirect would reproduce it on a fresh
 install. `./index.html` is also out of the precache list and the offline
 fallback is `./`, since adding it followed the same redirect.
+
+**A first-ever sign-in took over a minute, and nearly all of it was
+avoidable.** Everything after the PIN screen — install, alerts, the six
+rules — is the player READING. Twenty seconds or more, during which the app
+did nothing at all. Only when they tapped the last button did it start: a
+cold Firestore connection, the whole season's schedule (272 documents), the
+roster, the standings and the week's picks, none of them on the device yet.
+A minute of "Getting your week…" with the network idle the entire time they
+were reading.
+
+The load now starts the instant the join succeeds and runs underneath the
+wizard, deliberately not awaited. It cannot close the wizard
+(`obWizardActive`) and cannot throw an error cover over it (the
+`background` flag); if it fails, `appBooted` stays false and `obAdvance`
+retries and reports properly with the wizard out of the way. The cover also
+names the step it is on now, because one frozen line for a minute reads as
+a hang.
+
+Case 23 asserts both halves: `getAllWeeks` must already have been called
+while the wizard is still open, and the wait after the final tap must be
+short even with every read slowed. Its first draft used 2.5s reads and
+produced 4646ms without the fix against a 4500ms threshold — a coin toss,
+not a test. The delays are 5s now, so the mutation reports 7939ms against
+the same threshold.
 
 ## Known limit, deliberately not "fixed" in code
 

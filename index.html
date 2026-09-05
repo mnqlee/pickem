@@ -3320,6 +3320,13 @@ function bootHide(){ const b=bootEl(); if(b)b.classList.add('hide'); }
    is the exact "stuck" screen this whole round was about. A loading cover
    is honest; a bare shell is not. */
 function bootShow(){ const b=bootEl(); if(b){ b.classList.remove('hide','err'); } }
+/* Name the step. A single frozen "Getting your week…" for a minute is
+   indistinguishable from a hang, and on a first-ever sign-in from a phone
+   it genuinely can take that long: a cold Firestore connection, the whole
+   season's schedule, the roster, the standings and the week's picks, none
+   of which exist on the device yet. */
+function bootSay(msg){ const m=document.getElementById('bootMsg');
+  if(m&&!bootEl()?.classList.contains('err'))m.textContent=msg; }
 function bootFail(msg,err){
   const b=bootEl(); if(!b)return;
   b.classList.remove('hide'); b.classList.add('err');
@@ -3365,10 +3372,11 @@ function bootFail(msg,err){
    yet a member. Everybody already in the pool boots fine forever after. */
 let appBooting=false, appBooted=false, obWizardActive=false;
 
-async function startApp({fromOnboarding=false}={}){
+async function startApp({fromOnboarding=false,background=false}={}){
   if(appBooting||appBooted)return appBooted;
   appBooting=true;
   try{
+    bootSay('Opening your pool…');
     // ensureCurrentPool (not getPool) so a pool id left over from an
     // earlier/different season gets cleared instead of silently loading
     // stale data — see firebase-init.js's SEASON HANDOVER note.
@@ -3392,7 +3400,9 @@ async function startApp({fromOnboarding=false}={}){
     IS_OWNER = !!(pool.ownerUid && PS.user && pool.ownerUid===PS.user.uid);
 
     const roster=await ensureJoined();
+    bootSay('Loading the season schedule…');
     await loadSeason(roster);
+    bootSay('Getting your picks…');
     await loadWeek(state.week);
     render(); tick();
     watchLive();
@@ -3426,7 +3436,13 @@ async function startApp({fromOnboarding=false}={}){
        user on an empty shell forever with nothing to read and nothing
        to press. */
     console.error('boot failed',e);
-    bootFail("We couldn't load your week. Check your connection and try again.",e);
+    /* A BACKGROUND ATTEMPT FAILS QUIETLY. It runs while the player is still
+       reading the wizard, so throwing an error cover over the top of it
+       would be worse than the failure: appBooted stays false, and
+       obAdvance's own call retries and reports properly if it fails
+       again with the wizard out of the way. */
+    if(!background&&!obWizardActive)
+      bootFail("We couldn't load your week. Check your connection and try again.",e);
     return false;
   }finally{ appBooting=false; }
 }
@@ -4205,6 +4221,29 @@ const obScreens=()=>[
            screens to go. A token refresh landing now must not close the
            wizard underneath them — see startApp(). */
         obWizardActive=true;
+
+        /* LOAD THE APP NOW, WHILE THEY READ THE REST OF THE WIZARD.
+
+           This is the single biggest thing that makes a first sign-in feel
+           slow, and it was pure waste. Everything after this point — the
+           install screen, the alerts screen, the six rules — is the player
+           READING, twenty seconds or more of it, during which the app sat
+           completely idle. Then they tapped the last button and only THEN
+           did it start: a cold Firestore connection, the whole season's
+           schedule, the roster, the standings and the week's picks, none
+           of which exist on the device yet. A minute of staring at
+           "Getting your week…" with the network having been free the
+           entire time they were reading.
+
+           Fired and deliberately not awaited: the wizard must not wait on
+           it, and it must not touch the screen while it runs. It cannot
+           close the wizard (obWizardActive guards that in startApp) and it
+           cannot throw an error cover over it (the background flag does).
+           By the time obAdvance runs, appBooted is usually already true
+           and the app is simply there. If it is still in flight, obAdvance
+           shows the cover and this finishes underneath it; if it failed,
+           obAdvance retries and reports honestly. */
+        startApp({background:true});
       }catch(e){
         console.error('signed in, but opening the pool failed',e);
         pinNote("You're signed in, but we couldn't open the pool. Reload the page "

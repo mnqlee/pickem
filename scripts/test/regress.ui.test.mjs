@@ -1259,6 +1259,82 @@ console.log('\n22. A slow pool join must not freeze the wizard (this takes ~20s)
   await ctx.close();
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\n23. The app must load WHILE the wizard is being read, not after it');
+{
+  /* A first-ever sign-in took over a minute of staring at "Getting your
+     week…", and almost all of it was avoidable. Everything after the PIN
+     screen — install, alerts, the six rules — is the player READING.
+     Twenty seconds or more during which the app did absolutely nothing,
+     and only when they tapped the last button did it start opening a cold
+     Firestore connection and pulling the season, the roster, the standings
+     and the week's picks.
+
+     The load now starts the moment the join succeeds. This asserts it: the
+     schedule read must already have happened BEFORE the wizard is
+     finished, and the wait after the final tap must be short even when
+     every read is slow. */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.request.post(BASE + '/__plan', { data: {
+    newUser: true, signedOut: true,
+    // Every read deliberately slow, so a serial load would be unmistakable.
+    delay: { getAllWeeks: 5000, getMembers: 1200, getStandings: 1200,
+             myPicks: 1200, getRevealed: 1200 } } });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+  await page.waitForSelector('#obNameIn', { timeout: 15000 });
+  await page.fill('#obNameIn', 'Reader');
+  await page.fill('#obMailIn', 'reader@example.com');
+  await page.click('#obGo');
+  await page.waitForSelector('#pin0', { timeout: 15000 });
+  for (let i = 0; i < 6; i++) await page.fill('#pin' + i, '123456'[i]);
+
+  // Somebody reading the next screens. Nothing is clicked in this window.
+  await page.waitForTimeout(9000);
+
+  const startedEarly = await page.evaluate(() =>
+    (window.__ps?.log || []).includes('getAllWeeks'));
+  ok('the season is already being fetched while the wizard is still open',
+     startedEarly === true, 'getAllWeeks not called yet');
+
+  const stillOpen = await page.evaluate(() =>
+    !document.querySelector('#ob')?.classList.contains('hide'));
+  ok('and the wizard was not closed out from under them',
+     stillOpen === true);
+
+  // Now finish the wizard and time what is left.
+  const t0 = Date.now();
+  for (let i = 0; i < 8; i++) {
+    const done = await page.evaluate(() =>
+      document.querySelector('#ob')?.classList.contains('hide'));
+    if (done) break;
+    const btn = await page.$('#obNext, #obSkip, .ob-btn');
+    if (!btn) break;
+    await btn.click().catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  await page.waitForFunction(() =>
+    document.querySelectorAll('#weeks .wk').length > 0, { timeout: 20000 });
+  const tail = Date.now() - t0;
+
+  /* Generous, because the clicking loop itself spends time. The point is
+     that it is nowhere near the ~5.7s of reads the plan above configures —
+     those were paid while the player was reading. */
+  /* The plan above configures roughly ten seconds of reads. Without the
+     preload the tail carries all of it; with it, the tail is only the
+     clicking loop. A wide gap on purpose — an earlier draft used 2.5s
+     reads and the two cases came out 4646ms and just under the 4500ms
+     threshold, which is a coin toss, not a test. */
+  ok('and the wait after the last tap is short, not the whole load',
+     tail < 4500, tail + 'ms after the final screen');
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
 /* NOT COVERED HERE, deliberately, and worth knowing about.
 
    weekSum() now prefers the server's figure for any week that is not the

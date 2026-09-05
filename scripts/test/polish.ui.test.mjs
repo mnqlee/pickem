@@ -99,7 +99,14 @@ console.log('\n4. Loading and failure are both visible');
              msg: document.getElementById('bootMsg')?.textContent || '' };
   });
   ok('a branded loading state covers the boot reads', mid.shown, JSON.stringify(mid));
-  ok('and it says what is happening', /getting your week/i.test(mid.msg), mid.msg);
+  /* The cover now names the STEP rather than showing one frozen line —
+     "Opening your pool…", then the schedule, then the picks — because a
+     first sign-in can hold this screen for the better part of a minute and
+     a motionless message reads as a hang. This asserts it says one of
+     them, not which, so the wording can change without a false failure. */
+  ok('and it says what is happening',
+     /getting your week|opening your pool|season schedule|your picks/i.test(mid.msg),
+     mid.msg);
   await page.waitForTimeout(2000);
   const done = await page.evaluate(() => ({
     hidden: document.getElementById('boot').classList.contains('hide'),
