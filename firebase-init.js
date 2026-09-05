@@ -64,29 +64,49 @@ const CLOCK_SKEW_MS = 120000;
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-/* AUTO-DETECT THE TRANSPORT, DO NOT ASSUME THE STREAMING ONE WORKS.
+/* DO NOT PROBE THE TRANSPORT. GO STRAIGHT TO THE ONE THAT WORKS.
 
-   Evidence, not a guess. The loading screen names the step it is on, and a
-   player on 4G in Japan sat on "Checking your spot in the pool…" for about
-   thirty seconds — that is `getMembers()`, a handful of documents, and the
-   FIRST Firestore call of the session. Everything after it was quick. A
-   read of a few documents cannot take thirty seconds; establishing the
-   connection can, and only the first one has to.
+   This was `experimentalAutoDetectLongPolling`, on the reasoning that the
+   SDK should pick the transport rather than have one assumed for it. The
+   per-read timing then made the shape of the problem unmistakable, and it
+   was not the one that setting fixes. From a real launch on 4G in Japan,
+   read by read:
 
-   That is the signature of Firestore's default streaming transport being
-   degraded or blocked by a network — common on mobile carriers and behind
-   proxies. The SDK eventually gives up and falls back to long polling, and
-   the giving-up is what the player is watching.
+     pool 0s, schedule 30.8s, pool 0s, schedule 0.5s, pool 0.3s,
+     schedule 0.5s, roster 0.5s, season 30.6s, week 1s
 
-   `experimentalAutoDetectLongPolling` makes the SDK probe and pick quickly
-   instead of waiting out the stream. It is Firebase's own supported option
-   for exactly this, and it is a no-op on networks where streaming is fine.
+   Look at what is fast. The SAME schedule query — 272 documents — costs
+   30.8 seconds the first time and 0.5 seconds the second. A repeat of an
+   identical query cannot get sixty times cheaper because of anything to do
+   with the query; it gets cheaper because the connection is already up.
+   And `season` paying another 30.6s is that cost a second time, on the one
+   read in that batch that had no listener open (getStandings).
 
-   HONEST CAVEAT: this cannot be verified from the build sandbox, which has
-   no route to Firestore at all. If a first launch is still slow after this,
-   the setting is one line and reverting it changes nothing else — the
-   evidence just pointed here more strongly than anywhere else. */
-const db   = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+   Thirty seconds is also not a duration anything measures its way to. It
+   is a timeout expiring — the streaming transport hanging, unacknowledged,
+   until the SDK gives up and does what it should have done at the start.
+   Auto-detect is supposed to shorten that probe, and on this network it
+   plainly did not: the probe is itself the thing that hangs, because a
+   carrier proxy that buffers a streaming response looks exactly like a
+   stream that has not produced anything yet.
+
+   So stop probing. `experimentalForceLongPolling` skips detection and
+   opens a long-polling connection immediately. It is Firebase's supported
+   option for networks and proxies that break WebChannel streaming, which
+   is a fair description of most mobile carriers.
+
+   THE COST, stated plainly, because it is a real tradeoff and not a free
+   win: long polling is a little chattier than streaming on a network where
+   streaming would have worked, so live score updates may land a fraction
+   of a second later than they might have. Against thirty seconds of
+   nothing at launch, that is not a close call.
+
+   HONEST CAVEAT, same as before: the build sandbox has no route to
+   Firestore, so this cannot be proven here — only the reasoning above can
+   be checked. If a first launch is still slow, this is one line and
+   reverting it changes nothing else. But this time the evidence is a
+   measurement rather than an inference from a symptom. */
+const db   = initializeFirestore(app, { experimentalForceLongPolling: true });
 
 let user = null;
 let poolId = localStorage.getItem('ps_pool') || null;

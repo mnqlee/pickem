@@ -895,6 +895,12 @@ tbody tr.me td.tot{background:#241F1E}
   -webkit-appearance:none;appearance:none}
 .pinbox:focus{border-color:var(--stamp);outline:none;background:var(--shell-3)}
 .pinbox.filled{border-color:rgba(200,52,42,.6)}
+/* SPENT. The code has been accepted, so the row stops being an input and
+   becomes a record of what was typed. Dimmed, but still legibly so —
+   .58 measures 6.24:1 against the settled box, where the .34 this was
+   first drawn at measured 3.00 and would have failed. */
+.pinbox.done{border-color:rgba(250,247,241,.10);background:rgba(30,29,27,.55);
+  color:rgba(250,247,241,.58)}
 .pinrow.bad{animation:shake .38s}
 .pinrow.bad .pinbox{border-color:var(--stamp);color:var(--stamp)}
 @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}
@@ -951,6 +957,46 @@ tbody tr.me td.tot{background:#241F1E}
   opacity:.78;cursor:progress;animation:obpulse 1.1s ease-in-out infinite}
 @keyframes obpulse{0%,100%{opacity:.78}50%{opacity:.97}}
 @media(prefers-reduced-motion:reduce){.ob-btn.busy:disabled{animation:none}}
+
+/* ---------- THE BUTTON IS THE PROGRESS BAR ----------
+
+   A big filled red button is the strongest "tap me" signal in this app,
+   and while a step was in flight it kept that fill and only changed its
+   words. So it went on asking to be tapped while doing the one thing that
+   makes tapping useless, and players tapped it — repeatedly, for thirty
+   seconds. Telling somebody not to press a button is weaker than making
+   it stop looking like one.
+
+   Filling instead of pulsing: the surface goes dark, and red sweeps across
+   it as the work proceeds. Same two colours, opposite meaning — the red is
+   now a measure of progress rather than an invitation.
+
+   THE LABEL SITS ABOVE THE FILL AND MUST BE READABLE ON BOTH, which is why
+   it is --paper throughout rather than inheriting the disabled grey:
+   15.75:1 on the dark, 4.93:1 on the red. Measured, not eyeballed. */
+.ob-btn.fill,
+.ob-btn.fill:disabled{position:relative;overflow:hidden;background:var(--shell-2);
+  border:1px solid rgba(250,247,241,.14);color:var(--paper);opacity:1;cursor:progress}
+.ob-btn.fill i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--stamp);
+  /* Square on the leading edge so the fill reads as a level, not a pill
+     sliding across. Rounds off only once it is full. */
+  border-radius:10px 0 0 10px;transition:width .45s cubic-bezier(.2,.7,.3,1)}
+.ob-btn.fill.done i{border-radius:10px}
+.ob-btn.fill span{position:relative;z-index:1}
+/* Reduced motion gets the same states, just without the sweep between
+   them — the information is the width, not the animation. */
+@media(prefers-reduced-motion:reduce){.ob-btn.fill i{transition:none}}
+
+/* The confirmation under the keypad. Green because this is the one
+   unambiguous piece of good news in the whole flow: the code worked.
+   #63B257 on #1E1D1B measures 6.45:1, the body copy 6.78:1. */
+.ob-accept{margin-top:16px;padding:15px 14px;border-radius:12px;background:var(--shell-2);
+  border:1px solid rgba(250,247,241,.09)}
+.ob-accept.hide{display:none}
+.ob-accept b{display:block;font-size:13px;font-weight:800;letter-spacing:-.01em;
+  color:var(--live);margin-bottom:5px}
+.ob-accept i{display:block;font-style:normal;font-size:12px;line-height:1.55;
+  color:var(--chalk)}
 
 .ntwrap{margin-top:11px}
 .nt{display:flex;gap:10px;padding:10px 11px;border-radius:13px;background:var(--shell-2);
@@ -3498,8 +3544,32 @@ async function startApp({fromOnboarding=false,background=false}={}){
        starts here and loadSeason awaits whatever is already in flight
        rather than issuing its own. Worst case it is no slower; best case
        it is free. */
-    seasonPrefetch=timed('schedule',PS.getAllWeeks())
-                     .catch(e=>{ seasonPrefetch=null; throw e; });
+    /* STARTED ONCE PER SESSION, NOT ONCE PER ATTEMPT.
+
+       startApp runs more than once on a first sign-in, and legitimately
+       so: watchAuth fires on the initial state and again when the custom
+       token is accepted, and for somebody who has not joined yet both of
+       those honestly find no pool and bail to the onboarding. The join
+       then makes the third attempt the one that works.
+
+       Each attempt used to REPLACE this with a fresh getAllWeeks and drop
+       the one already in flight. The timing readout caught it — three
+       `schedule` reads in one launch, the first costing 30.8s and being
+       thrown away, the survivor billed at 0.5s only because the first had
+       already warmed the cache. Three fetches of 272 documents per new
+       player is also a real bill at fifty players.
+
+       Reusing the promise means the work outlives the attempt that
+       started it, which is the whole point of starting it early. */
+    if(!seasonPrefetch){
+      seasonPrefetch=timed('schedule',PS.getAllWeeks());
+      /* Attached separately, because at this moment nothing is awaiting
+         it — this attempt may bail before loadSeason ever looks at it, and
+         an unobserved rejection is a console error nobody can act on.
+         Clearing it also gives the next attempt a free retry. */
+      seasonPrefetch.catch(e=>{ console.warn('schedule prefetch failed',e);
+                                seasonPrefetch=null; });
+    }
     // ensureCurrentPool (not getPool) so a pool id left over from an
     // earlier/different season gets cleared instead of silently loading
     // stale data — see firebase-init.js's SEASON HANDOVER note.
@@ -3718,7 +3788,7 @@ async function loadSeason(seedMembers){
   // Independent reads, so fetch them together. In series this was four
   // round trips stacked back to back before anything could render — on a
   // phone that is the difference between instant and visibly slow.
-  const [weeks,members,st]=await Promise.all([
+  const [weeks,members]=await Promise.all([
     // Started back in startApp() so it overlaps the pool and roster reads.
     (seasonPrefetch||PS.getAllWeeks()),                  // essential
     // ensureJoined() already read the roster a moment ago in the common
@@ -3726,8 +3796,25 @@ async function loadSeason(seedMembers){
     // spending another round trip on the same documents.
     seedMembers ? Promise.resolve(seedMembers)
                 : optional(PS.getMembers(), [], 'getMembers'),
-    optional(PS.getStandings(),[], 'getStandings'),
   ]);
+  /* STANDINGS IS NOT IN THIS BATCH ANY MORE, and that is worth 30 seconds.
+
+     It was the third leg of the Promise.all, so the whole season load —
+     and therefore the first paint — waited for it. The per-read timing
+     showed what that cost: `schedule 0.5s, roster 0.5s, season 30.6s`. The
+     season stage was thirty seconds of waiting on standings and nothing
+     else.
+
+     Nobody is looking at standings at that moment. The app opens on Picks,
+     which needs the schedule and the roster; the Standings tab is two taps
+     away and reads the same variable whenever it lands. So it is started
+     here, not awaited, and it re-renders itself when it arrives.
+
+     STANDINGS is emptied below either way, so a tab opened during the gap
+     shows a clean zeroed board rather than last week's numbers, and fills
+     in a moment later. That is the correct order of priorities: never make
+     sixteen people wait on a screen none of them has asked for. */
+  const standings=timed('standings',optional(PS.getStandings(),[],'getStandings'));
 
   if(!weeks||!weeks.length) throw new Error('no schedule for season '+PS.SEASON);
 
@@ -3772,7 +3859,14 @@ async function loadSeason(seedMembers){
      "_weeks" summary score_week.py writes, which is not a player. Its doc
      id is the uid, which is what we key on now — filing by name meant two
      players called "Player" overwrote each other. */
-  st.forEach(r=>{ if(r.uid&&!String(r.uid).startsWith('_'))STANDINGS[r.uid]=r; });
+  standings.then(st=>{
+    st.forEach(r=>{ if(r.uid&&!String(r.uid).startsWith('_'))STANDINGS[r.uid]=r; });
+    /* Guarded and late: this can land after the player has already tapped
+       into Standings, so it has to repaint rather than assume the render
+       that read STANDINGS ran after it was filled. Guarded because a failed
+       render must not turn a missing standings row into a dead app. */
+    try{ render(); }catch(e){ console.warn('standings repaint failed',e); }
+  });
 
   /* getScoringMode used to be awaited HERE, on its own, purely because it
      needs state.week — a whole extra sequential round trip between the
@@ -4208,15 +4302,21 @@ const obScreens=()=>[
         `<input class="pinbox" id="pin${i}" type="tel" inputmode="numeric" maxlength="1"
           ${i===0?'autocomplete="one-time-code"':''}>`).join('')}</div>
       <div class="ob-err" id="obPinErr" style="display:none"></div>
+      <div class="ob-accept hide" id="obAccept"><b>Code accepted.</b><i>Downloading all 18
+        weeks, every game all season. This only happens once. Next launch, you're picking
+        games instantly.</i></div>
       <div class="ob-mail"><span>${obEmail||'you@email.com'}</span>
         <button id="obEdit">Change</button></div>
       <div class="ob-resend">Didn't get it?
         <button id="obResend" disabled>Resend</button><span id="obCd"></span></div>`,
-    btn:'Let me in', wait:'Signing you in',
-    /* Shown only if the wait runs past six seconds. Names the thing that
-       is actually slow — the first read of the pool and the season — so a
-       long pause reads as work rather than a hang. */
+    btn:'Let me in', wait:'Checking your code',
+    /* Shown only if the wait runs past two and a half seconds. Names the
+       thing that is actually slow — the first read of the pool and the
+       season — so a long pause reads as work rather than a hang. */
     slow:'Loading season schedule',
+    /* This step's button becomes a progress bar rather than pulsing. See
+       the .ob-btn.fill block in the stylesheet for why. */
+    fill:true,
     can:()=>pinValue().length===6,
     after(){
       const boxes=[...Array(6)].map((_,i)=>$('#pin'+i));
@@ -4351,6 +4451,11 @@ const obScreens=()=>[
          has already been accepted cannot fix a join failure, and the old
          code did exactly that, which is why a successful sign-in could still
          end up looking like a rejected PIN. */
+      /* The one certain piece of good news in this flow, said the moment it
+         is true rather than at the end. Everything below is about opening
+         the pool, which can be slow; none of it can un-accept the code. */
+      pinAccepted();
+
       try{
         await PS.signInWithToken(d.token);
         // Falls back to the one active pool so the bare domain works
@@ -4533,7 +4638,90 @@ const signErr=msg=>{
   el.style.display=msg?'':'none';
 };
 
+/* ============================================================
+   THE PIN BUTTON, WHICH IS ALSO THE PROGRESS BAR
+
+   Three states, and the honesty of the whole thing lives in the third.
+
+   IT NEVER ARRIVES ON A TIMER. Each tick closes a fixed fraction of the
+   distance to a ceiling of 88%, so the fill moves quickly for the first
+   second and creeps thereafter, and it CANNOT reach the end by itself.
+   Only fillDone() takes it to 100%, and only the real work calls that.
+
+   That is not decoration. A progress bar that reaches 100% while the app
+   is still working is worse than no bar at all — it is the single clearest
+   way to tell somebody an app has hung. This one can be read literally in
+   both directions: still moving means still working, full means done.
+
+   The mirror of that rule: the ceiling must never be reached in practice
+   either, or the bar looks stuck at 88%. It is approached asymptotically
+   and gets to about 86% after seven seconds, which is the bound on the
+   step this button belongs to — so in the worst case it is still visibly
+   creeping when the step ends. */
+let fillTimer=null;
+function fillSay(btn,label){
+  const s=btn&&btn.querySelector('span');
+  if(s)s.textContent=label;
+}
+function fillStart(btn,label){
+  clearInterval(fillTimer);
+  if(!btn)return;
+  btn.classList.remove('busy','done');
+  btn.classList.add('fill');
+  btn.innerHTML='<i></i><span></span>';
+  fillSay(btn,label);
+  const bar=btn.querySelector('i');
+  let pct=0;
+  const step=()=>{
+    pct+=(88-pct)*0.16;
+    if(bar)bar.style.width=pct.toFixed(1)+'%';
+  };
+  step();                                   // move immediately, not in 320ms
+  fillTimer=setInterval(step,320);
+}
+function fillDone(btn,label){
+  clearInterval(fillTimer);
+  if(!btn)return;
+  const bar=btn.querySelector('i');
+  if(bar)bar.style.width='100%';
+  btn.classList.add('done');
+  fillSay(btn,label);
+}
+/* Back to an ordinary button. Used when the step failed and the player has
+   to act again — the fill is a statement that work is under way, so it must
+   not survive the work stopping. */
+function fillStop(btn,label){
+  clearInterval(fillTimer);
+  if(!btn)return;
+  btn.classList.remove('fill','done');
+  btn.textContent=label;
+}
+
+/* The code worked. Say so, and retire the keypad.
+
+   Separate from fillDone on purpose: this fires the moment the SERVER
+   accepts the code, which is well before the join finishes. Claiming
+   "you're in" here would be premature, and leaving the screen unchanged
+   until the very end wastes the one piece of certain good news we have. */
+function pinAccepted(){
+  const p=document.getElementById('obAccept');
+  if(p)p.classList.remove('hide');
+  for(let i=0;i<6;i++){
+    const b=document.getElementById('pin'+i);
+    // readOnly, not disabled: a disabled input is skipped by screen
+    // readers, and these digits are still the answer to "what did I type".
+    if(b){ b.classList.add('done'); b.readOnly=true; b.blur(); }
+  }
+  pinNote('');
+  fillSay(document.getElementById('obGo'),'Building your season');
+}
+
 function pinNote(msg,opt={}){
+  /* An error and a green "Code accepted." on screen at once is technically
+     truthful — the code really was accepted, and the failure is about
+     opening the pool — but it reads as the app contradicting itself. The
+     error is the thing that needs acting on, so it gets the screen. */
+  if(msg){ const a=document.getElementById('obAccept'); if(a)a.classList.add('hide'); }
   const el=document.getElementById('obPinErr');
   if(el){
     el.textContent=msg||'';
@@ -4571,7 +4759,12 @@ function obRender(){
     if(obBusy)return;                          // see obBusy — no double submits
     const btn=$('#obGo'), label=btn.textContent;
     obBusy=true;
-    btn.disabled=true; btn.classList.add('busy'); btn.textContent=s.wait||'One moment';
+    btn.disabled=true;
+    /* Two ways of saying "working", and the screen picks the honest one.
+       A step whose length is unknowable pulses; the PIN step, which has a
+       hard seven-second bound on the thing it is waiting for, fills. */
+    if(s.fill) fillStart(btn,s.wait||'One moment');
+    else { btn.classList.add('busy'); btn.textContent=s.wait||'One moment'; }
     /* SAY SOMETHING AFTER SIX SECONDS.
 
        A player reported typing the code, waiting about thirty seconds,
@@ -4589,7 +4782,16 @@ function obRender(){
        like a feature. Two and a half seconds is also simply better: past
        about two, a motionless button is already being tapped again. */
     const slow=setTimeout(()=>{
-      if($('#obGo')===btn&&btn.disabled)btn.textContent=s.slow||'Still working…';
+      if($('#obGo')!==btn||!btn.disabled)return;
+      /* On a filling button the label is inside the span, and writing to
+         textContent would blow away the fill element itself — the bar would
+         vanish at exactly the moment it is doing the most good. */
+      if(btn.classList.contains('fill')){
+        // Only if the code has not been accepted yet; once it has,
+        // "Building your season" is the more accurate thing to be saying.
+        if(document.getElementById('obAccept')?.classList.contains('hide'))
+          fillSay(btn,s.slow||'Still working…');
+      } else btn.textContent=s.slow||'Still working…';
     },2500);
     let ok=true;
     try{ if(s.go) ok=(await s.go())!==false; }
@@ -4599,8 +4801,21 @@ function obRender(){
       // s.go() may have re-rendered the screen underneath us, in which case
       // this button is detached and there is nothing left to restore.
       if($('#obGo')===btn){
-        btn.classList.remove('busy'); btn.textContent=label;
-        btn.disabled=s.can?!s.can():false;      // respect the screen's own gate
+        if(s.fill&&ok){
+          /* Full, and held for a beat before the screen turns. Snapping to
+             100% and vanishing in the same frame means nobody ever sees the
+             bar complete — and the completion is the payoff for watching it.
+             450ms is long enough to register and short enough that it is
+             never a wait. */
+          fillDone(btn,"You're in");
+          await new Promise(r=>setTimeout(r,450));
+        } else if(s.fill){
+          fillStop(btn,label);
+          btn.disabled=s.can?!s.can():false;
+        } else {
+          btn.classList.remove('busy'); btn.textContent=label;
+          btn.disabled=s.can?!s.can():false;    // respect the screen's own gate
+        }
       }
     }
     if(ok)obAdvance(sc);
