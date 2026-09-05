@@ -1405,7 +1405,26 @@ tbody tr.me td.tot{background:#241F1E}
            panel. Nothing can move except the one that was tapped. -->
       <div class="prefs" id="prefs"></div>
     </div>
-    <div class="opt"><h4>Last load</h4>
+    <!-- HIDDEN BY DEFAULT. This is a diagnostic, not a feature.
+
+         It was on this screen for everyone while the launch stalls were
+         being chased, and it earned its place — the per-read line is what
+         identified the transport problem after three wrong theories. But
+         it speaks in the app's own vocabulary (roster, schedule, season,
+         "Opening your pool"), none of which means anything to somebody
+         who just wants to pick games. Worse, a number nobody asked for
+         invites a complaint: put "38.9s total" in front of a player who
+         was perfectly happy and you have taught them to notice load time
+         and to compare it with somebody else's.
+
+         Not owner-only, though that is the obvious instinct — the person
+         who has a slow launch is a PLAYER, so owner-only would put the
+         instrument on the one phone that never needs it. It stays on
+         every device and simply keeps quiet: five taps on the wordmark
+         (see the handler in renderDiag) reveal it, and it stays revealed
+         on that phone afterwards. "Tap the Pick'em logo five times and
+         send me a screenshot" is a thing you can say to anyone. -->
+    <div class="opt hide" id="diagBox"><h4>Last load</h4>
       <!-- pre-line so the second line (the per-read breakdown written by
            renderDiag) actually lands on its own line. It is set with
            textContent, deliberately: these numbers are read back off a
@@ -2326,7 +2345,14 @@ function renderBar(){
   const ready=open.length>0&&picked===open.length&&(!tbNeeded||tbDone);
   $('#pfill').style.width=(open.length?picked/open.length*100:100)+'%';
   $('#plabel').textContent=!open.length?'Every game is locked'
-    :(conf&&picked===open.length&&staked<open.length)?`${open.length-staked} games still need a rank`
+    /* Singular matters here because ONE is the overwhelmingly common
+       case: this line is what a player sees after changing their mind
+       about a single game, which un-picks it and releases its rank. The
+       sheet then reads "1 games still need a rank" on the way to being
+       finished — sloppy, on a screen every player meets mid-week. */
+    :(conf&&picked===open.length&&staked<open.length)?(open.length-staked===1
+        ? '1 game still needs a rank'
+        : `${open.length-staked} games still need a rank`)
     :(picked===open.length&&tbNeeded&&!tbDone)?'Tiebreaker still needs a number'
     /* This read "${picked} of ${open.length} still open" — the count of
        games DONE, described as the count still to do. Zero picks showed
@@ -3345,17 +3371,74 @@ $('#tzsel').addEventListener('change',e=>{
 
 /* Reads back what the last boot actually cost, so a slow launch can be
    reported with numbers instead of "it took a while". */
+/* FIVE TAPS ON THE WORDMARK.
+
+   The Android build-number idiom, for the same reason it exists there: an
+   instrument that has to survive on a non-technical person's phone without
+   ever being noticed by them, and be reachable over the phone in one
+   sentence. Nobody hits five deliberate taps on a logo by accident, and
+   "tap the Pick'em logo five times" needs no explaining.
+
+   Sticky, in localStorage: once revealed it stays revealed on that device,
+   so a player asked for a screenshot does not have to redo the taps after
+   the reload — and asking somebody to repeat a secret gesture while they
+   are already annoyed is how you lose the report you wanted.
+
+   Bound once, guarded by a flag, because renderDiag runs from render() on
+   every repaint and stacking a fresh listener each time would make the tap
+   count climb by however many times the app had rendered. */
+let diagTapBound=false, diagTaps=0, diagTapAt=0;
+function diagUnlocked(){
+  try{ return localStorage.getItem('ps_diag')==='1'; }catch(_){ return false; }
+}
+function bindDiagTap(){
+  if(diagTapBound)return;
+  const brand=document.querySelector('.topbar .brand'); if(!brand)return;
+  diagTapBound=true;
+  brand.addEventListener('click',()=>{
+    // Taps have to be a run, not five over a whole afternoon.
+    const now=Date.now();
+    diagTaps=(now-diagTapAt<1200)?diagTaps+1:1;
+    diagTapAt=now;
+    if(diagTaps<5)return;
+    diagTaps=0;
+    try{ localStorage.setItem('ps_diag','1'); }catch(_){}
+    const box=document.getElementById('diagBox');
+    if(box){
+      box.classList.remove('hide');
+      /* Say it out loud. A panel appearing silently three screens down is
+         indistinguishable from nothing having happened, and the person
+         doing the tapping is usually being talked through it. */
+      try{ toast('Load timings are showing in Settings.'); }catch(_){}
+      box.scrollIntoView({block:'center',behavior:'smooth'});
+    }
+  });
+}
+
 function renderDiag(){
+  bindDiagTap();
+  const box=document.getElementById('diagBox');
+  if(box)box.classList.toggle('hide',!diagUnlocked());
   const el=$('#diagLine'); if(!el)return;
   let t=null;
   try{ t=JSON.parse(localStorage.getItem('ps_boot_timings')||'null'); }catch(_){}
   if(!t||!t.steps||!t.steps.length){ el.textContent='No timings recorded yet.'; return; }
   const total=t.steps.reduce((a,b)=>a+(b.ms||0),0);
+  /* MERGE REPEATED STAGES. startApp runs up to three times on a first
+     sign-in, so the raw list read "Opening your pool 0s, Opening your pool
+     0s, Opening your pool 0.7s" — three entries for one thing, which reads
+     like a fault rather than a retry and buries the stages that matter.
+     Same names, times added, first-seen order kept. */
+  const merged=[];
+  t.steps.forEach(x=>{
+    const hit=merged.find(m=>m.k===x.k);
+    if(hit)hit.ms+=(x.ms||0); else merged.push({k:x.k,ms:x.ms||0});
+  });
   /* Two lines, because they answer two different questions. The stages are
      what the player waited through; the calls are which read was slow, and
      a bounded stage can no longer tell you that on its own. */
   el.textContent=`${Math.round(total/100)/10}s total — `
-    +t.steps.map(x=>`${x.k} ${Math.round((x.ms||0)/100)/10}s`).join(', ')
+    +merged.map(x=>`${x.k} ${Math.round(x.ms/100)/10}s`).join(', ')
     +((t.calls&&t.calls.length)
       ? `\nReads: `+t.calls.map(x=>`${x.k} ${Math.round((x.ms||0)/100)/10}s`
           +(x.ok===false?' (failed)':'')).join(', ')
@@ -3419,9 +3502,33 @@ let bootStageTimer=null, bootTick=null, bootStageAt=0, bootMarks=[];
    The counter is not only for debugging: a number that moves is the
    difference between "loading" and "frozen", which is the complaint that
    started all of this. */
+/* A STAGE IS STAMPED ONCE, AND THE CLOCK STOPS WHEN IT IS.
+
+   THE BUG THIS FIXES REPORTED A THIRTY-SECOND STALL THAT DID NOT HAPPEN,
+   which for a diagnostic is the worst possible failure — worse than
+   reporting nothing, because somebody acts on it.
+
+   startApp() runs more than once on a first sign-in (see the prefetch note
+   there): the early attempts honestly find no pool and bail, and the one
+   after the join succeeds. Each attempt opens with bootSay('Opening your
+   pool…'), and bootSay called bootMark() first, which re-stamped the LAST
+   mark using a bootStageAt that was still sitting at the first attempt's
+   start time. So the mark absorbed everything in between — and what is in
+   between is the player reading the alerts screen and the six rules.
+
+   A real launch came back reading `Opening your pool 31.9s` while its own
+   per-read line said `pool 0s, pool 0s, pool 0.7s`. Every read was fast.
+   The 31.9 was somebody reading, filed under a network stage.
+
+   Clearing bootStageAt on stamp is the whole fix: a stage that has already
+   been closed cannot be reopened by the next attempt, and the gap between
+   attempts belongs to nothing, which is correct — nobody was waiting on
+   the app during it. */
 function bootMark(){
-  if(bootStageAt&&bootMarks.length)
+  if(bootStageAt&&bootMarks.length){
     bootMarks[bootMarks.length-1].ms=Date.now()-bootStageAt;
+    bootStageAt=0;
+  }
 }
 function bootTimings(){ return bootMarks.map(m=>`${m.k} ${Math.round((m.ms||0)/100)/10}s`).join(' · '); }
 

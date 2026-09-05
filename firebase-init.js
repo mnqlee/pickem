@@ -101,11 +101,19 @@ const auth = getAuth(app);
    of a second later than they might have. Against thirty seconds of
    nothing at launch, that is not a close call.
 
-   HONEST CAVEAT, same as before: the build sandbox has no route to
-   Firestore, so this cannot be proven here — only the reasoning above can
-   be checked. If a first launch is still slow, this is one line and
-   reverting it changes nothing else. But this time the evidence is a
-   measurement rather than an inference from a symptom. */
+   CONFIRMED ON A REAL DEVICE. The caveat here used to read "this cannot be
+   proven from the build sandbox, which has no route to Firestore". It has
+   since been proven on the network that produced the numbers above: same
+   phone, same 4G, fresh install. Both thirty-second stalls vanished. The
+   season was already downloaded by the time the player finished reading
+   the onboarding, so the loading cover never appeared at all — checked
+   frame by frame at four frames a second across the handover, not by
+   impression. Total from the last PIN digit to a usable app went 1:38,
+   then 0:40, then to no measurable wait.
+
+   So do not "clean this up" to the auto-detecting version. It reads like
+   the more considered choice and it is the one that cost a minute and a
+   half per player on the network this pool actually runs on. */
 const db   = initializeFirestore(app, { experimentalForceLongPolling: true });
 
 let user = null;
