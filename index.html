@@ -1359,6 +1359,8 @@ tbody tr.me td.tot{background:#241F1E}
            panel. Nothing can move except the one that was tapped. -->
       <div class="prefs" id="prefs"></div>
     </div>
+    <div class="opt"><h4>Last load</h4>
+      <p id="diagLine">No timings recorded yet.</p></div>
     <div class="opt"><h4>Kickoff lock</h4>
       <p>Each game closes the moment it kicks off. Anything you have not picked by then scores zero. There is no late entry.</p></div>
     <div class="opt"><h4>Pick visibility</h4>
@@ -2767,7 +2769,7 @@ function renderArchive(){
 function render(){
   if(!Object.keys(WEEKS).length)return;
   renderWeeks();renderSlate();renderTray();renderBar();renderGrid();
-  renderBoard();renderTZ();renderPayTable();renderInPlay();renderArchive();}
+  renderBoard();renderTZ();renderDiag();renderPayTable();renderInPlay();renderArchive();}
 
 function tick(){
   // Same reason as render(): this runs on an interval from page load, and
@@ -3290,6 +3292,17 @@ $('#tzsel').innerHTML=TZS.map(([v,l])=>
 $('#tzsel').addEventListener('change',e=>{
   state.tz=e.target.value;localStorage.setItem('ps_tz',state.tz);render();});
 
+/* Reads back what the last boot actually cost, so a slow launch can be
+   reported with numbers instead of "it took a while". */
+function renderDiag(){
+  const el=$('#diagLine'); if(!el)return;
+  let t=null;
+  try{ t=JSON.parse(localStorage.getItem('ps_boot_timings')||'null'); }catch(_){}
+  if(!t||!t.steps||!t.steps.length){ el.textContent='No timings recorded yet.'; return; }
+  const total=t.steps.reduce((a,b)=>a+(b.ms||0),0);
+  el.textContent=`${Math.round(total/100)/10}s total — `
+    +t.steps.map(x=>`${x.k} ${Math.round((x.ms||0)/100)/10}s`).join(', ');
+}
 function renderTZ(){
   const first=[...slate()].sort((a,b)=>a.show-b.show)[0];
   const drift=fDay(first.show)!==usDay(first.show);
@@ -3313,7 +3326,16 @@ function renderTZ(){
    ============================================================ */
 /* ---------- the boot cover ---------- */
 const bootEl=()=>document.getElementById('boot');
-function bootHide(){ clearTimeout(bootStageTimer);
+function bootHide(){ clearTimeout(bootStageTimer); clearInterval(bootTick);
+  bootMark();
+  try{ if(bootMarks.length)
+    localStorage.setItem('ps_boot_timings',
+      JSON.stringify({at:Date.now(),steps:bootMarks})); }catch(_){}
+  if(bootMarks.length)console.info('boot timings:',bootTimings());
+  /* Refresh the Settings line now rather than leaving it showing the
+     PREVIOUS launch: render() runs before this point, so without it the
+     numbers a player would screenshot are always one load out of date. */
+  try{ renderDiag(); }catch(_){}
   const b=bootEl(); if(b)b.classList.add('hide'); }
 /* Put the cover BACK. Used when the wizard finishes and startApp() still
    has work to do: without it the player is dropped onto the app's static
@@ -3326,10 +3348,40 @@ function bootShow(){ const b=bootEl(); if(b){ b.classList.remove('hide','err'); 
    it genuinely can take that long: a cold Firestore connection, the whole
    season's schedule, the roster, the standings and the week's picks, none
    of which exist on the device yet. */
-let bootStageTimer=null;
+let bootStageTimer=null, bootTick=null, bootStageAt=0, bootMarks=[];
+/* WHERE THE TIME ACTUALLY GOES.
+
+   Three separate theories about this load have now been wrong, each argued
+   from the code rather than from a measurement. So measure. Every stage
+   records how long it took, the current one counts up on screen while the
+   player waits, and the whole set is kept in localStorage so it can be
+   read back later from Settings.
+
+   The counter is not only for debugging: a number that moves is the
+   difference between "loading" and "frozen", which is the complaint that
+   started all of this. */
+function bootMark(){
+  if(bootStageAt&&bootMarks.length)
+    bootMarks[bootMarks.length-1].ms=Date.now()-bootStageAt;
+}
+function bootTimings(){ return bootMarks.map(m=>`${m.k} ${Math.round((m.ms||0)/100)/10}s`).join(' · '); }
 function bootSay(msg){
   const m=document.getElementById('bootMsg');
-  if(m&&!bootEl()?.classList.contains('err'))m.textContent=msg;
+  bootMark();
+  bootStageAt=Date.now();
+  bootMarks.push({k:String(msg).replace(/[….]+$/,''),ms:0});
+  clearInterval(bootTick);
+  if(m&&!bootEl()?.classList.contains('err')){
+    m.textContent=msg;
+    /* Counts up beside the stage, once past three seconds so a quick load
+       never flickers a number at anybody. */
+    bootTick=setInterval(()=>{
+      const el=document.getElementById('bootMsg');
+      if(!el||bootEl()?.classList.contains('err'))return clearInterval(bootTick);
+      const secs=Math.round((Date.now()-bootStageAt)/1000);
+      el.textContent=secs>=3?`${msg}  ${secs}s`:msg;
+    },1000);
+  }
   /* Every stage change also resets the long-wait line below. The stages
      are REAL — each one is set at the point that work actually starts — so
      the message never claims progress that has not happened. What it can't
@@ -3391,13 +3443,27 @@ function bootFail(msg,err){
 
    Invisible in testing, because it needs the one launch where you are not
    yet a member. Everybody already in the pool boots fine forever after. */
-let appBooting=false, appBooted=false, obWizardActive=false;
+let appBooting=false, appBooted=false, obWizardActive=false, seasonPrefetch=null;
 
 async function startApp({fromOnboarding=false,background=false}={}){
   if(appBooting||appBooted)return appBooted;
   appBooting=true;
   try{
     bootSay('Opening your pool…');
+    /* THE SCHEDULE DOES NOT NEED THE POOL, so it must not queue behind it.
+
+       Measured on a real first sign-in: the pool read took ~25s, the
+       roster ~28s, the week's picks ~28s — and the SCHEDULE, 272
+       documents, took about three. The three slow ones are all inside
+       pools/**; the fast one reads seasons/**, which no membership check
+       guards. Whatever the underlying cause, running them in series meant
+       adding it all up.
+
+       getAllWeeks touches nothing this function is about to decide, so it
+       starts here and loadSeason awaits whatever is already in flight
+       rather than issuing its own. Worst case it is no slower; best case
+       it is free. */
+    seasonPrefetch=PS.getAllWeeks().catch(e=>{ seasonPrefetch=null; throw e; });
     // ensureCurrentPool (not getPool) so a pool id left over from an
     // earlier/different season gets cleared instead of silently loading
     // stale data — see firebase-init.js's SEASON HANDOVER note.
@@ -3571,7 +3637,8 @@ async function loadSeason(seedMembers){
   // round trips stacked back to back before anything could render — on a
   // phone that is the difference between instant and visibly slow.
   const [weeks,members,st]=await Promise.all([
-    PS.getAllWeeks(),                                    // essential
+    // Started back in startApp() so it overlaps the pool and roster reads.
+    (seasonPrefetch||PS.getAllWeeks()),                  // essential
     // ensureJoined() already read the roster a moment ago in the common
     // case (everybody who is already a member); reuse it rather than
     // spending another round trip on the same documents.
