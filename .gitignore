@@ -41,3 +41,4 @@ __pycache__/
 # offered to commit a broken link.
 node_modules
 scripts/test/screens/
+Claude outputs/ 
