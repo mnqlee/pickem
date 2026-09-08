@@ -621,7 +621,25 @@ async function getRevealed(wk) {
     // See CLOCK_SKEW_MS: a fast device clock asking for not-yet-revealed
     // picks gets the entire query denied, not just those rows.
     where('revealAt', '<=', Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS)));
-  const [res, members] = await Promise.all([getDocs(q), getMembers()]);
+  /* SAME SHAPE AS getTiebreaks, SAME TRAP — equality on wk plus an
+     inequality on revealAt needs a composite index, and without one this
+     rejects with FAILED_PRECONDITION on every call. loadWeek wraps it in
+     optional(), so the Grid would simply be empty, all Sunday, with
+     nothing on screen or in any log to say why.
+
+     There is no per-user fallback to add here: the Grid IS the list. So
+     the only thing to fix is the silence. Name the failure and name the
+     command that repairs it, because this is a deploy step somebody has
+     not run, not a transient — it will never come right on its own. */
+  const res = await getDocs(q).catch(e => {
+    const code = (e && e.code) || '';
+    if (/failed-precondition/i.test(code))
+      console.error('GRID: composite index missing on picks(wk, revealAt). '
+        + 'Deploy it with `firebase deploy --only firestore:indexes`. '
+        + 'Firestore says:', e.message);
+    throw e;
+  });
+  const members = await getMembers().catch(() => []);
   const name = Object.fromEntries(members.map(m => [m.uid, m.name]));
   return res.docs
     .map(d => d.data())
@@ -629,32 +647,72 @@ async function getRevealed(wk) {
     .map(v => ({ ...v, name: name[v.uid] || 'Player' }));
 }
 
+/* YOUR OWN GUESS MUST NOT DEPEND ON EVERYONE ELSE'S QUERY SUCCEEDING.
+
+   REPORTED BY REAL PLAYERS: type the Monday night total, see "Saved",
+   close the app, reopen it — blank. Every time, for everyone.
+
+   The write was never the problem. The read was, and the structure of
+   this function is what turned a recoverable failure into lost data:
+
+     const [res, members] = await Promise.all([getDocs(q), ...])
+
+   That await sat OUTSIDE any try. `q` filters on an equality (wk) plus an
+   inequality on a different field (revealAt), which Firestore refuses
+   without a composite index, with FAILED_PRECONDITION. So if the index is
+   missing the whole function rejects on its first line, the caller's
+   optional() turns that into `[]`, and the own-guess fetch further down —
+   the one line that actually retrieves what the player typed — never runs
+   at all. The guess is sitting safely in Firestore the entire time.
+
+   Two independent reads now, neither able to take the other down. The
+   list is other people's revealed guesses, which is enrichment. Your own
+   guess is the thing you typed, and it is fetched by document id, needs
+   no index, and is legal under the read rule at any time because the uid
+   in the document is yours. It is the one read here that must not fail.
+
+   The deeper fix is deploying firestore.indexes.json, which is where the
+   Grid's own list query lives too — the same missing index empties that
+   the moment games start revealing. But the app should not lose somebody's
+   entry because an unrelated query is unhappy, and it no longer can. */
 async function getTiebreaks(wk) {
   const q = query(collection(db, 'pools', poolId, 'tiebreaks'),
     where('wk', '==', wk),
     where('revealAt', '<=', Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS)));
-  const [res, members] = await Promise.all([getDocs(q), getMembers()]);
+
+  const [res, members, own] = await Promise.all([
+    /* LOUD, then degraded. This used to reject the whole function and
+       reach the user as silence. A missing index is a deploy step nobody
+       has done, not a transient — it will never fix itself, and the only
+       trace was a console line in a browser nobody opens. */
+    getDocs(q).catch(e => {
+      const code = (e && e.code) || '';
+      if (/failed-precondition/i.test(code))
+        console.error('TIEBREAKS: composite index missing. Deploy it with '
+          + '`firebase deploy --only firestore:indexes`. Firestore says:', e.message);
+      else console.warn('tiebreak list unavailable', code || e);
+      return null;
+    }),
+    getMembers().catch(() => []),
+    /* When you have NOT entered a guess this document does not exist, and
+       the read rule dereferences `resource.data.uid` on a null resource,
+       which rules treat as an evaluation error and refuse. That is a
+       normal state, not a fault. */
+    getDoc(doc(db, 'pools', poolId, 'tiebreaks', `${user.uid}_${wk}`))
+      .catch(() => null),
+  ]);
+
   const name = Object.fromEntries(members.map(m => [m.uid, m.name]));
-  const rows = res.docs.map(d => {
+  const rows = (res ? res.docs : []).map(d => {
     const v = d.data();
     return { ...v, name: name[v.uid] || 'Player', mine: v.uid === user?.uid };
   });
-  /* Your own guess is visible before kickoff; the query above will not
-     return it, so fetch it directly — inside its own try.
-
-     When you have NOT entered a guess this document does not exist, and
-     the read rule dereferences `resource.data.uid` on a null resource,
-     which rules treat as an evaluation error and refuse. Unguarded, that
-     rejection took the whole function down, `optional()` turned it into
-     `[]`, and the tiebreak panel was empty for EVERYONE until they had
-     personally submitted a guess — including on every past week they
-     never entered one. */
-  try {
-    const own = await getDoc(doc(db, 'pools', poolId, 'tiebreaks', `${user.uid}_${wk}`));
-    if (own.exists() && !rows.some(r => r.mine)) {
-      rows.push({ ...own.data(), name: 'You', mine: true });
-    }
-  } catch { /* no guess of your own yet — not an error */ }
+  /* Before kickoff the query above cannot return your own guess — its
+     revealAt is still in the future — so it is added here whether the
+     list succeeded, failed or came back empty. */
+  if (own && own.exists() && !rows.some(r => r.mine)) {
+    rows.push({ ...own.data(), name: 'You', mine: true });
+  }
   return rows;
 }
 
