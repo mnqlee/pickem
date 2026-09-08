@@ -289,6 +289,42 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
   -webkit-user-select:none;user-select:none}
 .sb-l{font-size:11.5px;font-weight:650;letter-spacing:.005em;text-transform:none;
   color:var(--ink-soft);white-space:nowrap}
+/* SAY IT IS SAVED, ON THE CARD, PERMANENTLY.
+
+   This row read "Your stake", which describes the number beside it and
+   answers no question anybody was asking. Players kept messaging the
+   owner to ask whether a game was submitted and whether the whole week
+   had to go in at once — the app saves every tap immediately and locks
+   each game at its own kickoff, and nothing on screen said so.
+
+   The bottom bar does say "Saved as you tap", but that is one line at the
+   foot of a scrolling page, read once and never again. The reassurance
+   has to be attached to the GAME, because the question is asked about a
+   game, and it has to persist rather than flash: "is that one in?" gets
+   asked every time the app is opened, not only at the moment of tapping.
+
+   SUBMITTED, NOT SAVED, and the difference is the whole point. Every form
+   anybody has ever filled in taught them that "saved" means a draft and
+   "submitted" means turned in — so "Saved" leaves standing the exact doubt
+   this line exists to remove. Nothing is submitted in the sense of a
+   second step; there is no second step. But the pick is on the server and
+   it will be scored, which is what "submitted" means to the person asking.
+
+   "Saved and submitted" was tried and rejected twice over: nothing is
+   saved AND submitted, there is only one event — and at phone width it
+   pushed "16 pts" onto a second line. A width check said it fitted;
+   looking at it showed the wrap. Look at the render.
+
+   `change until kickoff` rather than `tap to change`, because the second
+   question is always "for how long". The card states the deadline in the
+   meta row as LOCKS IN 1D 23H, but nothing connected the two, and a
+   reassurance that leaves a question open is half a reassurance. It also
+   stops "Submitted" from reading as final, which matters: the stake bar
+   only exists before kickoff and really is still editable.
+
+   --hit, not --live: measured 5.09:1 on this card's #EDE8DE against
+   --live's 2.14, which would have failed. */
+.sb-ok{color:var(--hit);font-weight:800}
 .sb-r{display:flex;align-items:center;gap:9px}
 .sb-num{width:26px;height:26px;flex:0 0 26px;border-radius:50%;display:grid;place-items:center;
   border:2px solid var(--stamp);color:var(--stamp);font-size:13px;font-weight:900;
@@ -474,6 +510,31 @@ tbody tr.me td.tot{background:#241F1E}
 .empty h4{margin:0 0 6px;font-size:15px;font-weight:800}
 .empty p{margin:0;font-size:12px;line-height:1.6;color:var(--chalk)}
 
+/* ---------- WHO IS IN THE POOL ----------
+
+   The Grid and Standings are both legitimately empty before the first
+   kickoff, and both said so honestly and showed NOTHING ELSE. On day one
+   of a real pool that is the wrong silence: people finished their picks,
+   opened the app, saw an empty screen with no sign that anybody else
+   existed, and texted the owner asking whether they had done it right.
+
+   Who is IN the pool was never the secret — only what they picked is. So
+   the empty states name the roster. It costs no read (the member list is
+   already in memory for the standings) and it leaks nothing.
+
+   Deliberately NOT a readiness list. The app cannot know who has finished
+   without being able to read their picks, and firestore.rules forbids
+   that before kickoff for everybody including the owner. A tick here
+   would have to be a guess, and a wrong tick is worse than no tick. */
+.roster{margin-top:18px;padding-top:16px;border-top:1px solid rgba(250,247,241,.10)}
+.roster-h{font-size:10px;letter-spacing:.13em;text-transform:uppercase;font-weight:800;
+  color:var(--chalk);margin-bottom:9px}
+.roster-l{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.rchip{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:999px;
+  background:var(--shell-3);color:var(--paper);white-space:nowrap}
+/* Your own chip, so the list reads as "and me" at a glance. */
+.rchip.me{background:var(--stamp);color:#fff}
+
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(26,25,23,.97);
   border-top:1px solid rgba(250,247,241,.12);
   padding:11px var(--pad) calc(11px + env(safe-area-inset-bottom));
@@ -658,6 +719,23 @@ tbody tr.me td.tot{background:#241F1E}
 .row.me{border-left-color:var(--stamp);background:#2A2724}
 .rank{font-size:13px;font-weight:800;width:18px;color:var(--chalk)}
 .row.me .rank{color:var(--stamp)}
+/* THE PRE-SEASON FIELD. Same row, deliberately quieter: a dot where the
+   position goes and a dash where the points go, because a column of 1..8
+   and a column of zeroes both read as a result. Nothing has happened yet
+   and the row has to say so without saying nothing.
+
+   NAMED `rfield`, NOT `pre`, and that is not fussiness. `.pre` is already
+   the gold PRESEASON badge in the header, declared with `!important` on
+   both colour and border-colour — so `.row.pre` silently painted every
+   player's name and left border gold and the screen showed eight
+   leaders. Nothing errored and no test failed; it was caught by
+   screenshotting the real render. Check the stylesheet before reusing a
+   short class name. */
+.fieldhead{font-size:10px;letter-spacing:.13em;text-transform:uppercase;font-weight:800;
+  color:var(--chalk);margin:20px var(--pad) 9px}
+.row.rfield .rank,.row.rfield .pts b{color:var(--chalk-faint)}
+.row.rfield .who span{color:var(--chalk-soft)}
+.row.rfield.me .rank{color:var(--stamp)}
 .who{flex:1;min-width:0}
 .who b{display:block;font-size:14.5px;font-weight:700}
 .who span{display:block;font-size:10px;color:var(--chalk);margin-top:2px}
@@ -1985,7 +2063,7 @@ function renderSlate(){
       stake=p.weight
         ? `<button type="button" class="stakebar" data-stake="${g.id}"
              aria-label="Rank ${p.weight}, pays ${pay(p.weight,N)} points. Change it.">
-             <span class="sb-l">Your stake</span>
+             <span class="sb-l"><b class="sb-ok">&#10003; Submitted</b> &middot; change until kickoff</span>
              <span class="sb-r"><span class="sb-num set">${p.weight}</span>
              <span class="sb-pts">${pay(p.weight,N)} pts</span></span></button>`
         : `<button type="button" class="stakebar empty" data-stake="${g.id}"
@@ -2066,6 +2144,27 @@ function weekPoints(pl,w){
       pts+=(state.mode==='confidence'?pay(p.weight,nGames(w)):1);hits++;}});
   return {pts,hits};
 }
+/* The roster, for the two screens that are legitimately empty before the
+   first kickoff. See the .roster block in the stylesheet for why.
+
+   Reads PLAYERS, which loadSeason already filled and watchMembers keeps
+   current, so somebody joining mid-week appears here without a reload and
+   without a single extra read.
+
+   Returns '' rather than a lonely "1 in the pool" when you are the only
+   member — announcing that to the person who just created the pool is
+   worse than saying nothing. NAME() escapes, as everywhere a member's own
+   text reaches the page. */
+function rosterBlock(){
+  const ids=(PLAYERS||[]).filter(Boolean);
+  if(ids.length<2)return '';
+  return `<div class="roster">
+    <div class="roster-h">${ids.length} in the pool</div>
+    <div class="roster-l">${ids.map(p=>
+      `<span class="rchip${p===ME?' me':''}">${NAME(p)}</span>`).join('')}</div>
+  </div>`;
+}
+
 function renderGrid(){
   const gs=slate();
   /* THREE DISJOINT BUCKETS, because the two facts are independent.
@@ -2112,7 +2211,8 @@ function renderGrid(){
 
   if(!started){
     $('#gridBody').innerHTML=`<div class="empty"><h4>Nothing to show yet</h4>
-      <p>Picks stay sealed until kickoff. The first game of Week ${state.week} opens the grid, and it fills in one column at a time from there.</p></div>`;
+      <p>Picks stay sealed until kickoff. The first game of Week ${state.week} opens the grid, and it fills in one column at a time from there.</p>
+      ${rosterBlock()}</div>`;
     return;}
 
   const rows=PLAYERS.map(p=>({p,...weekPoints(p,state.week)})).sort((a,b)=>b.pts-a.pts);
@@ -2622,15 +2722,69 @@ function renderBoard(){
      pool as readily as an eight-person one. */
   const scored=rows.some(r=>r.pts>0||r.gp>0);
   if(!scored){
-    // Nothing to pin when nobody has a position yet.
+    /* THE FIELD, NOT A TABLE.
+
+       This screen used to show nothing but a sentence, and on the first
+       week of a real pool that was the wrong silence: people finished
+       their picks, opened Standings, saw an empty box, and messaged the
+       owner asking whether it had worked.
+
+       The reason it was empty is still valid and is preserved exactly.
+       Rendering the normal table here crowned somebody: rows sort by
+       points, every player sits on 0, so the tie broke arbitrarily and
+       whoever landed first got position 1, the gold LEAD styling and a
+       "Season leader" ribbon, for nothing, in a one-person pool as
+       readily as an eight-person one.
+
+       So this lists everyone WITHOUT ranking anyone. Alphabetical, no
+       position numbers, no leader, no seals, and a dash where the points
+       go — because a column of zeroes reads as a score and a dash reads
+       as "not yet". It looks like the table it is about to become, which
+       is also why the tab no longer jumps into existence on Sunday.
+
+       .row is reused deliberately, minus `lead`, so the spacing and the
+       `me` highlight match the real thing exactly. */
+    /* LAUNCH WEEK ONLY, and this is the whole of that decision.
+
+       `scored` above is per VIEW, so it is false on the This Week tab
+       every Tuesday of the season — which meant a fresh list of dashes
+       reappeared each week, on a tab with a perfectly good Season table
+       one press away carrying everyone's real points. It read as though
+       the app had forgotten the season had happened.
+
+       This asks a different question: has ANY game of the season gone
+       final, ever. Once the first one has, this list never returns, and
+       the This Week tab goes back to its one-line note until that week's
+       own results land. It is a cold-start device and it retires itself.
+
+       Note what this does NOT touch: the branch below, which is the real
+       weekly and season tables. Those are the point of the app — the week
+       recalculates live from revealed picks as each game closes, exactly
+       like the Grid — and nothing here reaches them. */
+    const seasonVirgin=!Object.keys(WEEKS)
+      .some(w=>(WEEKS[w]||[]).some(isFinal));
     const mb=$('#meBar'); if(mb)mb.classList.add('hide');
-    $('#board').innerHTML=view==='week'
+    const field=seasonVirgin?[...rows].sort((a,b)=>
+      String(NAMES[a.p]||'').localeCompare(String(NAMES[b.p]||''))):[];
+    const note=view==='week'
       ? `<div class="empty"><h4>Week ${wk} has not started</h4>
          <p>This table fills in as the games go final. Until then there is
-         nothing to rank. The Season tab has the standing so far.</p></div>`
+         nothing to rank.</p></div>`
       : `<div class="empty"><h4>Nothing scored yet</h4>
          <p>The table opens after the first game goes final. Get your picks in,
          Week ${state.week} is what starts it.</p></div>`;
+    $('#board').innerHTML=note+
+      /* Below two people there is no field to show, only you — and
+         "1 in the pool" on the screen meant to reassure the person who
+         just created it is worse than saying nothing. */
+      (field.length<2?'':
+      `<div class="fieldhead">${field.length} in the pool</div>`+
+      field.map(r=>`<div class="row rfield${r.p===ME?' me':''}">
+        <div class="rank mono">&middot;</div>
+        <div class="who"><div class="nrow"><b>${NAME(r.p)}</b></div>
+          <span class="mono">${r.p===ME?'That is you':'In the pool'}</span></div>
+        <div class="pts"><b class="mono">&ndash;</b><span>pts</span></div>
+      </div>`).join(''));
     return;
   }
 
