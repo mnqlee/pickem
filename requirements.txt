@@ -1,0 +1,46 @@
+# Python dependencies for scripts/ — and the file GitHub Actions must find.
+#
+# THIS FILE HAS TWO JOBS AND THE SECOND ONE IS NOT OBVIOUS.
+#
+#   1. It lists what scripts/ needs. Everything else those scripts import
+#      (argparse, collections, datetime, math, sys, zoneinfo) is stdlib.
+#      Pillow is deliberately absent: only make_icons.py uses it, it is a
+#      one-time local chore, and no workflow runs it.
+#
+#   2. Both workflows in .github/workflows ask actions/setup-python for a
+#      pip cache:
+#
+#          - uses: actions/setup-python@v5
+#            with:
+#              cache: 'pip'
+#
+#      That option globs for **/requirements.txt or **/pyproject.toml and
+#      HARD FAILS when it finds neither:
+#
+#          Error: No file in /home/runner/work/pickem/pickem matched to
+#          [**/requirements.txt or **/pyproject.toml]
+#
+#      The repo had neither, so "Score the week" died five seconds into
+#      every scheduled run, at the third step, before pip, before the
+#      service-account key, before score_week.py. Every later step was
+#      skipped and the job went red.
+#
+#      That is worse than a broken build, because score_week.py is the
+#      only thing that writes pools/{id}/standings — the collection
+#      getStandings() reads. Weekly winners, runner-up counts and perfect
+#      weeks come from there and have no client-side fallback, so they
+#      would have read zero for every player, all season, while the app
+#      itself looked perfectly healthy.
+#
+# So: DO NOT DELETE THIS FILE because "the workflows install their
+# packages by name anyway." They no longer do — both now install from
+# here, precisely so this file and the install list cannot drift apart.
+# If you ever remove it, remove `cache: 'pip'` from both workflows in the
+# same commit.
+#
+# Unpinned on purpose: this matches what the workflows installed by name
+# before, so the fix changes which packages arrive in exactly no way.
+# Pin them the first time an upstream release breaks a run, not before.
+
+firebase-admin
+requests

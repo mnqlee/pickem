@@ -53,7 +53,11 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - run: pip install firebase-admin requests
+      # Same trap as score-week.yml: `cache: 'pip'` above needs
+      # requirements.txt to exist or the job dies at this step. This one
+      # only runs on workflow_dispatch, so it failed quietly rather than
+      # by email — it was broken in exactly the same way.
+      - run: pip install -r requirements.txt
 
       - name: Write service account key
         env:
