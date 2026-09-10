@@ -21,8 +21,27 @@ const TEAMS = ['KC','BAL','BUF','CIN','DAL','PHI','SF','DET','GB','MIN','NYJ','M
 const NETS = ['CBS','FOX','NBC','ESPN','AMZN','NFLN'];
 const ts = ms => ({ toMillis: () => ms, seconds: Math.floor(ms/1000) });
 
-// Season opens Thu 10 Sep 2026; each week a Thu night, a Sunday block, a Monday night.
-const KICK1 = P.startISO ? Date.parse(P.startISO) : Date.parse('2026-09-10T00:20:00Z');
+/* THE DEFAULT SEASON OPENER IS THE NEXT THURSDAY, NOT A FIXED DATE.
+
+   It used to be Date.parse('2026-09-10T00:20:00Z') — the real 2026
+   opener. That worked right up until 10 Sep 2026, when the date it named
+   arrived and then receded: the fixture's first game became live, then
+   final, and six cases that tap an unstarted card started timing out
+   against a locked one. A test fixture pinned to a wall-clock date does
+   not fail on the day you change the code, it fails on a day nobody
+   touched anything, which is the worst possible time to debug it.
+
+   Anchored to the next Thursday so the Thu-night / Sunday-block /
+   Monday-night shape the rest of this file assumes is preserved exactly,
+   and every default game is always in the future. Cases that need a
+   season already under way pass startISO explicitly, as they always did. */
+const nextThu = () => {
+  const d = new Date();
+  d.setUTCHours(0, 20, 0, 0);
+  do { d.setUTCDate(d.getUTCDate() + 1); } while (d.getUTCDay() !== 4);
+  return d.getTime();
+};
+const KICK1 = P.startISO ? Date.parse(P.startISO) : nextThu();
 const WEEKMS = 7*24*3600*1000;
 const WEEKS_N = P.weeks == null ? 18 : P.weeks;
 const GAMES_PER = P.gamesPerWeek == null ? 16 : P.gamesPerWeek;
@@ -74,7 +93,7 @@ function makeRoster() {
 const ROSTER = makeRoster();
 const MEMBERS = ROSTER.map((n,i) => ({ uid: 'u_'+i, name: n }));
 
-window.PS = {
+const PSX = window.PS = {
   SEASON: '2026', user: { uid: 'u_0' }, poolId: 'p_test',
   /* Real Firebase fires onAuthStateChanged the INSTANT this resolves —
      which is several lines before the PIN screen's go() reaches
@@ -189,9 +208,31 @@ window.PS = {
     window.__weekGames = () => GAMES.filter(g => g.wk === wk).map(g => ({ ...g }));
     window.__pushWeek  = (games) => cb(games || window.__weekGames(), wk);
   },
+  /* THE BOUND IS MODELLED HERE NOW, and it has to be.
+
+     This used to log a line and hand out __pushRevealed, and nothing
+     else. The real watchRevealed bakes "revealAt <= now - CLOCK_SKEW_MS"
+     into the query at SUBSCRIBE time, which is the whole
+     reason index.html re-subscribes just past each kickoff. A stub that
+     ignores the bound cannot tell a correct re-subscribe from one that
+     lands too early — and that is exactly the bug that shipped: the
+     refresh fired at kickoff+5s, built a bound 115 seconds SHORT of the
+     kickoff, revealed nothing, and then scheduled itself for the next
+     kickoff days away. Every test passed throughout.
+
+     __revealBounds records each subscription's bound relative to nothing
+     in particular; a test compares it against a kickoff. */
   watchRevealed(wk, cb){
     log.push('watchRevealed');
-    window.__pushRevealed = (rows) => cb(rows || [], wk);
+    const bound = Date.now() - PSX.CLOCK_SKEW_MS;
+    (window.__revealBounds ||= []).push(bound);
+    const due = GAMES.filter(g => g.wk === wk && g.kickoff.toMillis() <= bound);
+    const rows = [];
+    due.forEach((g,i) => MEMBERS.forEach((m,mi) => rows.push({
+      uid:m.uid, name:m.name, gameId:g.id,
+      winner:(i+mi)%2 ? g.home : g.away, weight:(i+mi)%16+1 })));
+    if (rows.length) setTimeout(() => cb(rows, wk), 0);
+    window.__pushRevealed = (r) => cb(r || rows, wk);
   },
   watchMembers(cb){
     log.push('watchMembers');
@@ -199,8 +240,28 @@ window.PS = {
   },
   watchAuth(cb){ log.push('watchAuth'); window.__authCb = cb;
     setTimeout(()=>cb(P.signedOut ? null : { uid:'u_0' }), 0); },
-  async signOut(){}, async enablePush(){}, async refreshPushToken(){},
-  async alertsHealthy(){ return true; },
+  async signOut(){}, async refreshPushToken(){},
+  /* ALERTS HEALTH AND THE ONE-TAP REPAIR.
+
+     alertsHealthy() used to return the bare boolean \`true\` here while the
+     real one in firebase-init.js returns {ok:true} / {ok:false, reason}.
+     Nothing caught it because nothing called it — the function was dead
+     code in the app. The moment the Settings repair banner started reading
+     it, this stub would have driven the banner from a shape the app has
+     never seen, and the suite would have graded the wrong contract.
+
+     Plan keys:
+       alerts    the health object to report, e.g. {ok:false,reason:'permission'}
+       pushError message enablePush() should throw instead of succeeding  */
+  /* One definition, read by the app's reveal-refresh timer. P.skewMs lets
+     a test shrink it so a kickoff can be waited out in seconds. */
+  CLOCK_SKEW_MS: P.skewMs == null ? 120000 : P.skewMs,
+  async alertsHealthy(){ log.push('alertsHealthy');
+    return window.__alerts || P.alerts || { ok:true }; },
+  async enablePush(){ await call('enablePush');
+    if (P.pushError) throw new Error(P.pushError);
+    window.__alerts = { ok:true };   // a real grant heals the next check
+    return true; },
   getBoard(){ return []; }, watchBoard(){}, getShard(){ return null; },
   async getWeek(){ return []; }, async setScoringMode(){}, registerSW(){},
 };

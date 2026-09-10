@@ -59,7 +59,33 @@ jobs:
       - name: Write service account key
         env:
           SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: echo "$SA" > /tmp/sa.json
+        run: |
+          # SAY IT HERE, WHERE IT IS TRUE.
+          #
+          # An unset secret is the empty string and `echo` still succeeds,
+          # so this step went GREEN and wrote a file containing one
+          # newline. The failure then surfaced six frames deep inside
+          # firebase_admin as:
+          #
+          #   json.decoder.JSONDecodeError: Expecting value: line 2 column 1
+          #
+          # which names neither the secret, nor this step, nor the file —
+          # and reads like a corrupt key rather than a missing one.
+          if [ -z "${SA:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is not set on this repository."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret."
+            echo "The value is the entire contents of serviceAccount.json."
+            exit 1
+          fi
+          printf '%s' "$SA" > /tmp/sa.json
+          # Parse it here too. A truncated or half-pasted secret is not
+          # empty, so the guard above cannot see it — and it fails the same
+          # unreadable way further downstream.
+          python -c "import json,sys; json.load(open('/tmp/sa.json'))" || {
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON."
+            echo "Re-copy serviceAccount.json whole, from the opening brace to the closing one."
+            exit 1
+          }
 
       - name: Score
         # Inputs go through the environment, never straight into the

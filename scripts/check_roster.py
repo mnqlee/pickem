@@ -90,7 +90,24 @@ def main():
     print()
     if problems:
         print(f"{problems} problem(s). Anyone marked NO ALERTS will hear nothing all season.")
-        print("Have them open the app; the banner offers a one-tap fix.")
+        # THIS LINE USED TO SAY "have them open the app; the banner offers a
+        # one-tap fix", and there was no banner. Worse, opening the app could
+        # not possibly help: refreshPushToken() returns on its first line
+        # unless permission is ALREADY granted, so the only code path that
+        # registered a token was a button on the onboarding screen, which a
+        # returning player never sees again. Advice that cannot work is worse
+        # than none — the owner chases people, the people do as asked,
+        # nothing changes, and everyone concludes the app is broken. The
+        # banner exists now (renderAlertFix() in index.html).
+        print("Tell them: open the app, Settings, then tap 'Turn alerts on' in")
+        print("the red box at the top of the Alerts panel.")
+        print()
+        print("On a version older than v1.30.0 that box does not exist. There the")
+        print("path is Settings -> Sign out, sign back in with THE SAME email, and")
+        print("tap 'Keep me honest' when it is offered.")
+        print()
+        print("iPhone users must add the app to their Home Screen first. iOS")
+        print("cannot deliver web push to a Safari tab, whatever they tap.")
         return 1
     print("Everyone is registered. Alerts will reach the whole pool.")
     return 0

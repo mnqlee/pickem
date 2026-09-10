@@ -1016,6 +1016,20 @@ window.PS = {
   ensureCurrentPool, refreshPushToken, alertsHealthy,
   signInWithToken, getAllWeeks, getRevealed, getTiebreaks, saveTiebreak, getArchive,
   enablePush, registerSW,
+  /* EXPORTED SO THE APP CAN WAIT LONG ENOUGH.
+
+     index.html re-opens the reveal listener just past each kickoff so its
+     `revealAt <=` bound is fresh again. It waited kickoff + 5 seconds,
+     which cannot work: every reveal query asks for
+     `revealAt <= now - CLOCK_SKEW_MS`, so at kickoff+5s the bound is
+     still 115 seconds SHORT of the kickoff it just passed, the pick does
+     not match, and the Grid stays sealed. The re-subscribe then scheduled
+     itself for the NEXT kickoff — days away for a Thursday opener — so
+     the first reveal of the week never arrived on its own at all.
+
+     Anything that waits for a reveal has to know this number. Writing it
+     as a literal over there is exactly how the two drift apart. */
+  CLOCK_SKEW_MS,
   get user() { return user; },
   get poolId() { return poolId; }
 };

@@ -234,6 +234,12 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .meta .cd.live{color:var(--hit)}
 .meta .cd.live::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;
   background:var(--live);margin-right:5px;vertical-align:1px;animation:pulse 1.6s infinite}
+/* FINAL is settled, so it is quiet: muted, and no dot at all. The pulsing
+   dot is the one piece of motion on the card and it has to keep meaning
+   exactly one thing — this game is being played right now. A finished
+   game wearing it drains that meaning, and by the end of a Sunday there
+   would be thirteen of them competing for the same attention. */
+.meta .cd.done,.tbmeta .cd.done{color:var(--chalk)}
 
 /* 82px -> 72px. One game occupied roughly 300px of an 844px screen once
    the meta row and the stake bar were counted, so barely two and a half
@@ -788,6 +794,25 @@ tbody tr.me td.tot{background:#241F1E}
   border:1px solid rgba(200,52,42,.3);font-size:11px;line-height:1.55;color:#F0B6B1}
 .notice b{color:var(--stamp);display:block;margin-bottom:2px;font-size:10px;
   letter-spacing:.09em;text-transform:uppercase}
+/* The repair button inside a .notice. .mbtn alone is a flex child sized by
+   its row; standalone it collapses to its text width and reads as an
+   afterthought rather than the thing to tap. Full width, and paper-on-red
+   so it is the brightest thing in the box. */
+.afix{display:block;width:100%;margin-top:11px;background:var(--paper);
+  border-color:var(--paper);color:var(--ink)}
+.afix:disabled{opacity:.55}
+/* FIVE SWITCHES READING "ON" ABOVE A DEAD RADIO.
+   The preference switches say which KINDS of alert the server should
+   send. They do not, and cannot, grant permission or register a device —
+   flipping one writes a boolean to the roster and nothing else. So a
+   player with no push token saw all five sitting proudly ON while
+   nothing could ever arrive, and every one of them reasonably concluded
+   the app was lying rather than that their phone was unregistered.
+   Twelve of nineteen in week 1 were looking at exactly this. They stay
+   tappable — setting them up before turning alerts on is legitimate —
+   but they stop presenting themselves as the working thing. */
+.prefs.inert{opacity:.42}
+.prefs-dead{margin-top:11px;font-size:11px;line-height:1.5;color:var(--chalk)}
 
 /* ---------- ONBOARDING ---------- */
 .ob{position:fixed;inset:0;z-index:200;background:var(--shell);
@@ -1480,7 +1505,34 @@ tbody tr.me td.tot{background:#241F1E}
            Every category now starts ON for a new player (see the prefs
            default below), which is what the buttons were mostly used for
            anyway, and the five switches are the only controls in this
-           panel. Nothing can move except the one that was tapped. -->
+           panel. Nothing can move except the one that was tapped.
+
+           The repair banner below is NOT a sixth control and is not an
+           exception to any of that. It is empty whenever alerts are
+           working, which is the normal case, and it appears only to
+           report a fault. -->
+      <!-- THE BANNER THAT WAS PROMISED IN TWO PLACES AND EXISTED IN NEITHER.
+
+           check_roster.py told the pool owner "have them open the app; the
+           banner offers a one-tap fix", and a comment further down this
+           file described it in detail — "the app tells you itself... say
+           so plainly, with a one-tap repair". Neither was true.
+           alertsHealthy() was written, exported from firebase-init.js, and
+           called by absolutely nothing.
+
+           Opening the app could not help, because refreshPushToken()
+           returns on its first line unless permission is ALREADY granted:
+
+               if (Notification.permission !== 'granted') return;
+
+           So the only code path in the whole app that could register a
+           push token was the "Keep me honest" button on the onboarding
+           alerts screen — a screen you see once. Tap "Not now", dismiss
+           the browser prompt, or open it on an iPhone in Safari without a
+           Home Screen install, and you were dark for the season with
+           nothing anywhere saying so, and no way back in. Twelve of
+           nineteen players in week 1. -->
+      <div id="alertfix"></div>
       <div class="prefs" id="prefs"></div>
     </div>
     <!-- HIDDEN BY DEFAULT. This is a diagnostic, not a feature.
@@ -1908,7 +1960,24 @@ function fmt(ms){const s=Math.max(0,Math.floor(ms/1000));
   const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),ss=s%60;
   if(d>0)return `${d}d ${h}h`; if(h>0)return `${h}h ${String(m).padStart(2,'0')}m`;
   if(m>0)return `${m}m ${String(ss).padStart(2,'0')}s`; return `${ss}s`;}
-const cdClass=ms=>ms<=0?'live':ms<600000?'urgent':ms<3600000?'soon':'';
+/* A FINISHED GAME IS NOT A LIVE ONE, and this used to say it was.
+
+   The old signature was `ms => ...` and its first branch was `ms<=0 ?
+   'live'`. Nothing but the clock. So the moment kickoff passed, the class
+   was 'live' for the rest of the season — and `.cd.live::before` attaches
+   a green dot with `animation:pulse 1.6s infinite`.
+
+   The badge therefore read FINAL, in green, with a dot pulsing beside it
+   saying "happening right now", forever. On one Thursday game it is a
+   curiosity. By Sunday evening it is thirteen finished games all pulsing
+   at once, every one of them contradicting its own label, and the pulse
+   that is supposed to mean "this is live, your pick is locked and the
+   result is moving" stops meaning anything at all.
+
+   `fin` is passed explicitly rather than derived here, because this
+   function is deliberately pure arithmetic on a duration and has no
+   access to a game. */
+const cdClass=(ms,fin)=>fin?'done':ms<=0?'live':ms<600000?'urgent':ms<3600000?'soon':'';
 
 function renderWeeks(){
   let h='';
@@ -2147,7 +2216,7 @@ function renderSlate(){
     h+=`<div class="card${L?' locked':''}" data-game="${g.id}">
       <div class="meta"><span class="mono">${fT(g.show)}</span><span class="net">${g.net}</span>
         <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
-        <span class="cd ${cdClass(g.kick-Date.now())}" data-cd="${g.id}">${
+        <span class="cd ${cdClass(g.kick-Date.now(),isFinal(g))}" data-cd="${g.id}">${
           L?(isFinal(g)?'Final':'In progress'):'Locks in '+fmt(g.kick-Date.now())}</span></div>
       <div class="match">${side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null)}
         <div class="gutter"><span>@</span></div>
@@ -2166,7 +2235,7 @@ function tbCard(){
     <div class="tbcard">
       <div class="tbmeta"><span class="mono">${fT(g.show)}</span><span class="net">${g.net}</span>
         <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
-        <span class="cd ${cdClass(g.kick-Date.now())}" data-cd="tb">${
+        <span class="cd ${cdClass(g.kick-Date.now(),F)}" data-cd="tb">${
           L?(F?'Final':'In progress'):'Locks in '+fmt(g.kick-Date.now())}</span></div>
       <div class="tbbody">
         <div class="tbq">Combined points scored by both teams in the
@@ -2401,10 +2470,14 @@ function renderTray(){
   $('#trayMax').textContent=N;
 }
 
-/* FIX 2: the app tells you itself.
-   A missing token is invisible from the outside — the person simply
-   stops hearing from the app and assumes it is broken. So check on every
-   render and say so plainly, with a one-tap repair. */
+/* The comment that used to sit here described an alerts repair banner —
+   "check on every render and say so plainly, with a one-tap repair" — and
+   then the update prompt followed it. The banner was never written, so
+   for months this file documented a feature it did not have, directly
+   above an unrelated one. It exists now: see renderAlertFix() and the
+   #alertfix element in the Settings markup. It is read on entering
+   Settings rather than on every render, for the reason given there. */
+
 /* ---------- THE UPDATE PROMPT ----------
 
    Without this, a deployed fix reached a phone only when every window of
@@ -3070,10 +3143,10 @@ function tick(){
     if(isFinal(g)&&!finalSet.has(g.id)){finalSet.add(g.id);changed=true;}
     const el=document.querySelector(`[data-cd="${g.id}"]`);
     if(el&&!L){el.textContent='Locks in '+fmt(g.kick-Date.now());
-      el.className='cd '+cdClass(g.kick-Date.now());}});
+      el.className='cd '+cdClass(g.kick-Date.now(),isFinal(g));}});
   const tbg=tbGame(state.week), tbel=document.querySelector('[data-cd="tb"]');
   if(tbel&&!isLive(tbg)){tbel.textContent='Locks in '+fmt(tbg.kick-Date.now());
-    tbel.className='cd '+cdClass(tbg.kick-Date.now());}
+    tbel.className='cd '+cdClass(tbg.kick-Date.now(),isFinal(tbg));}
   /* Scoped to the week ON SCREEN. Scanning the whole season meant the
      header counted down to a game the user could not see — Week 18 showed
      "Locks in 1d 23h" beside cards all reading "78d 23h", with nothing
@@ -3328,7 +3401,12 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   /* A hidden element has no scrollHeight, so the height renderGrid tried
      to set while the tab was closed was computed from zero and thrown
      away. Size it at the moment it becomes visible. */
-  if(state.tab==='grid')sizeGrid();}));
+  if(state.tab==='grid')sizeGrid();
+  /* Checked on arrival at Settings, and only there. alertsHealthy() calls
+     getToken(), which is a network round trip to FCM — cheap once, waste
+     on every tab tap, and absurd on every preference toggle. Not awaited:
+     the tab must switch at once whatever the network is doing. */
+  if(state.tab==='settings')renderAlertFix();}));
 
 /* The scoring-mode switch and its click handler are GONE — see the note
    where the buttons used to be, in the Settings markup.
@@ -4034,6 +4112,23 @@ async function boot(){
    single launch — one getMembers() to check membership, then another
    inside loadSeason's batch a few milliseconds later — which is a whole
    sequential round trip spent re-fetching something already in hand. */
+/* The one message that outranks every other read failure, because it is
+   the only one that means "what you are about to do will not count".
+
+   DECLARED ABOVE ITS CALLER ON PURPOSE. `let` is hoisted but not
+   initialised, so a reference before this line throws ReferenceError
+   rather than reading undefined. It sat BELOW ensureJoined and worked
+   only because nothing calls that during module evaluation — true today,
+   and a trap for whoever adds the call that changes it. Cost of moving
+   it: nothing. */
+let notInPool=false;
+function sayNotInPool(){
+  try{
+    toast("You are not in the pool yet, so nothing you pick will count. "
+         +"Close the app completely and open it again.",'fail',true);
+  }catch(_){}
+}
+
 async function ensureJoined(){
   try{
     const members=await PS.getMembers();
@@ -4042,12 +4137,50 @@ async function ensureJoined(){
     // A denied read IS the symptom — isMember() was false.
     console.warn('roster unreadable, joining',(e&&e.code)||e);
   }
+  /* A FAILED JOIN IS NOT A WARNING, IT IS THE WHOLE GAME.
+
+     This was `catch(e){ console.warn('self-join failed', e); }` and then
+     carried on as though it had worked. Everything downstream degrades
+     politely — getMembers falls back to [], myPicks to {} — so somebody
+     whose membership never landed gets a complete, ordinary-looking app
+     with a full slate of games and no indication whatsoever that they are
+     not in the pool. They tap their sixteen picks, and every write is
+     refused by firestore.rules, because a pick needs isMember().
+
+     That is not hypothetical. A player joined, said they had entered and
+     submitted their picks, and did not appear in the roster at all — no
+     membership document, therefore no picks, and nothing anywhere had
+     told them. The PIN step also gives up waiting on the join after seven
+     seconds and trusts THIS function to finish the job, so this catch is
+     the last thing standing between a slow join and a player who thinks
+     they are in and is not.
+
+     So it says so, stickily, and names the one action that fixes it. The
+     app still loads — the schedule is readable by any signed-in user, and
+     a visible app with an honest error beats a blank screen — but nobody
+     is going to spend twenty minutes ranking a sheet believing it counts.
+
+     Membership is re-attempted on every launch by the code above, so
+     "close it and open it again" is a real fix and not a fob-off. */
   try{
     await PS.joinPool(new URLSearchParams(location.search).get('join')||DEFAULT_JOIN);
     await PS.upsertRoster({name:localStorage.getItem('ps_name')||undefined});
-  }catch(e){ console.warn('self-join failed',e); }
-  return null;   // the roster just changed — let loadSeason read it fresh
+    return null;   // joined — let loadSeason read the roster fresh
+  }catch(e){
+    console.error('self-join failed — this player is NOT in the pool',e);
+    /* Recorded, not just shouted. loadWeek finishes AFTER this and ends by
+       reporting its own failed reads — and a failed membership makes half
+       of those fail too, so the generic "couldn't load the player list,
+       nothing you entered is lost" toast would land on top of this one and
+       replace it. That message is not merely vaguer here, it is FALSE:
+       with no membership their picks did not save. See reportReadFailures,
+       which now stands aside for this. */
+    notInPool=true;
+    sayNotInPool();
+    return null;
+  }
 }
+
 
 /* Whole-season shell: weeks and their kickoff times. */
 /* Firestore games (import_schedule.py) use away/home/spread/network; every
@@ -4117,6 +4250,13 @@ const READ_COST={
 function reportReadFailures(){
   const hit=readFails.filter(l=>READ_COST[l]);
   readFails.length=0;
+  /* MEMBERSHIP OUTRANKS EVERYTHING. A player who is not in the pool fails
+     most of these reads as a CONSEQUENCE, so without this the specific,
+     accurate message ("nothing you pick will count") is replaced by the
+     generic one a moment later — and that one ends "nothing you entered is
+     lost", which in this exact case is untrue. Caught by case 37, which
+     was written to test something else. */
+  if(notInPool){ sayNotInPool(); return; }
   if(!hit.length)return;
   const what=hit.map(l=>READ_COST[l]);
   const list=what.length===1?what[0]
@@ -4309,15 +4449,33 @@ function stopLive(){
    afternoon. Only a reload or a week switch fixed it.
 
    Re-subscribing a few seconds past each kickoff makes the bound fresh
-   again, and costs one query per kickoff rather than one per minute. */
+   again, and costs one query per kickoff rather than one per minute.
+
+   AND IT HAS TO CLEAR CLOCK_SKEW_MS, NOT FIVE SECONDS.
+
+   It waited `next - now + 5000`, and that is not a small miss — it made
+   the whole mechanism a no-op. Every reveal query asks for
+   `revealAt <= Date.now() - CLOCK_SKEW_MS`, which is two minutes. So the
+   re-subscribe at kickoff+5s built a bound of kickoff MINUS 115 seconds,
+   the pick's revealAt is exactly kickoff, and it still did not match.
+   Worse, that pass then scheduled itself for the NEXT future kickoff — so
+   on a Thursday opener, with nothing else until Sunday, the first reveal
+   of the week never arrived on its own at all. The Grid sat on sealed
+   dots through the entire game and only a reload or a week switch fixed
+   it, which is precisely the bug the comment above says this exists to
+   prevent. It was fixed for the second game of a Sunday block and broken
+   for the first game of every week. */
 function scheduleRevealRefresh(){
   clearTimeout(revealTimer);
   const now=Date.now();
   const next=(WEEKS[state.week]||[])
     .map(g=>g.kick).filter(k=>k>now).sort((a,b)=>a-b)[0];
   if(!next)return;
-  // +5s past the kickoff, and never a timeout so long it overflows setTimeout.
-  const wait=Math.min(next-now+5000, 2147483000);
+  /* Past the kickoff by the full skew plus a few seconds, so the new
+     bound is genuinely on the far side of it. Read from PS rather than
+     retyped: one definition, in the file that uses it for the queries. */
+  const skew=(window.PS&&PS.CLOCK_SKEW_MS)||120000;
+  const wait=Math.min(next-now+skew+5000, 2147483000);
   revealTimer=setTimeout(()=>{ if(!DEMO)watchLive(); },wait);
 }
 
@@ -5362,6 +5520,124 @@ $('#prefs').addEventListener('click',e=>{
   savePrefs(before);
 });
 renderPrefs();
+
+/* ---------- ALERTS REPAIR ----------
+   The other half of the banner described in the Settings markup. Five
+   preference switches are worth nothing to somebody with no push token,
+   and until now nothing told them.
+
+   Read once, on entering Settings, NOT on every render: alertsHealthy()
+   calls getToken(), which talks to FCM over the network. Putting that
+   behind renderPrefs() would fire it on every preference tap. */
+const ALERTS_OK={ok:true};
+let alertFixBusy=false, alertFixLast=null;
+
+/* Why it is off, in the player's words, and whether one tap can fix it.
+   Split out so the test suite can drive every branch without a browser
+   that is actually in that state. */
+function alertFixCopy(reason,env){
+  const {ios,standalone,denied}=env;
+  if(reason==='unsupported')
+    return {body:'This browser cannot receive alerts at all. Open the pool on your '
+      +'phone in Safari or Chrome and add it to your Home Screen.',fix:false};
+  /* Checked BEFORE `denied`, because on iOS in a Safari tab permission is
+     usually still 'default' — the honest reason is the missing install,
+     and telling that person to go hunting in browser settings sends them
+     somewhere that cannot help. */
+  if(ios&&!standalone)
+    return {body:'On iPhone, alerts only work once the app is on your Home Screen. '
+      +'Tap the share button, then Add to Home Screen, then open it from the icon '
+      +'and come back here.',fix:false};
+  if(denied)
+    return {body:'Notifications are blocked for this site in your browser settings. '
+      +'Turn them back on there and come back — once they are blocked, nothing in '
+      +'the app is allowed to ask you again.',fix:false};
+  if(reason==='no-worker')
+    return {body:'The part of the app that receives alerts did not start. Close the '
+      +'app completely, open it again, and come back here.',fix:false};
+  // 'permission' (never asked, or dismissed) and 'no-token' (granted but
+  // never registered, or registered to a pool you have since left).
+  return {body:"You won't hear anything from the pool — not the week opening, and "
+    +'not the last call thirty minutes before kickoff.',fix:true};
+}
+
+async function renderAlertFix(){
+  const el=$('#alertfix'); if(!el)return;
+  if(DEMO||!window.PS||!PS.alertsHealthy){ el.innerHTML=''; setPrefsInert(false); return; }
+  let h;
+  /* A failed health check must not paint a scary banner. It reports on
+     alerts; it is not itself an alert failure. */
+  try{ h=await PS.alertsHealthy(); }
+  catch(e){ console.warn('alertsHealthy failed',e); el.innerHTML=''; setPrefsInert(false); return; }
+  alertFixLast=h;
+  /* ONLY ok===false PAINTS THE BANNER, and the asymmetry is deliberate.
+     This box is red, it says alerts are off, and it is wrong to show it
+     to somebody whose alerts are fine. A future refactor that changes
+     what alertsHealthy() returns should therefore fail SILENT, not fail
+     alarming — anything that is not an explicit "no" is treated as fine.
+     (The test stub returned a bare `true` for exactly this reason: the
+     function was dead code, so its shape had drifted unnoticed.) */
+  if(!h||h.ok!==false){ el.innerHTML=''; setPrefsInert(false); return; }
+  /* Signed out is the sign-in screen's problem, and that screen is
+     already in front of them. Saying it twice helps nobody. */
+  if(h.reason==='signed-out'){ el.innerHTML=''; setPrefsInert(false); return; }
+
+  const {body,fix}=alertFixCopy(h.reason,{
+    ios:/iPad|iPhone|iPod/.test(navigator.userAgent),
+    standalone:window.matchMedia('(display-mode: standalone)').matches
+               ||window.navigator.standalone===true,
+    denied:typeof Notification!=='undefined'&&Notification.permission==='denied'});
+
+  el.innerHTML=`<div class="notice"><b>Alerts are off</b>${body}`
+    +(fix?'<button type="button" class="mbtn afix" id="alertFixGo">Turn alerts on</button>':'')
+    +'</div>'
+    /* Says out loud what the switches below cannot do for themselves. */
+    +'<p class="prefs-dead">The switches below choose which alerts you get '
+    +'once this is fixed. They cannot turn alerts on by themselves — that '
+    +'is a permission on your phone, not a setting in the pool.</p>';
+  setPrefsInert(true);
+}
+
+/* Kept as its own function so both callers agree, and so a future edit
+   cannot dim the switches without a banner explaining why. */
+function setPrefsInert(on){
+  const p=$('#prefs'); if(p)p.classList.toggle('inert',!!on);
+}
+
+/* Delegated, because renderAlertFix() replaces the button every time it
+   runs — a handler bound to the element would be thrown away with it. */
+/* OPTIONAL-CHAINED, and this file has already paid for learning why.
+
+   This is top-level module code. `$('#alertfix')` returns null if that
+   element is ever renamed, moved, or dropped from the Settings markup,
+   and `null.addEventListener` throws — which aborts EVERYTHING below this
+   line in the module, silently. Below this line is the sign-out button
+   and the first-run bootstrap. See the identical note above `let prefs`,
+   which is there because exactly that happened once already.
+
+   A missing banner is a missing banner. It must never be a dead app. */
+$('#alertfix')?.addEventListener('click',async e=>{
+  if(!e.target.closest('#alertFixGo'))return;
+  if(alertFixBusy)return;                 // double-tap fires two permission prompts
+  alertFixBusy=true;
+  const btn=$('#alertFixGo');
+  if(btn){ btn.disabled=true; btn.textContent='Turning on'; }
+  try{
+    await PS.enablePush();
+    /* enablePush() THROWS rather than returning quietly when it cannot
+       register, precisely so this cannot say "Done" over nothing. */
+    toast('Alerts are on. You will hear about games you have not picked, and nothing else.','ok');
+  }catch(err){
+    console.warn('enablePush failed',err);
+    // Its own messages are already written for a player ("On iPhone, add
+    // the app to your Home Screen first"), so show them rather than a
+    // generic failure that throws that away.
+    toast((err&&err.message)||"That didn't work. Try again in a moment.",'fail');
+  }finally{
+    alertFixBusy=false;
+    renderAlertFix();                     // re-read: it either worked or it did not
+  }
+});
 
 /* ---------- sign out ----------
    Nothing is lost: picks live in Firestore against the account, not the

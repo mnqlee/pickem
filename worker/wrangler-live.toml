@@ -22,7 +22,68 @@ id = "15a1d88c2a5045fcacae2f207d09b401"
 #     any long random string. Guards the /__live/ endpoints, one of
 #     which sends real notifications to real phones.
 
+# ---------- OBSERVABILITY ----------
+# LOGS ON, AND SET HERE RATHER THAN IN THE DASHBOARD.
+#
+# This Worker went a week doing nothing at all — no scores written, no
+# reminders sent — and there was no way to tell, because logging was off
+# and every one of its own console.log lines went into a disabled sink.
+# Its code was fine, its secrets were fine, SEASON was correct. The only
+# evidence available was the ABSENCE of writes, which is how three
+# separate wrong theories got chased before the real cause turned up:
+# `[triggers]` had never been deployed, so scheduled() had never run.
+#
+# It belongs in this file for the same reason the rate limiters do (see
+# the note in wrangler.toml): a setting flipped in the dashboard is one
+# nobody remembers, that no diff shows, and that a later deploy can
+# revert. Cloudflare says so itself on that settings page — "Update your
+# Wrangler config to ensure settings are consistent across deployments".
+#
+# THE SHAPE IS NESTED, and the first attempt at this block got it wrong:
+# `[observability] enabled = true` is not the same key. The dashboard
+# prints the canonical config it expects (there is a TOML tab next to the
+# JSONC one), and this is a transcription of exactly that — so what is in
+# this file and what is live cannot disagree.
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+# Off deliberately. Logs answer "did the cron run and what did it say",
+# which is the entire question here. Traces are for latency work nobody
+# is doing on a job that sleeps most of the day.
+enabled = false
+head_sampling_rate = 1
+persist = true
+
 [triggers]
-# Scores every minute — the job exits immediately when nothing is live,
-# so most runs cost nothing. Reminders every five minutes.
-crons = ["* * * * *", "*/5 * * * *"]
+# REMINDERS ONLY. The every-minute scores cron is deliberately gone.
+#
+# It used to read ["* * * * *", "*/5 * * * *"] — scores every minute,
+# reminders every five. scheduled() still routes on the cron string
+# (anything starting "*/5" is remind, everything else is scores), so
+# dropping the first entry means scores() is never invoked on a schedule.
+#
+# WHY. ESPN blocks Cloudflare Workers' egress outright:
+#
+#   espn 403 week 1 :: <HTML><HEAD> <TITLE>Access Denied</TITLE> ...
+#
+# an Akamai deny page, on the address rather than the request — a
+# User-Agent header does not move it. So the minute cron was making 1,440
+# doomed subrequests a day and writing 1,440 log lines saying so, and
+# would have gone on doing that all season.
+#
+# Scores moved to .github/workflows/scores.yml, which runs the same
+# scripts/score_week.py from GitHub's runners, which are not blocked.
+# That is the split live.js's own header already argued for: GitHub's
+# scheduler is "fine for scores and bad for a last call, 30 minutes out"
+# notification. Reminders are the half that needs to be on time, and they
+# are the half that still lives here.
+#
+# TO PUT IT BACK, if ESPN's block ever lifts or live.js moves to a host
+# that is not blocked: restore "* * * * *" as the first entry and deploy.
+# Nothing else has to change — scores() is untouched and still reachable
+# by hand at /__live/scores?key=...
+crons = ["*/5 * * * *"]

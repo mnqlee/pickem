@@ -223,10 +223,39 @@ async function scores(env) {
   for (const wk of weeks) {
     let data;
     try {
-      const r = await fetch(`${ESPN}?seasontype=${stype}&week=${wk}&dates=${year}`);
-      // A skipped week used to be completely silent. If ESPN is down through
-      // the Sunday window, every score for that week quietly never lands.
-      if (!r.ok) { console.log('espn', r.status, 'week', wk); continue; }
+      /* THE USER-AGENT IS NOT OPTIONAL, and its absence looked like nothing.
+
+         This call had no headers at all. A Worker's fetch() sends no
+         User-Agent unless you give it one, and ESPN answers a UA-less
+         request to this endpoint with 403 — every minute, forever, with
+         the score never landing and one terse line in a log nobody was
+         collecting.
+
+         scripts/score_week.py hits the identical URL and succeeds, which
+         is what made this hard to see: the endpoint is fine, the season
+         and week are fine, the service account is fine. `requests` always
+         sends a User-Agent of its own; fetch() does not. The same request,
+         one header apart. */
+      const r = await fetch(`${ESPN}?seasontype=${stype}&week=${wk}&dates=${year}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; WeeklyNFLPickem/1.0; +https://nflweeklypickem.com)',
+          'Accept': 'application/json'
+        }
+      });
+      /* A skipped week used to be completely silent. If ESPN is down through
+         the Sunday window, every score for that week quietly never lands.
+
+         SAY WHAT IT ANSWERED, not just the number. `espn 403 week 1` told
+         us a request was refused and nothing whatever about why — no body,
+         no hint whether it was a block, a rate limit or a bad parameter.
+         A bare status code sends the next person guessing, and guessing is
+         what cost this Worker nine days. */
+      if (!r.ok) {
+        const why = await r.text().then(t => t.slice(0, 160).replace(/\s+/g, ' '))
+                                  .catch(() => '(body unreadable)');
+        console.log('espn', r.status, 'week', wk, '::', why);
+        continue;
+      }
       data = await r.json();
     } catch (e) { console.log('espn fetch failed week', wk, String(e)); continue; }
 

@@ -1,0 +1,112 @@
+name: Live scores
+
+# WHY THIS EXISTS, AND WHY IT IS NOT THE WORKER'S JOB ANY MORE.
+#
+# worker/live.js polls ESPN every minute and was written precisely so that
+# scores would not depend on GitHub's late scheduler. It cannot do it:
+# ESPN answers a request from Cloudflare Workers' egress with an Akamai
+# deny page —
+#
+#   espn 403 week 1 :: <HTML><HEAD> <TITLE>Access Denied</TITLE> ...
+#
+# — every minute, forever. A User-Agent header does not change it; the
+# block is on the address, not the request. scripts/score_week.py hits the
+# identical URL and succeeds, because GitHub's runners are not blocked.
+#
+# So the two jobs split along the line live.js's own header already draws:
+#
+#   reminders   Cloudflare Worker   must be ON TIME  (and now works)
+#   scores      GitHub Actions      10-20 min late is fine
+#
+# That is a quote from that file, not a rationalisation invented here.
+#
+# WHAT THIS DOES NOT DO: it never scores anybody. `--scores-only` returns
+# before score_pools() and notify(), so this job writes game documents and
+# nothing else — no standings, no pushes, no weekly awards. Those stay in
+# score-week.yml on its four fixed runs. That separation is the whole
+# safety story: this can run 200 times a week and cannot touch a
+# standings row or send a single notification.
+
+on:
+  schedule:
+    # Times are UTC and the windows are deliberately an hour wider than
+    # the games at both ends, because THE CLOCKS MOVE AND THE CRON DOES
+    # NOT — see the same warning in score-week.yml. From the first Sunday
+    # in November the US is on EST and every window slides an hour later
+    # in UTC. Padding both ends covers the change without a second set of
+    # crons nobody would remember to switch over.
+    - cron: '*/10 0-5 * * 5'     # Fri 00:00-05:59 UTC = Thursday night ET
+    - cron: '*/10 17-23 * * 0'   # Sun 17:00-23:59 UTC = Sunday 1pm and 4pm ET
+    - cron: '*/10 0-5 * * 1'     # Mon 00:00-05:59 UTC = Sunday night football
+    - cron: '*/10 0-5 * * 2'     # Tue 00:00-05:59 UTC = Monday night football
+    # Weeks 16-18 add Saturday games, and there is a Black Friday game.
+    - cron: '*/10 17-23 * * 6'   # Sat 17:00-23:59 UTC = Saturday afternoon ET
+    - cron: '*/10 0-5 * * 6'     # Sat 00:00-05:59 UTC = Friday night ET
+  workflow_dispatch:
+    inputs:
+      week:
+        description: 'Week to refresh (blank = auto-detect)'
+        required: false
+
+# A missed window is not a missed score. Anything this does not catch live
+# is still picked up by score-week.yml's four scheduled runs, which pull
+# scores themselves before scoring. So the failure mode here is "the Grid
+# updates late", never "the week never settles".
+concurrency:
+  group: live-scores
+  cancel-in-progress: false
+
+jobs:
+  scores:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      # From requirements.txt, not by name. `cache: 'pip'` above globs for
+      # that file and fails the whole job when it is missing.
+      - run: pip install -r requirements.txt
+
+      - name: Write service account key
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          # An unset secret is the empty string and `echo` still succeeds,
+          # so this step would go green having written one newline, and the
+          # failure would surface six frames deep inside firebase_admin as
+          # a JSON parse error naming neither the secret nor this file.
+          if [ -z "${SA:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is not set on this repository."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret."
+            exit 1
+          fi
+          printf '%s' "$SA" > /tmp/sa.json
+          python -c "import json,sys; json.load(open('/tmp/sa.json'))" || {
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON."
+            exit 1
+          }
+
+      - name: Refresh scores and lines
+        # Inputs go through the environment, never straight into the shell:
+        # a dispatch input of `1; cat /tmp/sa.json` would otherwise print
+        # the Firebase admin key into a public run log.
+        env:
+          FIREBASE_SERVICE_ACCOUNT_FILE: /tmp/sa.json
+          SEASON: ${{ vars.SEASON || '2026' }}
+          IN_WEEK: ${{ inputs.week }}
+        run: |
+          set -u
+          case "${IN_WEEK:-}" in
+            ''|*[!0-9]*) WEEK_ARG="" ;;
+            *)           WEEK_ARG="--week ${IN_WEEK}" ;;
+          esac
+          python scripts/score_week.py --season "$SEASON" $WEEK_ARG --scores-only
+
+      - name: Shred the key
+        if: always()
+        run: rm -f /tmp/sa.json

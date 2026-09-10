@@ -16,8 +16,30 @@ const ok = (n, c, x = '') => { if (c) { pass++; console.log('  ok   ' + n); }
 
 const browser = await chromium.launch();
 
-async function open(plan = {}) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+/* NOTIFICATION PERMISSION IS FAKED HERE, AND IT HAS TO BE.
+
+   Headless Chromium reports Notification.permission as 'denied' whatever
+   you do, and Playwright cannot move it: context permissions:['notifications']
+   and grantPermissions({origin}) were both tried, both still read 'denied'.
+
+   That is not a harmless default. 'denied' is the one state a real player
+   only reaches by deliberately blocking the site, and the alerts banner
+   branches on it to show "unblock this in your browser settings" with no
+   button at all. So every case below would have graded the blocked-player
+   copy while claiming to test an ordinary player who simply has no token
+   — and passed while doing it. Overriding the property is the only way to
+   reach the branch the twelve dark players in week 1 were actually in.
+
+   opts.notify: 'granted' (default) or 'denied'. */
+async function open(plan = {}, opts = {}) {
+  const ctx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    ...(opts.userAgent ? { userAgent: opts.userAgent } : {}) });
+  await ctx.addInitScript(p => {
+    Object.defineProperty(window, 'Notification', {
+      configurable: true,
+      value: { permission: p, requestPermission: async () => p } });
+  }, opts.notify || 'granted');
   const page = await ctx.newPage();
   await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
   const errors = [];
@@ -628,8 +650,17 @@ console.log('\n15. Typing the last PIN digit must not wipe the screen');
   const after = await read();
   ok('the digits survive onAuthStateChanged firing mid-sign-in',
      after.digits === '123456', JSON.stringify(after));
+  /* The requirement is that the button has NOT reverted to its resting
+     "Let me in" while the step is still in flight — that is what would tell
+     a player the sign-in had been abandoned and invite them to press it
+     again. It used to be pinned to the literal word "signing", which broke
+     when the button started naming the work more precisely. Assert the
+     property, and list the labels that satisfy it, so an EMPTY button still
+     fails: "not Let me in" alone would pass on a blank one. */
   ok('and the button still says it is working, not "Let me in"',
-     /signing/i.test(after.btn), JSON.stringify(after.btn));
+     /checking your code|building your season|loading season schedule|you're in/i
+       .test(after.btn) && !/let me in/i.test(after.btn),
+     JSON.stringify(after.btn));
   ok('no errors', errors.length === 0, errors[0] || '');
   await ctx.close();
 }
@@ -1219,8 +1250,15 @@ console.log('\n22. A slow pool join must not freeze the wizard (this takes ~20s)
   await page.waitForTimeout(4000);
   const midLabel = await page.evaluate(() =>
     (document.querySelector('#obGo')?.textContent || '').trim());
+  /* "Loading season schedule" was the only acceptable answer here until the
+     button learned to say "Building your season" the moment the SERVER
+     accepts the code — which in this case is before 2.5s, so the more
+     specific label wins and the generic slow label is deliberately
+     suppressed. Both satisfy the actual requirement, which is that the
+     button names the work rather than sitting mute; neither of them is
+     "Let me in" and neither is blank. */
   ok('the button names what is actually slow, instead of sitting mute',
-     /loading season schedule/i.test(midLabel), midLabel);
+     /loading season schedule|building your season/i.test(midLabel), midLabel);
 
   /* THE ASSERTION THAT MATTERS, and it has to come BEFORE any clicking.
 
@@ -1376,6 +1414,1457 @@ console.log('\n24. The alert preview must not contradict the alerts it previews'
   ok('the last-call wording matches too',
      /Kickoff in \$\{mins\} minutes\. Unpicked games score zero\./.test(live) &&
      /Kickoff in 30 minutes\. Unpicked games score zero\./.test(preview));
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n25. One slow document read must not hold the whole launch (~10s)');
+{
+  /* MEASURED, not guessed. On a real first launch the ONE-document pool
+     read took 25-30 seconds while the 272-document schedule read running
+     beside it finished in three. Timed from the last PIN digit to a usable
+     app that was 1:38, then 0:40 once the schedule was overlapped — and
+     almost all of what remained was this single read, with the whole app
+     sitting behind it doing nothing.
+
+     WHY that read is slow is still not known. Three explanations have been
+     wrong so far, so this case deliberately encodes no cause; it asserts
+     the property that makes the cause survivable. The pool document
+     decides two things: whether the stored pool still exists, and who owns
+     it. The id is only ever written to localStorage after a successful
+     join, and ownership is cosmetic — neither is worth a thirty-second
+     stare at a loading cover, and every read after it is still checked by
+     firestore.rules on the server exactly as before.
+
+     Mutation-tested: with the Promise.race removed, `weeks` is 0 and the
+     cover is still up when this asserts. */
+  const { ctx, page, errors } = await open({ delay: { ensureCurrentPool: 25000 } });
+
+  /* Comfortably past the 3.5s bound and comfortably short of the 25s
+     stall — the gap is deliberate. A threshold within a second of the
+     thing it measures is a coin toss, and this file has been bitten by
+     that twice already. */
+  await page.waitForTimeout(9000);
+
+  const st = await page.evaluate(() => ({
+    weeks:   document.querySelectorAll('#weeks .wk').length,
+    covered: !document.querySelector('#boot')?.classList.contains('hide'),
+    issued:  (window.__ps?.log || []).includes('ensureCurrentPool'),
+  }));
+  /* The read must actually have been issued, or the delay never applied
+     and the rest of this case proves nothing. */
+  ok('the slow pool read really was issued', st.issued === true, JSON.stringify(st));
+  ok('the app is loaded while it is still outstanding',
+     st.weeks > 0, JSON.stringify(st));
+  ok('and the loading cover is gone', st.covered === false, JSON.stringify(st));
+
+  /* The numbers have to reach the player, because the next report of a
+     slow launch should name the read rather than describe a feeling. */
+  const diag = await page.evaluate(() =>
+    document.querySelector('#diagLine')?.textContent || '');
+  ok('Settings reports a per-read breakdown', /Reads:/.test(diag), diag.slice(0, 160));
+  ok('and it names the reads individually', /schedule/.test(diag), diag.slice(0, 160));
+
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n26. Standings must not hold up the screen nobody is looking at (~15s)');
+{
+  /* STRAIGHT OFF A REAL LAUNCH. The per-read line said:
+
+       schedule 0.5s, roster 0.5s, season 30.6s, week 1s
+
+     `season` was loadSeason, and its Promise.all had three legs. Two of
+     them are in that list at half a second each. The missing 30 seconds
+     was the third — getStandings — and the whole first paint was behind
+     it, on a tab the player has not tapped and may never tap that
+     session. The app opens on Picks, which needs the schedule and the
+     roster and nothing else.
+
+     So standings is started and NOT awaited, and it repaints when it
+     lands. This asserts both halves: the app is up while it is still in
+     flight, and the numbers are on screen afterwards rather than dropped
+     on the floor — a fire-and-forget that forgets is a worse bug than the
+     wait it replaced.
+
+     Mutation-tested. Putting getStandings back in the Promise.all fails
+     the first assertion, as it should.
+
+     WHAT THE LAST ASSERTION DOES NOT PIN, said plainly rather than left
+     for someone to discover: deleting the explicit render() in the .then
+     does NOT fail it, because tick() repaints on its own interval and gets
+     there within a second or two anyway. So this checks that the data
+     ARRIVES AND IS DISPLAYED, which is the thing that matters and the
+     thing that breaks if the read is dropped or its result discarded. It
+     does not check which code path painted it. The explicit render stays
+     because "within a tick" is not the same as "now" when somebody is
+     already sitting on the Standings tab — but it is belt-and-braces, and
+     a test named after it would be a green tick that means nothing. */
+  /* The season has to have started, or the board is legitimately empty and
+     the last assertion could never distinguish "repainted" from "never
+     arrived". Same reason case 1 backdates it. */
+  const { ctx, page, errors } = await open({
+    startISO: new Date(Date.now() - 40 * 864e5).toISOString(),
+    delay: { getStandings: 15000 } });
+
+  const early = await page.evaluate(() => ({
+    weeks:   document.querySelectorAll('#weeks .wk').length,
+    covered: !document.querySelector('#boot')?.classList.contains('hide'),
+  }));
+  ok('the app is up while standings is still outstanding',
+     early.weeks > 0, JSON.stringify(early));
+  ok('and nothing is covering it', early.covered === false, JSON.stringify(early));
+
+  /* Opened DURING the gap on purpose. An empty board is the honest answer
+     while the read is in flight; what must not happen is a crash, or a
+     board that stays empty forever once the data has arrived. */
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const during = await page.evaluate(() =>
+    (document.querySelector('#standings, #board, main')?.textContent || '').length);
+  ok('the Standings tab renders rather than throwing', during > 0, String(during));
+
+  // Past the 15s delay, with margin. The repaint has to happen by itself.
+  await page.waitForTimeout(17000);
+  const after = await page.evaluate(() => ({
+    issued: window.__ps?.calls('getStandings') || 0,
+    rows:   document.querySelectorAll('#board .row').length,
+  }));
+  ok('standings really was fetched', after.issued >= 1, JSON.stringify(after));
+  ok('and the numbers are on screen once the read lands',
+     after.rows > 0, JSON.stringify(after));
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n27. A full progress bar must mean done, never "still working" (~12s)');
+{
+  /* A player typed the code and then tapped the red button over and over
+     for thirty seconds. The button was behaving correctly — it disables
+     while a step is in flight — but a big filled red button is the
+     strongest "tap me" signal in the app, and it kept that fill while
+     doing the one thing that makes tapping useless.
+
+     It now fills instead of pulsing: dark surface, red sweeping across it.
+     The whole honesty of that rests on ONE property, which is what this
+     case exists to defend — the fill cannot reach 100% on a timer. It
+     closes a fraction of the gap to an 88% ceiling each tick, so it always
+     moves and never arrives, and only the real work takes it to full.
+
+     A bar that hits 100% while the app is still working is the clearest
+     possible way to tell somebody it has hung, and it is the exact bug a
+     future "make the animation smoother" edit would introduce. So: hold a
+     slow join open and watch the width. It must grow, and it must stay
+     short of full for as long as the work is outstanding.
+
+     Mutation-tested: change the ceiling to 100 and the third assertion
+     fails at 8 seconds. */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = [];
+  page.on('pageerror', e => errors.push(String(e)));
+  // 60s, so nothing this case waits for can outlast it — see case 22.
+  await page.request.post(BASE + '/__plan',
+    { data: { newUser: true, signedOut: true, slowJoinMs: 60000 } });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+  await page.waitForSelector('#obNameIn', { timeout: 15000 });
+  await page.fill('#obNameIn', 'Filler');
+  await page.fill('#obMailIn', 'fill@example.com');
+  await page.click('#obGo');
+  await page.waitForSelector('#pin0', { timeout: 15000 });
+  for (let i = 0; i < 6; i++) await page.fill('#pin' + i, '123456'[i]);
+
+  const width = () => page.evaluate(() => {
+    const i = document.querySelector('#obGo.fill i');
+    if (!i) return null;
+    return (parseFloat(i.style.width) || 0);
+  });
+
+  await page.waitForTimeout(1200);
+  const early = await width();
+  ok('the button became a progress bar', early !== null, String(early));
+  ok('and it has already started moving', early > 0, String(early));
+
+  await page.waitForTimeout(2000);
+  const mid = await width();
+  ok('it keeps advancing while the work is outstanding',
+     mid > early, `${early} -> ${mid}`);
+
+  /* THE ONE THAT MATTERS, at ~5.5s — inside the step's own seven-second
+     bound, after which the wizard moves on by itself and this button no
+     longer exists. An earlier draft looked at 8.2s and read null.
+
+     The threshold is 92, not 99, and that is deliberate. "Not yet 100"
+     is satisfied by any bar that is merely slow, including one that will
+     hit 100 a second later while the app is still working — which is the
+     failure being defended against. What has to be true is that a CEILING
+     exists below full. Raising the ceiling from 88 to 100 puts this at
+     ~95 by 5.5s, so this number is what kills that mutation; 99 would
+     have let it through. */
+  await page.waitForTimeout(2300);
+  const late = await width();
+  ok('but it never reaches the end on its own',
+     late !== null && late < 92, String(late));
+  ok('while still visibly creeping rather than parked',
+     late > mid, `${mid} -> ${late}`);
+
+  /* And the code being accepted has to be said, in the affirmative,
+     where the eye already is. */
+  const accepted = await page.evaluate(() => {
+    const a = document.getElementById('obAccept');
+    return { shown: a ? !a.classList.contains('hide') : false,
+             text:  a ? a.textContent.replace(/\s+/g, ' ').trim() : '' };
+  });
+  ok('the code-accepted panel is showing', accepted.shown === true);
+  ok('and it promises the wait is a one-off',
+     /only happens once/i.test(accepted.text), accepted.text.slice(0, 120));
+
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n28. The diagnostic must not invent a stall out of reading time (~14s)');
+{
+  /* A DIAGNOSTIC THAT LIES IS WORSE THAN NO DIAGNOSTIC, because somebody
+     acts on it. This one did.
+
+     A real launch reported `Opening your pool 31.9s` on the same line as
+     `pool 0s, pool 0s, pool 0.7s`. Every read was fast; the 31.9 seconds
+     was the player reading the alerts screen and the six rules. startApp
+     runs up to three times on a first sign-in, and bootSay re-stamped the
+     previous mark with a start time from the FIRST attempt, so the mark
+     swallowed the gap between attempts.
+
+     That number had already been used to chase a phantom. This asserts the
+     property that stops it: no single stage may claim more time than the
+     player was actually held up for, and the slow read must be the one the
+     numbers accuse.
+
+     THE GAP HAS TO FALL BETWEEN TWO ATTEMPTS, which is the whole subtlety.
+     A first draft simply paused eight seconds on the wizard, and the bug
+     survived it untouched: by then both bailing attempts had already
+     happened, milliseconds apart, so there was no gap for a mark to
+     swallow. A slow join is what actually separates them — the auth
+     callback's attempt finds no pool, and the attempt that succeeds cannot
+     run until the join returns. Eight seconds of stall, seven of which the
+     wizard waits out, is the same shape as a person reading.
+
+     Mutation-tested: remove `bootStageAt=0` from bootMark and the second
+     assertion fails with a stage of ~7s against reads totalling under 2. */
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = [];
+  page.on('pageerror', e => errors.push(String(e)));
+  await page.request.post(BASE + '/__plan',
+    { data: { newUser: true, signedOut: true, slowJoinMs: 8000,
+              delay: { getAllWeeks: 1500 } } });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+  await page.waitForSelector('#obNameIn', { timeout: 15000 });
+  await page.fill('#obNameIn', 'Slow Reader');
+  await page.fill('#obMailIn', 'reader2@example.com');
+  await page.click('#obGo');
+  await page.waitForSelector('#pin0', { timeout: 15000 });
+  for (let i = 0; i < 6; i++) await page.fill('#pin' + i, '123456'[i]);
+
+  // THE GAP. Nine seconds of nobody touching anything while the join is
+  // stalled — the time the old code filed under "Opening your pool".
+  await page.waitForTimeout(9000);
+
+  for (let i = 0; i < 8; i++) {
+    const done = await page.evaluate(() =>
+      document.querySelector('#ob')?.classList.contains('hide'));
+    if (done) break;
+    const btn = await page.$('#obNext, #obSkip, .ob-btn');
+    if (!btn) break;
+    await btn.click().catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  await page.waitForTimeout(2500);
+
+  const t = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('ps_boot_timings') || 'null'); }
+    catch (_) { return null; }
+  });
+  ok('timings were recorded at all', !!(t && t.steps && t.steps.length));
+
+  const worstStage = Math.max(...(t?.steps || [{ ms: 0 }]).map(s => s.ms || 0));
+  const readTotal  = (t?.calls || []).reduce((a, c) => a + (c.ms || 0), 0);
+
+  /* No stage may exceed everything the network did, plus a second of
+     slack for rendering. The eight-second read pause sits far outside
+     that, so a stage that swallowed it cannot pass. */
+  ok('no stage claims more time than the reads it contains',
+     worstStage <= readTotal + 1000,
+     `worst stage ${worstStage}ms vs reads ${readTotal}ms`);
+
+  /* And the instrument still has to be USEFUL: the deliberately slow read
+     must be the biggest one on the list, or it is honest and useless. */
+  const slowest = (t?.calls || []).slice().sort((a, b) => (b.ms || 0) - (a.ms || 0))[0];
+  ok('and the slow read is correctly named as the slow one',
+     slowest && slowest.k === 'schedule', JSON.stringify(slowest));
+
+  /* Repeated attempts must not read as repeated faults. */
+  const line = await page.evaluate(() =>
+    document.querySelector('#diagLine')?.textContent || '');
+  const opens = (line.match(/Opening your pool/g) || []).length;
+  ok('the Settings line names each stage once, not once per retry',
+     opens <= 1, line.slice(0, 160));
+
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n29. The load diagnostic must be invisible until it is asked for');
+{
+  /* It was on the Settings screen for everyone while the launch stalls
+     were being chased, and it earned that — the per-read line is what
+     identified the transport problem after three wrong theories. But it
+     speaks in the app's own vocabulary, and a number nobody asked for
+     invites a complaint: "38.9s total" in front of a player who was
+     perfectly happy teaches them to notice load time and compare it.
+
+     It stays on every device rather than being owner-only, because the
+     person who HAS a slow launch is a player — owner-only would put the
+     instrument on the one phone that never needs it. Five taps on the
+     wordmark, the Android build-number idiom, for the same reason: nobody
+     hits it by accident and it can be described over the phone in one
+     sentence.
+
+     Two things must both hold, and the second is the one that rots. A
+     hidden feature nobody can reach is the same as a deleted one, and
+     nothing else in the app would fail if the gesture quietly stopped
+     working. */
+  const { ctx, page, errors } = await open({});
+  await page.click('[data-tab="settings"]').catch(() => {});
+  await page.waitForTimeout(400);
+
+  const hidden = await page.evaluate(() =>
+    document.getElementById('diagBox')?.classList.contains('hide'));
+  ok('it is not on the Settings screen by default', hidden === true);
+
+  /* Four taps must NOT do it — otherwise "five" is decoration and a player
+     scrolling with a clumsy thumb finds it. */
+  const brand = await page.$('.topbar .brand');
+  ok('the wordmark is there to tap', !!brand);
+  for (let i = 0; i < 4; i++) { await brand.click(); await page.waitForTimeout(90); }
+  const stillHidden = await page.evaluate(() =>
+    document.getElementById('diagBox')?.classList.contains('hide'));
+  ok('and four taps leave it hidden', stillHidden === true);
+
+  await brand.click();
+  await page.waitForTimeout(400);
+  const shown = await page.evaluate(() => {
+    const b = document.getElementById('diagBox');
+    return { open: b ? !b.classList.contains('hide') : false,
+             text: document.getElementById('diagLine')?.textContent || '' };
+  });
+  ok('the fifth tap reveals it', shown.open === true, JSON.stringify(shown.open));
+  ok('and it carries the per-read breakdown', /Reads:/.test(shown.text),
+     shown.text.slice(0, 140));
+
+  /* Sticky, or a player asked for a screenshot has to redo a secret
+     gesture while already annoyed. */
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  await page.click('[data-tab="settings"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const afterReload = await page.evaluate(() =>
+    document.getElementById('diagBox')?.classList.contains('hide') === false);
+  ok('and it stays revealed on that device across a reload',
+     afterReload === true);
+
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n30. Changing your mind about one game must read correctly');
+{
+  /* FOUND BY DRIVING THE APP, not by reading it. A verification pass after
+     an unrelated change tapped a selected team twice — clear, then re-pick,
+     which is exactly what "I changed my mind" does — and the progress line
+     read "1 games still need a rank".
+
+     One is not an edge case here, it is the common case. Un-picking a game
+     releases its rank, so a single change of mind is the usual way anybody
+     arrives at this sentence, and it sits on the Picks tab mid-week where
+     every player will meet it.
+
+     The rest of the cycle is asserted alongside it, because this case had
+     to prove the pick round trip still worked before the wording was worth
+     arguing about: tapping a chosen team clears it, tapping again restores
+     it, the rank stays outstanding until it is spent, and the write goes to
+     the data layer rather than only to the screen. */
+  const { ctx, page, errors } = await open({});
+  const read = () => page.evaluate(() => ({
+    tray:  document.querySelector('#trayCount')?.textContent || '',
+    btn:   document.querySelector('#submitBtn')?.textContent || '',
+    label: (document.querySelector('#plabel')?.textContent || '').trim(),
+    dead:  document.querySelector('#submitBtn')?.disabled,
+  }));
+
+  const start = await read();
+  ok('the stub sheet starts complete', /0 left/.test(start.tray), JSON.stringify(start));
+
+  await page.click('#slate .card .side.l');
+  await page.waitForTimeout(600);
+  const cleared = await read();
+  ok('tapping a chosen team clears that pick',
+     /1 left/.test(cleared.tray) && /15 of 16/.test(cleared.label),
+     JSON.stringify(cleared));
+  ok('and the button offers to finish rather than to lock',
+     /finish my picks/i.test(cleared.btn), cleared.btn);
+
+  await page.click('#slate .card .side.l');
+  await page.waitForTimeout(600);
+  const back = await read();
+  ok('tapping again re-picks the team',
+     !/15 of 16/.test(back.label), JSON.stringify(back));
+  /* The rank is NOT handed back automatically, and should not be: picking
+     a winner and staking it are two decisions. So the rank stays
+     outstanding and the line says so. */
+  ok('the released rank is still outstanding', /1 left/.test(back.tray), back.tray);
+  ok('and it says so in the singular',
+     /1 game still needs a rank/.test(back.label), back.label);
+  ok('the button is never dead in that state', back.dead === false);
+
+  ok('every tap reached the data layer, not just the screen',
+     (await page.evaluate(() => window.__ps?.calls('savePicks') || 0)) > 0);
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n31. An empty pool screen must still show that the pool exists');
+{
+  /* FROM THE FIRST REAL WEEK OF A LIVE POOL. People finished their picks,
+     opened the app, and both the Grid and Standings correctly said there
+     was nothing to show — and showed nothing else. No names, no count, no
+     sign that anybody else had joined. They texted the owner asking
+     whether they had done it right.
+
+     Both empty states were behaving exactly as written, and both were
+     right to withhold what they withheld: picks stay sealed until
+     kickoff, and nobody leads a table where nothing has been scored. But
+     WHO IS IN the pool was never the secret. Only what they picked is.
+
+     The line this case defends is precisely that one. It asserts the
+     roster appears, and it asserts the readiness information does NOT —
+     because the tempting next step is a "ready" tick beside each name,
+     and the app cannot know that without reading picks it is forbidden to
+     read. A guessed tick is worse than no tick. */
+  const { ctx, page, errors } = await open({
+    members: ['Lee','Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus'],
+    // Nothing kicked off yet: the state the complaint came from.
+    startISO: new Date(Date.now() + 4 * 864e5).toISOString() });
+
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const g = await page.evaluate(() => {
+    const el = document.getElementById('v-grid');
+    return { chips: el.querySelectorAll('.rchip').length,
+             mine:  el.querySelectorAll('.rchip.me').length,
+             text:  el.innerText.replace(/\s+/g, ' ') };
+  });
+  ok('grid: the roster is named, not just counted', g.chips === 8, String(g.chips));
+  ok('grid: it says how many are in', /8 in the pool/i.test(g.text));
+  ok('grid: exactly one chip is marked as you', g.mine === 1, String(g.mine));
+
+  /* Standings gets the fuller treatment: the field laid out as the rows it
+     is about to become, so the tab does not spring into existence on
+     Sunday. Everything that would RANK anybody has to stay off it. */
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const s = await page.evaluate(() => {
+    const el = document.getElementById('v-standings');
+    const rows = [...el.querySelectorAll('#board .row')];
+    const nameColours = [...new Set(rows.map(r =>
+      getComputedStyle(r.querySelector('.who b')).color))];
+    return { rows: rows.length,
+             mine: el.querySelectorAll('#board .row.me').length,
+             lead: !!el.querySelector('.row.lead, .leadtag'),
+             nameColours,
+             text: el.innerText.replace(/\s+/g, ' ') };
+  });
+  ok('standings: every member has a row', s.rows === 8, String(s.rows));
+  ok('standings: exactly one row is yours', s.mine === 1, String(s.mine));
+  ok('standings: it says how many are in', /8 in the pool/i.test(s.text));
+  /* NOBODY IS CROWNED. This is the rule the empty state existed to
+     protect: with every player on zero the sort is arbitrary, so any
+     leader styling would be gold-plating a coin toss. */
+  ok('standings: nobody is rendered as the leader', s.lead === false);
+  /* Checked on the rank and points CELLS, not on the page text. A first
+     draft scanned innerText for a "1" and matched the words "Week 1",
+     failing while the screen was perfectly correct. Ask the element that
+     holds the fact. */
+  const cells = await page.evaluate(() => ({
+    ranks: [...document.querySelectorAll('#board .row .rank')].map(e => e.textContent.trim()),
+    pts:   [...document.querySelectorAll('#board .row .pts b')].map(e => e.textContent.trim()),
+  }));
+  ok('standings: no row claims a position',
+     cells.ranks.length === 8 && cells.ranks.every(t => !/\d/.test(t)),
+     JSON.stringify(cells.ranks));
+  /* A dash, not a zero. A column of zeroes reads as a score somebody
+     earned; a dash reads as "not yet", which is the true statement. */
+  ok('standings: points show a dash rather than a zero',
+     cells.pts.length === 8 && cells.pts.every(t => !/\d/.test(t)),
+     JSON.stringify(cells.pts));
+  /* AND EVERY ROW LOOKS THE SAME. This caught a real defect: the class was
+     first called `pre`, which collides with the gold PRESEASON badge's
+     `.pre { color: var(--lock) !important }` — so all eight names rendered
+     gold and the screen read as eight leaders. Nothing threw, and every
+     structural assertion above still passed. Comparing the computed colour
+     of every name is what catches a collision like that. */
+  ok('standings: every name is painted the same colour',
+     s.nameColours.length === 1, JSON.stringify(s.nameColours));
+  ok('standings: and that colour is the normal ink, not the gold accent',
+     /250, 247, 241/.test(s.nameColours[0] || ''), s.nameColours[0]);
+
+  for (const [tab, v] of [['grid', g], ['standings', s]]) {
+    /* THE GUARANTEE. Nothing on either screen may imply who has or has
+       not finished — the app cannot know that, so it must not hint. */
+    ok(`${tab}: claims nothing about who is ready`,
+       !/\bready\b|finished|locked in|still picking|to go\b/i.test(v.text),
+       v.text.slice(0, 160));
+  }
+
+  /* A pool of one must not announce itself. "1 in the pool" told the
+     person who just created it something they already knew, in a lonely
+     way, on the screen meant to reassure them. */
+  await ctx.close();
+  const solo = await open({ members: ['Lee'],
+    startISO: new Date(Date.now() + 4 * 864e5).toISOString() });
+  await solo.page.click('[data-tab="grid"]').catch(() => {});
+  await solo.page.waitForTimeout(400);
+  ok('a one-person pool shows no roster block at all',
+     (await solo.page.evaluate(() => !!document.querySelector('.roster'))) === false);
+  await solo.page.click('[data-tab="standings"]').catch(() => {});
+  await solo.page.waitForTimeout(400);
+  ok('and no field list either',
+     (await solo.page.evaluate(() =>
+        document.querySelectorAll('#board .row').length)) === 0);
+  await solo.ctx.close();
+
+  /* IT IS A LAUNCH-WEEK DEVICE AND IT MUST RETIRE ITSELF.
+
+     `scored` is computed per VIEW, so the This Week tab is unscored every
+     Tuesday of the season — and the first version of this therefore put a
+     fresh list of dashes back on screen every week, on a tab with the real
+     season table one press away. It read as though the app had forgotten
+     the season had happened.
+
+     The gate is now "has ANY game of the season ever gone final". This is
+     the half that rots silently: week 1 will look right forever, and
+     nobody re-checks week 6 in September. */
+  const later = await open({
+    members: ['Lee','Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus'],
+    startISO: new Date(Date.now() - 40 * 864e5).toISOString() });
+  await later.page.click('[data-tab="standings"]').catch(() => {});
+  await later.page.waitForTimeout(400);
+  const seasonTab = await later.page.evaluate(() => ({
+    field: document.querySelectorAll('#board .row.rfield').length,
+    real:  document.querySelectorAll('#board .row:not(.rfield)').length }));
+  ok('weeks later: the season table is the real one, with everybody in it',
+     seasonTab.field === 0 && seasonTab.real === 8, JSON.stringify(seasonTab));
+
+  await later.page.evaluate(() =>
+    document.querySelector('#standTabs [data-stand="week"]')?.click());
+  await later.page.waitForTimeout(400);
+  const weekTab = await later.page.evaluate(() =>
+    document.querySelectorAll('#board .row.rfield').length);
+  ok('and the field list never comes back on an unplayed later week',
+     weekTab === 0, String(weekTab));
+  ok('no errors in the later-week run', later.errors.length === 0, later.errors[0] || '');
+  await later.ctx.close();
+  ok('no errors', errors.length === 0 && solo.errors.length === 0,
+     errors[0] || solo.errors[0] || '');
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n32. A finished game must say it is submitted, on the card');
+{
+  /* STRAIGHT FROM PLAYERS IN A LIVE POOL. Several messaged the owner
+     asking whether a game had been submitted, and whether the whole week
+     had to go in before the first kickoff. Both worries are unfounded —
+     every tap writes to Firestore immediately, and firestore.rules locks
+     each game at its OWN kickoff — but nothing on the card said so.
+
+     The row read "Your stake", which labels the number beside it and
+     answers no question anyone was asking. The bottom bar does say "saved
+     as you tap", but that is one line at the foot of a scrolling page,
+     read once and never again; the question is asked ABOUT A GAME, every
+     time the app is opened.
+
+     Two properties, and they are in tension, which is why both are
+     pinned: it has to say the pick is SAVED, and it must not thereby
+     read as locked — the stake bar only exists before kickoff and really
+     is still editable right up to it. */
+  const { ctx, page, errors } = await open({});
+
+  const bars = await page.evaluate(() => {
+    const set = [...document.querySelectorAll('.stakebar:not(.empty) .sb-l')];
+    return { n: set.length,
+             labels: [...new Set(set.map(e => e.textContent.replace(/\s+/g, ' ').trim()))],
+             okColour: (() => { const e = document.querySelector('.sb-ok');
+               return e ? getComputedStyle(e).color : null; })(),
+             /* A row that overflows its button silently truncates the very
+                reassurance it exists to give. */
+             clipped: [...document.querySelectorAll('.stakebar')]
+                        .some(e => e.scrollWidth > e.clientWidth + 1) };
+  });
+  ok('there are staked games to check', bars.n > 0, String(bars.n));
+  /* SUBMITTED, not SAVED. Every form anybody has filled in taught them
+     that "saved" is a draft and "submitted" is turned in, so "Saved" left
+     standing the exact doubt this line exists to remove. */
+  ok('every staked card says the pick is submitted',
+     bars.labels.length === 1 && /submitted/i.test(bars.labels[0]),
+     JSON.stringify(bars.labels));
+  ok('and it does not hedge with the draft word',
+     !/\bsaved\b/i.test(bars.labels[0]), bars.labels[0]);
+  ok('and it names how long there is to change it',
+     /until kickoff/i.test(bars.labels[0]), bars.labels[0]);
+  ok('the word "stake" no longer labels the row',
+     !/your stake/i.test(bars.labels[0]), bars.labels[0]);
+  ok('nothing is clipped at phone width', bars.clipped === false);
+
+  /* --hit (#2F6E26) measures 5.09:1 on the card's #EDE8DE; --live
+     (#63B257) measures 2.14 and would have failed. This is the assertion
+     that stops somebody "brightening" it later. */
+  ok('the tick uses the dark green that passes contrast, not the bright one',
+     bars.okColour === 'rgb(47, 110, 38)', String(bars.okColour));
+
+  /* A pick with no rank yet must still ASK, not reassure — otherwise the
+     screen tells somebody they are done when they are one tap short. */
+  const empty = await page.evaluate(() =>
+    [...new Set([...document.querySelectorAll('.stakebar.empty .sb-l')]
+      .map(e => e.textContent.trim()))]);
+  if (empty.length) {
+    ok('an unstaked pick still asks for the rank instead of saying saved',
+       empty.every(t => /stake/i.test(t) && !/saved/i.test(t)), JSON.stringify(empty));
+  }
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n33. A tiebreak guess must survive the list query failing');
+{
+  /* REPORTED BY PLAYERS AND REPRODUCED BY THE OWNER: type the Monday
+     night total, see "Saved", close the app, reopen — blank. Every time.
+
+     The write was never the problem; the guess was in Firestore the whole
+     time. The READ lost it, and the structure of getTiebreaks is what
+     turned a recoverable failure into missing data:
+
+       const [res, members] = await Promise.all([getDocs(q), getMembers()])
+       ... 20 lines later ...
+       try { const own = await getDoc(<my own guess>) } catch {}
+
+     That first await sat outside any try. The query filters on an equality
+     (wk) plus an inequality on another field (revealAt), which Firestore
+     refuses without a composite index — FAILED_PRECONDITION, every call,
+     forever, until somebody runs a deploy. So the function rejected on its
+     first line, the caller's optional() turned that into [], and the ONE
+     read that fetches what the player actually typed never ran.
+
+     STATIC, AND HERE IS WHY, because a test that cannot fail is worse than
+     none: this harness replaces firebase-init.js wholesale with a stub, so
+     no browser test in this file can execute the real getTiebreaks. The
+     property being defended is structural — the own-document read must not
+     be downstream of a query that is allowed to reject — so it is checked
+     structurally, against the source. It would not catch a logic error
+     inside the function. It does catch the exact regression, which is
+     somebody re-sequencing these reads. */
+  const fs = await import('node:fs');
+  const src = fs.readFileSync('/root/work/pickem/firebase-init.js', 'utf8');
+  const tb = src.slice(src.indexOf('async function getTiebreaks'),
+                       src.indexOf('async function saveTiebreak'));
+  ok('getTiebreaks exists to check', tb.length > 200);
+
+  /* All three reads issued together, so no one of them gates another. */
+  const promiseAll = tb.indexOf('Promise.all');
+  const ownRead    = tb.indexOf(`tiebreaks', \`\${user.uid}_\${wk}\``);
+  const closeAll   = tb.indexOf('  ]);', promiseAll);
+  ok('your own guess is fetched by document id', ownRead > -1);
+  ok('and it is issued alongside the list, not after it',
+     promiseAll > -1 && ownRead > promiseAll && ownRead < closeAll,
+     `Promise.all@${promiseAll} own@${ownRead} close@${closeAll}`);
+
+  /* A rejected list must degrade, never propagate — that propagation is
+     what discarded the guess. */
+  ok('a failed list query is caught rather than thrown',
+     /getDocs\(q\)\s*\.catch\(/.test(tb), 'getDocs(q) is unguarded');
+  ok('and the own-document read is caught separately',
+     /getDoc\(doc\([^)]*\)\)\s*[\r\n\s]*\.catch\(/.test(tb) ||
+     /\.catch\(\(\)\s*=>\s*null\)/.test(tb), 'own read is unguarded');
+
+  /* The rows must be built from whatever survived, not assumed present. */
+  ok('an absent list yields an empty list rather than a crash',
+     /\(res \? res\.docs : \[\]\)/.test(tb), 'res is dereferenced unguarded');
+
+  /* THE SILENCE WAS HALF THE BUG. A missing index never fixes itself, so
+     the failure has to name itself and name the command that repairs it —
+     in BOTH queries that need that index. The Grid uses the same shape and
+     would empty itself on Sunday with no explanation at all. */
+  for (const [what, fn] of [['tiebreaks', tb],
+                            ['grid', src.slice(src.indexOf('async function getRevealed'),
+                                               src.indexOf('async function getTiebreaks'))]]) {
+    ok(`${what}: a missing index is reported, not swallowed`,
+       /failed-precondition/i.test(fn), 'no failed-precondition branch');
+    ok(`${what}: and the message names the command that fixes it`,
+       /firestore:indexes/.test(fn), 'no deploy command in the message');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n34. Grid and Standings must grade real picks correctly');
+{
+  /* THE ONE THAT MATTERS MOST, asked for by name before the season
+     opened: do these two screens actually take each player's pick and
+     rank and score them right.
+
+     Every other case in this file checks that something appears. This one
+     checks that a NUMBER IS CORRECT, and it does it with an oracle that
+     shares no code with the app: the expected points are recomputed here
+     from the raw game and pick data, with pay() written out fresh below,
+     and then compared against what the two screens display. If the app's
+     scoring drifts, these disagree. If BOTH drift the same way the test
+     is fooled — which is why the oracle is written from score_week.py's
+     formula rather than copied from index.html.
+
+     The week is deliberately PART-PLAYED. A fully settled week is served
+     from the server's standings record, so it would test the stub's
+     fabricated numbers instead of the app's arithmetic; mid-week is when
+     the client calculates, and mid-week is when players are watching. */
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 1000 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
+  const errors = [];
+  page.on('pageerror', e => errors.push(String(e)));
+  await page.request.post(BASE + '/__plan',
+    { data: { startISO: new Date(Date.now() - 4.2 * 864e5).toISOString() } });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1800);
+
+  /* DATA ONLY out of the page — ids, winners, statuses, and each player's
+     stored pick. No app function is consulted for anything computed. */
+  const raw = await page.evaluate(() => {
+    const wk = window.__state ? window.__state.week : null;
+    const games = [...document.querySelectorAll('#gridBody thead th.gm')].length;
+    return { games, wk };
+  });
+
+  const table = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#gridBody tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'));
+    return rows.map(tr => ({
+      name: tr.querySelector('.plmeta b')?.textContent || '',
+      pts:  +(tr.querySelector('.tot .totnum')?.textContent || 'x'),
+      hits: +((tr.querySelector('.tot .totsub')?.textContent || '').split('/')[0]),
+      cells: [...tr.querySelectorAll('td .cell')].map(c => ({
+        cls: [...c.classList].filter(k => k !== 'cell')[0] || '',
+        txt: c.textContent.trim() })),
+    }));
+  });
+  ok('the Grid rendered player rows', table.length > 0, String(table.length));
+
+  /* THE ORACLE. Rebuilt from app-serve.mjs's own generators and
+     score_week.py's pay(), independently of index.html. */
+  const payOracle = (r, n) => !r ? 1 : Math.max(0, Math.min(n, n + 1 - r));
+  const N = raw.games;
+  const wk = 1;
+  const gameState = await page.evaluate(() => {
+    // The header cell's status chip is data the app read, not computed.
+    return [...document.querySelectorAll('#gridBody thead th.gm .st')]
+      .map(e => e.textContent.trim());
+  });
+  const finals = gameState.filter(s => s === 'Final').length;
+  ok('the week is part-played, so the client is doing the arithmetic',
+     finals > 0 && finals < N, `${finals} final of ${N}`);
+
+  /* Stub rules, restated here rather than imported:
+       game i winner   = ((wk+i) % 2) ? home : away
+       player mi pick  = ((i+mi) % 2) ? home : away,  weight (i+mi)%16+1
+     So player mi is right on every game when mi%2 === wk%2, else wrong on
+     all of them — and a fully-correct 16-game week pays 1+2+...+16 = 136. */
+  const expected = {};
+  const roster = ['Lee','Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus'];
+  roster.forEach((name, mi) => {
+    let pts = 0, hits = 0;
+    for (let i = 0; i < N; i++) {
+      if (gameState[i] !== 'Final') continue;
+      const correct = ((i + mi) % 2) === ((wk + i) % 2);
+      if (correct) { hits++; pts += payOracle(((i + mi) % 16) + 1, N); }
+    }
+    expected[name] = { pts, hits };
+  });
+
+  let mismatches = [];
+  for (const row of table) {
+    const e = expected[row.name];
+    if (!e) continue;
+    if (row.pts !== e.pts || row.hits !== e.hits)
+      mismatches.push(`${row.name}: screen ${row.pts}pts/${row.hits}hits, oracle ${e.pts}/${e.hits}`);
+  }
+  ok('every Grid total matches an independently computed score',
+     mismatches.length === 0, mismatches.slice(0, 4).join(' | '));
+
+  /* The oracle must be discriminating, or agreement means nothing: the
+     scenario has to produce a spread, not all-zero or all-equal. */
+  const spread = new Set(Object.values(expected).map(e => e.pts));
+  ok('and the scenario actually produces different scores to tell apart',
+     spread.size > 1, JSON.stringify([...spread]));
+
+  /* CELL BY CELL. A right total can hide two errors that cancel. */
+  let badCells = [];
+  const mine = table.find(r => r.name === 'Lee');
+  if (mine) {
+    for (let i = 0; i < N; i++) {
+      const c = mine.cells[i]; if (!c) continue;
+      const isFinalGame = gameState[i] === 'Final';
+      const correct = (i % 2) === ((wk + i) % 2);
+      const want = !isFinalGame ? 'pend' : correct ? 'hit' : 'miss';
+      if (c.cls !== want) badCells.push(`game ${i}: ${c.cls}, expected ${want}`);
+      // A winning cell must print what it actually paid.
+      if (want === 'hit') {
+        const paid = payOracle((i % 16) + 1, N);
+        if (!c.txt.includes('+' + paid))
+          badCells.push(`game ${i}: cell says "${c.txt}", should pay +${paid}`);
+      }
+    }
+  }
+  ok('every one of your own Grid cells is graded right, and pays right',
+     badCells.length === 0, badCells.slice(0, 4).join(' | '));
+
+  /* A WINNER ON A GAME THAT IS NOT FINAL MUST NOT SCORE.
+
+     Found by mutation-testing this very case: deleting weekPoints'
+     `if(!isFinal(g))return;` guard changed nothing, because result()
+     returns null for an unfinished game and no pick equals null. So the
+     guard looked redundant and a future edit could remove it — right up
+     until the day a game carries a winner while its status still says
+     scheduled. That is not hypothetical here: import_schedule.py
+     deliberately preserves `status: final` across re-imports and a
+     postponement rescheduled forward produces the mirror of it, and the
+     scorer writes winner and status as separate fields.
+
+     Pushing exactly that state through watchWeek is the only way to tell
+     a redundant guard from a load-bearing one. Points must not move. */
+  const beforePush = await page.evaluate(() =>
+    +(document.querySelector('#gridBody tbody tr .tot .totnum')?.textContent || 'x'));
+  const pushed = await page.evaluate(() => {
+    if (!window.__weekGames || !window.__pushWeek) return false;
+    const games = window.__weekGames();
+    const open = games.find(g => g.status !== 'final');
+    if (!open) return false;
+    open.winner = open.home;          // a result, with no final status
+    window.__pushWeek(games);
+    return true;
+  });
+  ok('a not-yet-final game could be given a winner for the check',
+     pushed === true, 'no open game to test with');
+  await page.waitForTimeout(600);
+  const afterPush = await page.evaluate(() =>
+    +(document.querySelector('#gridBody tbody tr .tot .totnum')?.textContent || 'x'));
+  ok('and a winner on an unfinished game scores nobody anything',
+     afterPush === beforePush, `${beforePush} -> ${afterPush}`);
+
+  /* AND THE TWO SCREENS MUST AGREE. Different code paths (weekPoints vs
+     weekSum) — if they diverge, a player sees one number on the Grid and
+     another in Standings for the same week, which is the complaint that
+     destroys trust in a pool. */
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.evaluate(() =>
+    document.querySelector('#standTabs [data-stand="week"]')?.click());
+  await page.waitForTimeout(500);
+  const board = await page.evaluate(() =>
+    [...document.querySelectorAll('#board .row')].map(r => ({
+      name: r.querySelector('.who b')?.textContent || '',
+      pts:  +(r.querySelector('.pts b')?.textContent || 'x') })));
+  ok('the weekly Standings rendered', board.length > 0, String(board.length));
+
+  let disagree = [];
+  for (const b of board) {
+    const g = table.find(r => r.name === b.name);
+    if (g && g.pts !== b.pts) disagree.push(`${b.name}: grid ${g.pts}, standings ${b.pts}`);
+    const e = expected[b.name];
+    if (e && b.pts !== e.pts) disagree.push(`${b.name}: standings ${b.pts}, oracle ${e.pts}`);
+  }
+  ok('Grid and weekly Standings agree, and both match the oracle',
+     disagree.length === 0, disagree.slice(0, 4).join(' | '));
+
+  /* Highest score must be top. A correct number in the wrong order is
+     still a wrong leaderboard. */
+  const ptsOrder = board.map(b => b.pts);
+  ok('the weekly table is sorted by points, best first',
+     ptsOrder.every((v, i) => i === 0 || ptsOrder[i - 1] >= v), JSON.stringify(ptsOrder));
+
+  /* THE TWO IMPLEMENTATIONS OF pay() MUST STAY THE SAME FUNCTION.
+
+     The oracle above is score_week.py's formula written out by hand, and
+     it agrees with the app for every rank in play — but only for the
+     ranks this scenario happens to use. The client was floored and not
+     capped while the server was both, which for a weight of 0 or below
+     pays more on the phone than the player is actually awarded. The write
+     rule forbids those weights, so nothing live was ever mis-scored; the
+     point is that "agrees on the data we have" is not "is the same
+     function". Check the shape in both files. */
+  const fsx = await import('node:fs');
+  const jsPay = fsx.readFileSync('/root/work/pickem/index.html', 'utf8')
+                   .match(/const pay=\(r,n\)=>[^;]+;/)?.[0] || '';
+  const pyPay = fsx.readFileSync('/root/work/pickem/scripts/score_week.py', 'utf8');
+  ok('the client payout is clamped at BOTH ends',
+     /Math\.max\(0,\s*Math\.min\(n,/.test(jsPay), jsPay.slice(0, 90));
+  ok('and the server payout is clamped at both ends too',
+     /max\(0,\s*min\(n,\s*raw\)\)/.test(pyPay), 'score_week.py pay() changed shape');
+  ok('both treat a missing rank as one point',
+     /!r\?1:/.test(jsPay) && /if not rank:\s*\n\s*return 1/.test(pyPay), jsPay.slice(0, 60));
+
+  ok('no page errors through any of it', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n35. A read that fails must say so, not show a believable blank');
+{
+  /* EVERY DEGRADED READ IN THIS APP HAS A FALLBACK THAT LOOKS LIKE DATA.
+     myPicks falls back to {} — a sheet with no picks. getRevealed to [] —
+     a Grid where nobody picked. getStandings to [] — a table where nobody
+     scored. Each is a plausible screen and each is a lie: the picks are
+     safe in Firestore the entire time.
+
+     This is not hypothetical. It is exactly how the tiebreak bug reached
+     players: a read that could not succeed, a fallback that looked like an
+     answer, and a console line nobody opens. Somebody who sees an empty
+     sheet on Sunday morning re-enters it or panics; nobody thinks "the
+     standings query must have failed".
+
+     The fallback stays — one bad read must not take down the app — but it
+     has to be visible, it has to say what is missing, and above all it has
+     to say the entries are safe, because that is the sentence that stops
+     a player entering everything twice. */
+  const { ctx, page, errors } = await open({ fail: { myPicks: true } });
+
+  const t = await page.evaluate(() => {
+    const el = document.getElementById('toast');
+    return { shown: el.classList.contains('on'), kind: el.className,
+             text: el.textContent.trim() };
+  });
+  ok('a failed read is announced on screen, not just in the console',
+     t.shown === true, JSON.stringify(t));
+  ok('it names what could not be loaded',
+     /your own picks/i.test(t.text), t.text);
+  ok('it promises nothing was lost',
+     /nothing you entered is lost/i.test(t.text), t.text);
+  ok('and it is the failure style, not the cheerful one',
+     /\bfail\b/.test(t.kind), t.kind);
+
+  /* STICKY. A warning about missing data that fades before it is read is
+     the same as no warning — and the ordinary "Saved" toast clears after
+     1.6s, so this has to be explicitly exempt. */
+  await page.waitForTimeout(3000);
+  const still = await page.evaluate(() =>
+    document.getElementById('toast').classList.contains('on'));
+  ok('and it stays on screen instead of fading', still === true);
+
+  /* The app must still WORK. A warning is not a crash: the schedule is
+     independent of the failed read and the week must still render. */
+  const alive = await page.evaluate(() => ({
+    weeks: document.querySelectorAll('#weeks .wk').length,
+    cards: document.querySelectorAll('#slate .card').length }));
+  ok('the app still renders the week around the failure',
+     alive.weeks > 0 && alive.cards > 0, JSON.stringify(alive));
+
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n36. A saved tiebreaker must actually be IN the box on launch');
+{
+  /* REPORTED BY PLAYERS, AND IT COST SIX WRONG THEORIES BEFORE ANYONE
+     LOOKED IN THE RIGHT PLACE: "I enter the Monday night total, it says
+     Saved, I close the app and reopen and it is blank."
+
+     Everything upstream was innocent, and each was eliminated with
+     evidence rather than argument: the write landed (every player's guess
+     was in Firestore), the document id was right (the write rule would
+     not have accepted it otherwise), the composite index was deployed,
+     the security rules permitted the read, and running PS.getTiebreaks(1)
+     in the console returned the row with total:31 and mine:true.
+
+     The value was destroyed AFTER arriving, by the code meant to protect
+     it. renderSlate remembers the input's value across a re-render so the
+     keyboard is not dropped mid-number, and restored it whenever
+     `el.value !== _tbVal`. That cannot distinguish a re-render wiping
+     something half-typed from a re-render legitimately FILLING an empty
+     box with the guess just loaded from the server. It restored both — so
+     an early empty render's "" was put back over the freshly rendered 31,
+     one microtask after paint.
+
+     WHY IT HID SO WELL: the rendered HTML still said value="31" the whole
+     time. Only the DOM property was cleared. Every check that reads
+     markup, including a screenshot of the page source, would say the app
+     was correct. This case therefore asserts the DOM PROPERTY, and
+     deliberately asserts the attribute too, to document that the two
+     disagreeing IS the signature. */
+  const { ctx, page, errors } = await open({});
+
+  const box = () => page.evaluate(() => {
+    const e = document.getElementById('tbin');
+    return e ? { dom: e.value, attr: e.getAttribute('value') } : null;
+  });
+
+  const first = await box();
+  ok('the tiebreaker input exists', first !== null);
+  ok('the saved guess is rendered into the markup',
+     first.attr && first.attr.length > 0, JSON.stringify(first));
+  /* THE ONE THAT WOULD HAVE CAUGHT IT. */
+  ok('and it is actually IN the box, not only in the attribute',
+     first.dom === first.attr, JSON.stringify(first));
+
+  /* render() fires from tick() every second and from both live listeners,
+     so the wipe had many chances to land. Outlast a few of them. */
+  await page.waitForTimeout(3000);
+  const later = await box();
+  ok('and it survives a few seconds of re-renders',
+     later.dom === first.attr, JSON.stringify(later));
+
+  /* THE PROTECTION MUST NOT REGRESS. The restore exists for a real
+     reason: a re-render replaces the input and drops the keyboard
+     mid-number, on a Sunday evening when renders are constant. Fixing
+     the wipe by deleting the restore outright would trade a visible bug
+     for a worse invisible one. */
+  await page.evaluate(() => document.getElementById('tbin').scrollIntoView());
+  await page.click('#tbin');
+  await page.fill('#tbin', '');
+  await page.type('#tbin', '7');
+  /* A REAL re-render, through the live listener the app actually uses.
+     A first draft called window.render() — but the app's script is a
+     module, so `render` is not global, the call did nothing, and the
+     assertion below passed even with the restore deleted entirely. It
+     was testing that typing survives no re-render at all. __pushWeek is
+     the stub's handle on watchWeek's callback, which is precisely how a
+     score landing mid-Sunday repaints the slate under a typing thumb. */
+  const repainted = await page.evaluate(() => {
+    if (!window.__pushWeek) return false;
+    window.__pushWeek();
+    return true;
+  });
+  ok('a real re-render could be triggered to test against', repainted === true);
+  await page.waitForTimeout(400);
+  const typing = await box();
+  const stillFocused = await page.evaluate(() => document.activeElement?.id);
+  ok('a half-typed number survives a re-render',
+     typing.dom === '7', JSON.stringify(typing));
+  ok('and the field keeps focus so the keyboard does not drop',
+     stillFocused === 'tbin', String(stillFocused));
+
+  await page.type('#tbin', '3');
+  await page.waitForTimeout(200);
+  ok('and typing continues from where it was',
+     (await box()).dom === '73', JSON.stringify(await box()));
+
+  ok('no errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n37. A player who is not in the pool must be told, not left picking');
+{
+  /* FROM A LIVE POOL, two days before the first kickoff. A player joined,
+     told the owner they had entered and submitted their picks, and did not
+     appear in the roster at all — no membership document, and therefore no
+     picks, because firestore.rules refuses a pick write without
+     isMember(). Nothing anywhere had told them.
+
+     ensureJoined is the last line of defence: the PIN step gives up
+     waiting on the join after seven seconds and trusts this function to
+     finish the job on the next launch. Its repair attempt ended in
+     `catch(e){ console.warn('self-join failed', e); }` and then carried on
+     as though it had worked.
+
+     Everything downstream degrades politely — getMembers falls back to [],
+     myPicks to {} — so the result is a complete, ordinary-looking app with
+     a full slate of games and no sign that the person is not in the pool.
+     They rank sixteen games into the void.
+
+     The app must still LOAD (the schedule is readable by any signed-in
+     user, and a visible app with an honest error beats a blank screen),
+     but it must say so, and it must not fade. */
+  const { ctx, page, errors } = await open({
+    // getMembers is refused, and the repair join then fails outright.
+    notAMember: true, fail: { joinPool: true } });
+
+  const t = await page.evaluate(() => {
+    const el = document.getElementById('toast');
+    return { shown: el.classList.contains('on'), kind: el.className,
+             text: el.textContent.trim() };
+  });
+  ok('the failed join is announced on screen', t.shown === true, JSON.stringify(t));
+  ok('it says plainly that picks will not count',
+     /will count|not in the pool/i.test(t.text), t.text);
+  ok('and it names the one action that fixes it',
+     /open it again|close the app/i.test(t.text), t.text);
+  ok('and it is the failure style', /\bfail\b/.test(t.kind), t.kind);
+
+  /* STICKY. A warning that fades is the same as no warning — and this one
+     has to survive long enough to be read by somebody who has just opened
+     the app and is looking at the games, not the bottom of the screen. */
+  await page.waitForTimeout(3000);
+  ok('and it does not fade away',
+     (await page.evaluate(() =>
+        document.getElementById('toast').classList.contains('on'))) === true);
+
+  /* The app must still be usable around the failure, or the warning is
+     moot — they would just see a blank screen and reinstall. */
+  const alive = await page.evaluate(() => ({
+    weeks: document.querySelectorAll('#weeks .wk').length,
+    cards: document.querySelectorAll('#slate .card').length }));
+  ok('the week still renders so the message has something to sit on',
+     alive.weeks > 0 && alive.cards > 0, JSON.stringify(alive));
+
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n38. A player with no push token must be told, in the app');
+{
+  /* THE BUG, and it is the largest one this file records by headcount.
+
+     alertsHealthy() was written in firebase-init.js, exported, and called
+     by NOTHING. A comment in index.html described the banner it was for in
+     detail; check_roster.py told the pool owner "have them open the app;
+     the banner offers a one-tap fix". Neither existed.
+
+     Opening the app could not have helped anyone, because
+     refreshPushToken() returns on its first line unless permission is
+     ALREADY granted. So the only code path in the whole app that could
+     register a push token was the "Keep me honest" button on the
+     onboarding alerts screen — which a returning player never sees again.
+     Tap "Not now" once and you were dark for the season.
+
+     Measured in week 1 of the first real season: twelve of nineteen
+     players had zero tokens. Nothing in the app said a word about it, and
+     the five preference switches sat there implying alerts were working. */
+  const { ctx, page, errors } = await open({ alerts: { ok:false, reason:'permission' } });
+  await page.click('[data-tab="settings"]');
+  await page.waitForTimeout(700);
+
+  const seen = await page.evaluate(() => {
+    const box = document.querySelector('#alertfix .notice');
+    return box ? { text: box.innerText.trim(),
+                   btn: !!document.getElementById('alertFixGo') } : null;
+  });
+  ok('the banner appears in Settings when there is no token',
+     seen !== null, 'no #alertfix .notice rendered');
+  ok('and it says alerts are off in as many words',
+     !!seen && /alerts are off/i.test(seen.text), (seen||{}).text);
+  ok('and it names the cost rather than a status code',
+     !!seen && /last call|thirty minutes|kickoff/i.test(seen.text), (seen||{}).text);
+  ok('and it offers the one tap', !!seen && seen.btn === true);
+
+  /* THE SWITCHES MUST STOP LYING. All five read "on" by default, and to a
+     player with no token that is five controls claiming a feature the app
+     cannot deliver. This is what made twelve people think the app was
+     broken rather than their phone unregistered. */
+  const sw = await page.evaluate(() => ({
+    inert: document.getElementById('prefs').classList.contains('inert'),
+    note: (document.querySelector('#alertfix .prefs-dead') || {}).innerText || '',
+    tappable: !document.querySelector('.pref[disabled]') }));
+  ok('and the preference switches are visibly inert', sw.inert === true);
+  ok('and something says why they cannot help',
+     /cannot turn alerts on|permission on your phone/i.test(sw.note), sw.note);
+  ok('but they are still tappable, for setting up before turning alerts on',
+     sw.tappable === true);
+
+  /* THE HEALTH CHECK IS A NETWORK CALL. Firing it on every render would
+     put a getToken() round trip behind every preference toggle. */
+  const before = await page.evaluate(() => window.__ps.calls('alertsHealthy'));
+  await page.click('.pref[data-pref="open"]');
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => window.__ps.calls('alertsHealthy'));
+  ok('and toggling a preference does not re-run the health check',
+     after === before, before + ' -> ' + after);
+
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n39. The one tap must actually register, and say so honestly');
+{
+  const { ctx, page, errors } = await open({ alerts: { ok:false, reason:'permission' } });
+  await page.click('[data-tab="settings"]');
+  await page.waitForTimeout(700);
+  await page.click('#alertFixGo');
+  await page.waitForTimeout(600);
+
+  ok('tapping it calls enablePush',
+     (await page.evaluate(() => window.__ps.calls('enablePush'))) === 1);
+  const t = await page.evaluate(() => {
+    const el = document.getElementById('toast');
+    return { on: el.classList.contains('on'), kind: el.className,
+             text: el.textContent.trim() };
+  });
+  ok('and it confirms on screen', t.on === true, JSON.stringify(t));
+  ok('and the confirmation is not the failure style', !/\bfail\b/.test(t.kind), t.kind);
+  /* The banner is re-read afterwards rather than assumed away: enablePush
+     can be granted and still fail to register a token. */
+  const gone = await page.evaluate(() => !document.querySelector('#alertfix .notice'));
+  ok('and the banner clears once the check passes', gone === true);
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n40. A refused grant must not claim success, and must stay fixable');
+{
+  /* enablePush() THROWS rather than returning quietly when it cannot
+     register — its own comment says so, because a silent null would tell
+     someone their alerts are on when nothing was registered. That is only
+     worth anything if the caller shows the throw. */
+  const { ctx, page, errors } = await open({
+    alerts: { ok:false, reason:'permission' },
+    pushError: 'On iPhone, add the app to your Home Screen first, then turn on alerts from there.' });
+  await page.click('[data-tab="settings"]');
+  await page.waitForTimeout(700);
+  await page.click('#alertFixGo');
+  await page.waitForTimeout(600);
+
+  const t = await page.evaluate(() => {
+    const el = document.getElementById('toast');
+    return { on: el.classList.contains('on'), kind: el.className,
+             text: el.textContent.trim() };
+  });
+  ok('a refused grant is reported as a failure', t.on === true && /\bfail\b/.test(t.kind),
+     JSON.stringify(t));
+  /* Its own wording, not a generic one. "Add it to your Home Screen" is
+     the entire answer for an iPhone player, and a caller that replaced it
+     with "something went wrong" would strand them. */
+  ok('and it passes through the reason rather than a generic message',
+     /home screen/i.test(t.text), t.text);
+  const still = await page.evaluate(() => !!document.querySelector('#alertfix .notice'));
+  ok('and the banner is still there to try again', still === true);
+  /* A disabled button that never comes back is a dead end — and the
+     re-render is what restores it. */
+  const btn = await page.evaluate(() => {
+    const b = document.getElementById('alertFixGo');
+    return b ? { disabled: b.disabled, label: b.textContent.trim() } : null; });
+  ok('and the button is usable again, not stuck on "Turning on"',
+     !!btn && btn.disabled === false && /turn alerts on/i.test(btn.label),
+     JSON.stringify(btn));
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n41. Working alerts must show no banner at all');
+{
+  /* The failure mode of a warning system is crying wolf. This box is red
+     and says alerts are off; showing it to the seven people whose alerts
+     work would teach all nineteen to ignore it. */
+  const healthy = await open({});                       // stub default: {ok:true}
+  await healthy.page.click('[data-tab="settings"]');
+  await healthy.page.waitForTimeout(700);
+  ok('a healthy player sees no banner',
+     (await healthy.page.evaluate(() => !document.querySelector('#alertfix .notice'))) === true);
+  ok('and the preference switches are still there',
+     (await healthy.page.locator('.pref').count()) === 5);
+  ok('and they are not dimmed',
+     (await healthy.page.evaluate(() =>
+        !document.getElementById('prefs').classList.contains('inert'))) === true);
+  await healthy.ctx.close();
+
+  /* FAIL SILENT, NOT ALARMING. alertsHealthy() was dead code long enough
+     for the test stub's copy to drift to a bare `true`, which is neither
+     {ok:true} nor {ok:false}. An unrecognised shape must read as "fine". */
+  const odd = await open({ alerts: true });
+  await odd.page.click('[data-tab="settings"]');
+  await odd.page.waitForTimeout(700);
+  ok('an unrecognised health result is treated as healthy, not broken',
+     (await odd.page.evaluate(() => !document.querySelector('#alertfix .notice'))) === true);
+  await odd.ctx.close();
+
+  /* Signed out is the sign-in screen's problem and that screen is already
+     in front of them. */
+  const out = await open({ alerts: { ok:false, reason:'signed-out' } });
+  await out.page.click('[data-tab="settings"]').catch(() => {});
+  await out.page.waitForTimeout(700);
+  ok('and a signed-out player is not told their alerts are broken',
+     (await out.page.evaluate(() => !document.querySelector('#alertfix .notice'))) === true);
+  await out.ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n42. An iPhone in a Safari tab must be told to install, not to tap');
+{
+  /* The wrong copy here is worse than none. On iOS in a browser tab
+     permission is usually still 'default', so a naive reading offers a
+     "Turn alerts on" button that CANNOT work — iOS does not deliver web
+     push to a Safari tab, whatever anybody taps. Sending a player to tap
+     a dead button costs you their trust in the whole app, and this is the
+     platform most of the pool is on. */
+  const { ctx, page, errors } = await open(
+    { alerts: { ok:false, reason:'permission' } },
+    { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
+              + 'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' });
+  await page.click('[data-tab="settings"]');
+  await page.waitForTimeout(700);
+
+  const seen = await page.evaluate(() => {
+    const box = document.querySelector('#alertfix .notice');
+    return { text: box ? box.innerText.trim() : '',
+             btn: !!document.getElementById('alertFixGo') }; });
+  ok('the banner still appears on an uninstalled iPhone', seen.text !== '');
+  ok('and it says to add it to the Home Screen',
+     /home screen/i.test(seen.text), seen.text);
+  ok('and it does NOT offer a button that cannot work on iOS',
+     seen.btn === false, seen.text);
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n43. A player who blocked notifications must be sent somewhere real');
+{
+  /* Once a site is blocked, requestPermission() resolves 'denied' without
+     ever prompting. Offering "Turn alerts on" there is a button that can
+     only ever fail, so the copy has to point at browser settings instead.
+     permissions:[] is exactly the blocked state. */
+  const { ctx, page, errors } = await open(
+    { alerts: { ok:false, reason:'permission' } }, { notify: 'denied' });
+  await page.click('[data-tab="settings"]');
+  await page.waitForTimeout(700);
+  const seen = await page.evaluate(() => {
+    const box = document.querySelector('#alertfix .notice');
+    return { text: box ? box.innerText.trim() : '',
+             btn: !!document.getElementById('alertFixGo') }; });
+  ok('a blocked player gets the banner', seen.text !== '');
+  ok('and is told it is a browser setting, not an app one',
+     /blocked|browser settings/i.test(seen.text), seen.text);
+  ok('and is told plainly that the app may not ask again',
+     /ask you again|not allowed to ask/i.test(seen.text), seen.text);
+  ok('and is not offered a tap that can only fail', seen.btn === false);
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n44. The Grid must open itself at kickoff, without a reload');
+{
+  /* THE BUG. The reveal listener bakes `revealAt <= now - CLOCK_SKEW_MS`
+     into its query when it subscribes, so a pick that reveals later can
+     never enter that result set. scheduleRevealRefresh() exists to
+     re-subscribe with a fresh bound — and waited `next - now + 5000`.
+
+     Five seconds is not enough, and the miss is not marginal: the skew is
+     120 seconds, so re-subscribing at kickoff+5s builds a bound of
+     kickoff MINUS 115 seconds. The pick's revealAt is exactly kickoff. It
+     still does not match. That pass then scheduled itself for the NEXT
+     kickoff, so on a Thursday opener — one game, nothing else until
+     Sunday — the first reveal of the week never arrived on its own at
+     all. The Grid sat on sealed dots through the whole game and only a
+     reload or a week switch fixed it, which is the exact failure the
+     function's own comment says it exists to prevent.
+
+     Broken for the first game of every week; fine from the second game of
+     a Sunday block onwards, which is why nobody caught it. */
+  const KICK_IN = 4000, SKEW = 8000;
+  const { ctx, page, errors } = await open({
+    startISO: new Date(Date.now() + KICK_IN).toISOString(),
+    weeks: 1, gamesPerWeek: 3, skewMs: SKEW });
+  const kickAt = Date.now() + KICK_IN;
+
+  await page.click('[data-tab="grid"]').catch(() => {});
+  const before = await page.evaluate(() => (window.__revealBounds || []).slice());
+  ok('one reveal subscription exists before kickoff', before.length === 1,
+     JSON.stringify(before));
+  ok('and its bound is short of the kickoff, so nothing is revealed yet',
+     before[0] < kickAt, String(kickAt - before[0]) + 'ms short');
+
+  /* Wait past kickoff + skew, and NEVER touch the page — no reload, no
+     week switch, no tab change. That is the whole point. */
+  await page.waitForTimeout(KICK_IN + SKEW + 4000);
+
+  const bounds = await page.evaluate(() => window.__revealBounds || []);
+  ok('the reveal listener re-subscribed after kickoff', bounds.length > 1,
+     JSON.stringify(bounds.map(b => Math.round((b - Date.now()) / 1000))));
+  /* The assertion that actually kills the bug: a re-subscribe is worth
+     nothing unless its bound clears the kickoff it was scheduled for. */
+  ok('and its bound is PAST the kickoff, not short of it',
+     bounds.some(b => b >= kickAt),
+     'latest bound is ' + Math.round((Math.max(...bounds) - kickAt) / 1000) + 's from kickoff');
+
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n45. A finished game must stop pulsing like a live one');
+{
+  /* THE BUG. cdClass() took only a duration:
+
+       const cdClass = ms => ms<=0 ? 'live' : ...
+
+     so the class was 'live' from kickoff until the end of the season, and
+     `.cd.live::before` attaches a green dot with `animation:pulse 1.6s
+     infinite`. The badge read FINAL with a dot pulsing beside it saying
+     the opposite, and it never stopped. One Thursday game is a curiosity;
+     thirteen finished Sunday games pulsing at once drains the only piece
+     of motion on the card of the one thing it is supposed to mean. */
+  const started = new Date(Date.now() - 40 * 864e5).toISOString();
+  const { ctx, page, errors } = await open({ startISO: started, weeks: 1, gamesPerWeek: 3 });
+  await page.waitForTimeout(500);
+
+  const read = () => page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('#slate .card').forEach(card => {
+      const cd = card.querySelector('.meta .cd');
+      if (!cd) return;
+      out.push({ label: cd.textContent.trim(),
+                 cls: cd.className,
+                 dot: getComputedStyle(cd, '::before').content });
+    });
+    return out;
+  });
+
+  const cards = await read();
+  const fin = cards.filter(c => /final/i.test(c.label));
+  ok('the week has finished games to check', fin.length > 0, JSON.stringify(cards));
+  ok('a finished game is not classed live',
+     fin.every(c => !/\blive\b/.test(c.cls)), JSON.stringify(fin));
+  /* The assertion that kills the bug: no ::before means no dot, and no
+     dot means nothing to animate. */
+  ok('and carries no pulsing dot',
+     fin.every(c => c.dot === 'none' || c.dot === '' || c.dot === 'normal'),
+     JSON.stringify(fin.map(c => c.dot)));
+
+  /* The pulse must SURVIVE for a game that really is live, or this fix
+     has just deleted the feature instead of scoping it. */
+  const live2 = await open({ startISO: new Date(Date.now() - 60000).toISOString(),
+                             weeks: 1, gamesPerWeek: 3 });
+  await live2.page.waitForTimeout(500);
+  const liveCards = await live2.page.evaluate(() =>
+    [...document.querySelectorAll('#slate .card .meta .cd')]
+      .map(cd => ({ label: cd.textContent.trim(), cls: cd.className })));
+  const inProg = liveCards.filter(c => /in progress/i.test(c.label));
+  ok('a game actually in progress is still classed live',
+     inProg.length > 0 && inProg.every(c => /\blive\b/.test(c.cls)),
+     JSON.stringify(liveCards));
+  await live2.ctx.close();
+
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
 }
 
 /* NOT COVERED HERE, deliberately, and worth knowing about.

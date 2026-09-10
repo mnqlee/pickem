@@ -1,6 +1,11 @@
 # Tests
 
-480 checks. Nothing here touches Firebase, Resend, KV or the live site.
+638 checks. Nothing here touches Firebase, Resend, KV or the live site.
+
+That number is the ten suite totals below added up, from a full run on
+2026-09-10. If you change a suite, re-run everything and re-add — a count
+carried forward from memory drifts, and quoting a stale one is the same
+class of mistake as a green run that graded a stale file.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
@@ -17,7 +22,7 @@
     node polish.ui.test.mjs      # 41  layout, states, degradation, edges
     node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
     node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 128 bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 286 bugs that shipped, so they cannot return
     node sw.push.test.mjs        # 22  service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 

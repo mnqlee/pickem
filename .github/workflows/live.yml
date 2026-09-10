@@ -62,7 +62,21 @@ jobs:
       - name: Write service account key
         env:
           SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: echo "$SA" > /tmp/sa.json
+        run: |
+          # Same guard as score-week.yml, and for the same reason: an
+          # unset secret writes a one-newline file, this step passes, and
+          # firebase_admin reports it as a JSON parse error six frames
+          # down. See that file for the full story.
+          if [ -z "${SA:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is not set on this repository."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret."
+            exit 1
+          fi
+          printf '%s' "$SA" > /tmp/sa.json
+          python -c "import json,sys; json.load(open('/tmp/sa.json'))" || {
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON."
+            exit 1
+          }
 
       # Scores FIRST. build_snapshot.py reads game documents, so if this
       # step were skipped the Grid would rebuild from stale results and

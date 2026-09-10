@@ -18,8 +18,19 @@ it deliberately prints COUNTS ONLY and never a team name.
     python scripts/who_is_ready.py --season 2026 --week 3
     python scripts/who_is_ready.py --season 2026 --nudge
 
---nudge prints just the names and emails of people with something
-missing, ready to paste into a message. Nothing is sent by this script.
+--nudge prints just the names of people with something missing, plus one
+paste-ready line for a group message.
+
+NOTHING IS SENT BY THIS SCRIPT, EVER. It reads Firestore and prints to
+your terminal. It has no mailer, no push, and no addresses to send to —
+firestore.rules pins a member document to name, photo, joinedAt and code,
+so no email is stored anywhere the app can reach. (This docstring used to
+promise "names and emails" and the column it printed was always empty.)
+
+The thing that DOES send is scripts/remind.py, and worker/live.js does it
+on a schedule. Both reach people through push notifications only, so
+neither can reach anyone whose alerts are off — run check_roster.py to
+see who that is.
 
 READ-ONLY. It writes nothing, anywhere.
 """
@@ -126,26 +137,45 @@ def main():
         rows, chase = [], []
         for uid, m in members.items():
             name = m.get("name") or "(no name)"
-            email = m.get("email") or ""
+            # NO EMAIL HERE, AND THERE NEVER WAS ONE.
+            #
+            # This used to read m.get("email") and print it in a 32-wide
+            # column. firestore.rules pins a member document to exactly
+            # ['name', 'photo', 'joinedAt', 'code'] — there is no email
+            # field and there cannot be one, so that column has printed
+            # thirty-two spaces on every run since the day it was written,
+            # while the docstring above promised "names and emails".
+            #
+            # Nobody noticed because blank space looks like alignment.
+            # Addresses live only in the sign-in Worker's KV, deliberately:
+            # the app never needs one after the PIN is verified. Yours is
+            # whatever list you invited people from.
             mine_p, mine_r = picked.get(uid, set()), ranked.get(uid, set())
             miss_p = len(open_ids - mine_p)
             miss_r = len((open_ids | shut_ids) - mine_r)
             done = miss_p == 0 and miss_r == 0 and uid in tb
             rows.append((done, name, len(mine_p), len(games), miss_p, miss_r, uid in tb))
             if not done:
-                chase.append((name, email, miss_p, miss_r, uid in tb))
+                chase.append((name, miss_p, miss_r, uid in tb))
 
         if a.nudge:
             if not chase:
                 print("  Everybody is done. Nothing to chase.")
             else:
                 print(f"  {len(chase)} still to finish:\n")
-                for name, email, mp, mr, has_tb in sorted(chase):
+                for name, mp, mr, has_tb in sorted(chase):
                     bits = []
                     if mp: bits.append(f"{mp} unpicked")
                     if mr: bits.append(f"{mr} unranked")
                     if not has_tb: bits.append("no tiebreaker")
-                    print(f"  {name:<20}{email:<32}{', '.join(bits)}")
+                    print(f"  {name:<22}{', '.join(bits)}")
+                print()
+                print("  NOTHING WAS SENT. This script has no way to reach anyone —")
+                print("  it reads Firestore and prints. Message these people yourself.")
+                print()
+                print("  Paste-ready:")
+                print("      Still owe picks for week "
+                      f"{wk}: " + ", ".join(sorted(n for n, *_ in chase)))
         else:
             print(f"  {'name':<20}{'picked':<10}{'status'}")
             print("  " + "-" * 60)

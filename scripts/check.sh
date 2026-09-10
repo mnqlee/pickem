@@ -32,12 +32,30 @@ grep -q 'const DEMO = true' index.html \
   || ok "DEMO is off"
 
 echo
-echo "Season id must match in three places"
+echo "Season id must match in FOUR places, and this script can only see three"
 A=$(grep -o "const SEASON = '[^']*'" index.html | head -1 | cut -d"'" -f2)
 B=$(grep -o 'const SEASON = "[^"]*"' firebase-init.js | head -1 | cut -d'"' -f2)
 C=$(grep -o 'SEASON = "[^"]*"' worker/wrangler-live.toml | head -1 | cut -d'"' -f2)
-if [ "$A" = "$B" ] && [ "$B" = "$C" ]; then ok "SEASON = $A everywhere"
+if [ "$A" = "$B" ] && [ "$B" = "$C" ]; then ok "SEASON = $A in the three files"
 else no "SEASON mismatch: app=$A init=$B worker=$C — the worker will poll the wrong feed"; fi
+
+# THE FOURTH PLACE IS NOT A FILE, WHICH IS WHY IT WENT WRONG.
+#
+# .github/workflows/score-week.yml scores `${{ vars.SEASON || '2026' }}` —
+# a repository VARIABLE, set in the GitHub UI, invisible to every check in
+# this script and to every diff you will ever read.
+#
+# It was left at 2026PRE after the preseason shakedown. The scheduled runs
+# would have gone green, printed "Done", and scored a one-player preseason
+# pool every Monday and Tuesday — while pools/{live}/standings, the only
+# source getStandings() has, stayed empty for the whole regular season.
+# Nothing anywhere would have been red.
+#
+# Nothing here can read it, so this prints a reminder rather than a result.
+# Do not turn it into a silent pass.
+echo "  ? GitHub → Settings → Secrets and variables → Actions → Variables"
+echo "      SEASON must also read $A there. Green Actions runs prove nothing"
+echo "      about this: the wrong season scores a different pool perfectly."
 
 echo
 echo "PWA"
