@@ -2915,6 +2915,202 @@ console.log('\n45. A finished game must stop pulsing like a live one');
   await ctx.close();
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\n46. A live score must appear without waiting on any scheduler');
+{
+  /* THE BUG: for the whole of week 1 a game in progress showed IN
+     PROGRESS and no numbers, because the score on a card depended on a
+     scheduled job writing it to Firestore first, and no host would run
+     that job. Cloudflare's egress is denied by Akamai (`espn 403 ::
+     Access Denied`). GitHub Actions ran green in 23 seconds when
+     invoked by hand and never once fired its own cron — the workflow
+     sat on main eleven hours before its first window opened, then
+     skipped ~16 consecutive ticks inside it: "0 workflow runs".
+
+     The badge made it worse rather than revealing it: isLive() is
+     Date.now() >= kick, pure clock, so IN PROGRESS appeared exactly on
+     time whether or not one byte had ever been written about the game.
+     Nothing on the screen distinguished "0-0" from "nobody asked".
+
+     ESPN answers a BROWSER, so pullEspn() asks from the phone. These
+     cases pin the behaviour AND the four properties that make it safe
+     to run in a live pool: it cannot move a point, it does not fire
+     when there is nothing live, it prefers the server once a game is
+     final, and every failure path lands back on today's screen rather
+     than a wrong one. */
+  const ev = (away, home, as, hs, state = 'in') => ({
+    competitions: [{ status: { type: { state } },
+      competitors: [
+        { homeAway: 'away', team: { abbreviation: away }, score: as == null ? null : String(as) },
+        { homeAway: 'home', team: { abbreviation: home }, score: hs == null ? null : String(hs) }] }] });
+
+  /* Week 1 game 0 in the fixture is DET @ GB (TEAMS[7], TEAMS[8]), and
+     at kickoff-minus-a-minute it is live with status 'scheduled' and
+     both scores null — the exact state that showed nothing all week. */
+  const justLive = () => new Date(Date.now() - 60000).toISOString();
+  const cards = pg => pg.evaluate(() =>
+    [...document.querySelectorAll('#slate .card')].map(c => ({
+      teams: [...c.querySelectorAll('.side .team')].map(t => t.textContent.trim()),
+      scr:   [...c.querySelectorAll('.side .scr')].map(t => t.textContent.trim()),
+      cd:    (c.querySelector('.meta .cd') || {}).textContent || '',
+      band:  (c.querySelector('.lockband') || {}).textContent || '' })));
+
+  {
+    const { ctx, page, errors } = await open({
+      startISO: justLive(), weeks: 1, gamesPerWeek: 3,
+      espn: [ev('DET', 'GB', 14, 17)] });
+    await page.waitForTimeout(1200);
+
+    const cs = await cards(page);
+    const g0 = cs[0];
+    ok('the fixture game under test is the live one',
+       /in progress/i.test(g0.cd), JSON.stringify(cs.map(c => c.cd)));
+    /* THE ASSERTION THAT KILLS THE BUG. Firestore holds no score for
+       this game; the only place 14 and 17 can have come from is the
+       phone's own read. */
+    ok('a live score the server never wrote still reaches the card',
+       g0.scr.join('-') === '14-17', JSON.stringify(g0));
+
+    const calls = await page.evaluate(() => window.__espnCalls.slice());
+    ok('and it asked ESPN for the right season, week and type',
+       calls.length > 0 && /seasontype=2/.test(calls[0]) &&
+       /week=1/.test(calls[0]) && /dates=2026/.test(calls[0]),
+       JSON.stringify(calls));
+
+    /* THE LOOP MUST NOT RE-POLL ON EVERY TICK. espnLoop() is called once
+       a second from tick(); a version that cleared and restarted its
+       interval on each call would hit ESPN every second — sixty times
+       the intended rate, per phone, which is how an address gets blocked
+       halfway through a Sunday.
+
+       NOT COVERED, and worth saying so: the opposite mutation — one that
+       restarts the interval WITHOUT pulling — is indistinguishable here,
+       because its symptom is "the score updates once and then never
+       again" and observing that needs a real 60-second wait. The
+       idempotence note on espnLoop() is the only defence there. */
+    await page.waitForTimeout(2500);
+    const calls2 = await page.evaluate(() => window.__espnCalls.length);
+    ok('and it polls once, not once per tick', calls2 === 1, String(calls2));
+
+    /* SCORING MUST BE UNTOUCHED. `winner` and `status` come from the
+       server alone, so a score arriving from a browser must not flip
+       the game to final or bank anybody's points. */
+    ok('the game is still in progress, not final',
+       /in progress/i.test(g0.band) && !/final/i.test(g0.band), g0.band);
+    ok('and points are still only "if it holds", never banked',
+       !/\+\d+\s*pts/.test(g0.band), g0.band);
+
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+
+  /* ONCE THE SERVER SAYS FINAL, THE SERVER WINS. This is the case that
+     could contradict the Grid: a phone holding a stale in-progress
+     score while the standings were computed from the real final one.
+     Two numbers on one screen that cannot both be true is how people
+     stop trusting a scoring app. */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: justLive(), weeks: 1, gamesPerWeek: 3,
+      espn: [ev('DET', 'GB', 14, 17)] });
+    await page.waitForTimeout(1200);
+    const before = await cards(page);
+    ok('the phone is holding an in-progress score first',
+       before[0].scr.join('-') === '14-17', JSON.stringify(before[0]));
+
+    await page.evaluate(() => {
+      const gs = window.__weekGames();
+      gs[0].status = 'final'; gs[0].winner = gs[0].home;
+      gs[0].awayScore = 20; gs[0].homeScore = 23;
+      window.__pushWeek(gs);
+    });
+    await page.waitForTimeout(400);
+    const after = await cards(page);
+    ok("the server's final score replaces the phone's, not the other way round",
+       after[0].scr.join('-') === '20-23', JSON.stringify(after[0]));
+    ok('and the band agrees with it', /23-20/.test(after[0].band), after[0].band);
+
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+
+  /* NOTHING LIVE, NOTHING ASKED. A poll that runs on a Tuesday is a
+     poll that will eventually get somebody rate-limited, and it is also
+     a timer nobody remembered starting. */
+  {
+    const { ctx, page, errors } = await open({
+      weeks: 1, gamesPerWeek: 3, espn: [ev('DET', 'GB', 14, 17)] });
+    await page.waitForTimeout(1200);
+    const calls = await page.evaluate(() => window.__espnCalls.slice());
+    ok('a week with no game under way never touches ESPN',
+       calls.length === 0, JSON.stringify(calls));
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+
+  /* EVERY FAILURE PATH MUST LAND ON TODAY'S SCREEN, not a wrong one.
+     These are the whole reason this can ship into a live pool: the
+     worst case is the card players already had. */
+  for (const [mode, why] of [['down', 'ESPN returns 503'],
+                             ['throw', 'the network is gone'],
+                             ['junk', 'ESPN returns something that is not JSON']]) {
+    const { ctx, page, errors } = await open({
+      startISO: justLive(), weeks: 1, gamesPerWeek: 3, espn: mode });
+    await page.waitForTimeout(1200);
+    const cs = await cards(page);
+    ok(`when ${why}, the card shows no score rather than a wrong one`,
+       cs[0].scr.length === 0, JSON.stringify(cs[0]));
+    ok(`and ${why} raises nothing at the player`,
+       errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+
+  /* A SCORE ESPN HAS NOT POSTED MUST NOT BECOME 0-0.
+
+     The app calls a game live off the clock alone (isLive is
+     Date.now() >= kick), so at kickoff there is always a window where
+     the card says IN PROGRESS and ESPN still reports the game as 'pre'
+     with null scores. `parseInt(null)` is NaN, which is why the guards
+     are there — but `|| 0` is the obvious-looking tidy-up, and it would
+     paint a confident 0-0 on a game that has not kicked a ball.
+
+     THE FIRST VERSION OF THIS TEST WAS VACUOUS and deserves recording:
+     it sent 'pre' for a game four days out and asserted no score
+     appeared. Of course none did — scoreOf returns null for anything
+     not yet live, whatever ESPN said, so the assertion passed with the
+     guards deliberately removed. The game ESPN is quiet about has to be
+     the LIVE one or the test proves nothing. */
+  for (const [state, why] of [['pre', "ESPN still calls the game scheduled"],
+                              ['in',  'ESPN has it live but has posted no score']]) {
+    const { ctx, page, errors } = await open({
+      startISO: justLive(), weeks: 1, gamesPerWeek: 3,
+      espn: [ev('DET', 'GB', null, null, state)] });
+    await page.waitForTimeout(1200);
+    const cs = await cards(page);
+    ok('the game under test is live on the clock', /in progress/i.test(cs[0].cd), cs[0].cd);
+    ok(`when ${why}, the card shows no score rather than 0-0`,
+       cs[0].scr.length === 0, JSON.stringify(cs[0]));
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+
+  /* AN UNKNOWN MATCHUP IS IGNORED, NOT GUESSED AT. ESPN has renamed
+     teams mid-season before (WAS -> WSH, LA -> LAR). A rename must cost
+     that one card its live number, never put a score on the wrong
+     game. */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: justLive(), weeks: 1, gamesPerWeek: 3,
+      espn: [ev('ZZZ', 'QQQ', 31, 3)] });
+    await page.waitForTimeout(1200);
+    const cs = await cards(page);
+    ok('a matchup the app does not know scores nothing',
+       cs.every(c => c.scr.length === 0), JSON.stringify(cs.map(c => c.scr)));
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+}
+
 /* NOT COVERED HERE, deliberately, and worth knowing about.
 
    weekSum() now prefers the server's figure for any week that is not the

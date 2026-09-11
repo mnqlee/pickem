@@ -15,6 +15,50 @@ const boom = n => { if (P.fail && P.fail[n]) throw new Error('stub failure: ' + 
 const slow = async n => { const d = (P.delay && P.delay[n]) || 0; if (d) await new Promise(r => setTimeout(r, d)); };
 const call = async n => { log.push(n); await slow(n); boom(n); };
 
+/* ---- ESPN, INTERCEPTED -------------------------------------------
+   index.html reads the public ESPN scoreboard straight from the browser
+   now (see pullEspn) because no scheduled job could be relied on to
+   write it: Cloudflare's egress is denied by Akamai, and GitHub Actions
+   never once fired its own cron. That read is therefore app behaviour,
+   and app behaviour has to be forceable from a test — INCLUDING its
+   failure paths, which are the entire safety argument. A stub that only
+   ever returned good data would prove nothing about what a player sees
+   when ESPN is down.
+
+   window.__espn takes the events array, or one of three sabotage modes:
+   'down' (503), 'throw' (network gone), 'junk' (200 whose body is not
+   JSON). window.__espnCalls records every URL asked for, so a test can
+   also assert that NOTHING was asked when nothing was live. */
+window.__espnCalls = [];
+/* Seeded from the plan so it is in place BEFORE the app boots — espnLoop
+   runs off the first week snapshot, which happens during boot, so a test
+   that set this afterwards would be grading the second poll, not the
+   first. */
+window.__espn = P.espn;
+const realFetch = window.fetch.bind(window);
+window.fetch = (u, o) => {
+  const url = String((u && u.url) || u || '');
+  if (!url.includes('site.api.espn.com')) return realFetch(u, o);
+  window.__espnCalls.push(url);
+  const e = window.__espn;
+  if (e === 'down')  return Promise.resolve(new Response('', { status: 503 }));
+  if (e === 'throw') return Promise.reject(new Error('network down'));
+  if (e === 'junk')  return Promise.resolve(new Response('<html>nope', { status: 200 }));
+  return Promise.resolve(new Response(JSON.stringify({ events: e || [] }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }));
+};
+/* One ESPN event in exactly the shape pullEspn destructures — scores as
+   STRINGS, because that is what ESPN sends and parseInt is what the app
+   relies on. Pass state 'pre' or 'post' to model the other two. */
+window.__espnEvent = (away, home, as, hs, state) => ({
+  competitions: [{
+    status: { type: { state: state || 'in' } },
+    competitors: [
+      { homeAway: 'away', team: { abbreviation: away }, score: as == null ? null : String(as) },
+      { homeAway: 'home', team: { abbreviation: home }, score: hs == null ? null : String(hs) } ]
+  }]
+});
+
 const TEAMS = ['KC','BAL','BUF','CIN','DAL','PHI','SF','DET','GB','MIN','NYJ','MIA',
                'LAC','DEN','SEA','ATL','NO','TB','HOU','IND','JAX','TEN','CLE','PIT',
                'LV','ARI','LAR','CHI','WSH','NYG','CAR','NE'];

@@ -1876,9 +1876,30 @@ const demoScore=g=>{const h=hash(g.id+'sc');
   // on anything above 2^31, and JS keeps that sign through %, which was
   // producing scores like -12.
   return [10+(h%25), 10+((h>>>5)%25)];};
+/* Live scores this phone fetched from ESPN itself, keyed `AWAY_HOME`.
+   Filled by pullEspn() — see the long note above that function.
+
+   DISPLAY ONLY, AND THAT IS LOAD-BEARING. scoreOf below is the only
+   reader of this map, and the only reader of awayScore/homeScore
+   anywhere in this file. `winner` and `status` are never written from
+   here, and isFinal() and result() read nothing else — so no number
+   arriving from a player's own browser can move a point, flip a game to
+   final, or change a standings row. Keep it that way: the moment
+   anything in the scoring path reads this, one stale phone becomes a
+   scoring bug. */
+const ESPN_LIVE=Object.create(null);
 const scoreOf=g=>{
   if(!isLive(g))return null;
-  if(!DEMO)return (g.awayScore==null||g.homeScore==null)?null:[g.awayScore,g.homeScore];
+  if(!DEMO){
+    const fs=(g.awayScore==null||g.homeScore==null)?null:[g.awayScore,g.homeScore];
+    /* While a game is running, this phone's own read is the fresher of the
+       two — the scheduled pull is minutes behind at best. Once the server
+       says final the SERVER wins: `winner` and every standings row were
+       computed from that score, and a card disagreeing with the Grid is
+       worse than a card thirty seconds stale. With no ESPN read at all,
+       this returns exactly what it always returned. */
+    return (isFinal(g)?null:ESPN_LIVE[`${g.a}_${g.h}`])||fs;
+  }
   const [a,h]=demoScore(g);
   const w=result(g);
   return w===g.h?[Math.min(a,h),Math.max(a,h)]:[Math.max(a,h),Math.min(a,h)];};
@@ -3194,6 +3215,16 @@ function tick(){
     : (Object.values(WEEKS).flat().some(g=>!isLive(g))?`Week ${state.week} · all locked`:'Season closed'))
     +'</span>';
   if(changed)render();
+  /* Keep the ESPN poll in step with what is on screen. This is the right
+     home for it: tick() already runs every second, already owns the
+     clock-driven transitions (a game becoming live is detected right up
+     there in lockedSet), and runs whether or not Firestore ever pushes.
+     Hanging the loop off the week snapshot instead looked tidier and was
+     wrong — a week that is already under way when the app opens gets no
+     snapshot until something changes, which is exactly the case of
+     opening the app during a game. espnLoop() is idempotent, so calling
+     it every second costs one array filter and nothing else. */
+  espnLoop();
 }
 setInterval(tick,1000);
 
@@ -4465,10 +4496,19 @@ let liveUnsubs=[], revealTimer=null;
    revealStale() compares kickoffs against it, so it has to be the same
    instant watchRevealed used — recorded at the call, not guessed. */
 let revealBound=0;
+/* The ESPN poll loop's handle and its in-flight guard. Up here rather
+   than beside pullEspn() so stopLive() below can clear the timer without
+   touching a `let` that has not been initialised yet. */
+let espnTimer=null, espnBusy=false, espnLast=0;
 function stopLive(){
   liveUnsubs.forEach(f=>{ try{ f&&f(); }catch(e){} });
   liveUnsubs=[];
   clearTimeout(revealTimer); revealTimer=null;
+  /* The ESPN loop goes with them. Signing out is the case that matters:
+     the listeners are torn down but a bare setInterval would keep firing
+     against a signed-out screen forever. espnLoop() restarts it from the
+     next week snapshot when there is something to watch. */
+  if(espnTimer){clearInterval(espnTimer);espnTimer=null;}
 }
 
 /* Re-open the reveal listener just after the next kickoff.
@@ -4550,7 +4590,163 @@ function revealStale(){
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible')return;
   if(!DEMO && revealStale())watchLive();
+  /* iOS freezes JS timers in a backgrounded Home Screen app, so the
+     60-second loop below is simply not running while the phone is in a
+     pocket. Pull once on return rather than waiting out an interval that
+     was never ticking. */
+  espnLoop();
 });
+
+/* ============================================================
+   LIVE SCORES, READ BY THE PHONE ITSELF
+
+   The score on a card used to depend on a scheduled job writing it to
+   Firestore first. Three hosts were tried for that job and each failed
+   in its own way:
+
+     Cloudflare Worker   ESPN answers its egress with an Akamai deny
+                         page — `espn 403 :: Access Denied` — on the
+                         address, not the request. A User-Agent header
+                         does not move it.
+     GitHub Actions      Works perfectly when invoked by hand (season,
+                         week, secret, ESPN access all verified green in
+                         23 seconds) and was never once fired by its own
+                         schedule. The workflow sat on main for eleven
+                         hours before its first window opened, then
+                         skipped roughly sixteen consecutive ticks inside
+                         that open window. "0 workflow runs."
+     Firestore           Fine, but it is only ever as fresh as whoever
+                         wrote to it.
+
+   Meanwhile ESPN answers a BROWSER without complaint — the block is on
+   Cloudflare's addresses, not on clients. So the shortest path from the
+   score to the card is no server at all: each phone reads the public
+   scoreboard while a game it cares about is running.
+
+   WHY THIS IS SAFE, in the order the worries usually arrive:
+
+     - It writes NOTHING. No Firestore write, no document, no cost, and
+       no way for one player's browser to affect another's screen.
+     - It reads nothing private. Same public JSON any browser can GET.
+     - It cannot affect scoring. The scores land in ESPN_LIVE, whose
+       only reader is scoreOf. `winner` and `status` still come from the
+       server alone, and those are what isFinal(), result(), pay() and
+       the standings are built on.
+     - It fails silent. Offline, ESPN down, a shape change, a renamed
+       team, CORS withdrawn — every failure path ends in the map simply
+       having no entry for that game, which is exactly the screen
+       players saw before this existed.
+     - It stops on its own. No live game in the week on screen, no
+       timer. Backgrounded tab, no fetch. And LIVE_MAX caps a single
+       game at six hours, so a game the server never marks final cannot
+       leave a phone polling all night.
+
+   Cost to ESPN: one GET per minute per open app, and only during a
+   game. The scheduled pull stays exactly as it is — it is what writes
+   the authoritative score, the winner and the standings, and this does
+   not replace it. This only means nobody has to wait for it to see a
+   score move.
+   ============================================================ */
+const ESPN_URL='https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+/* SEASON is '2026' in the regular season and '2026PRE' in the preseason,
+   and ESPN splits those into seasontype 2 and 1. Derived from the one
+   constant rather than repeated, so a preseason pool cannot end up
+   reading the regular-season feed. */
+const ESPN_TYPE=/PRE$/i.test(SEASON)?1:2;
+const ESPN_YEAR=parseInt(SEASON,10);
+/* A game nobody ever marked final is the one case that could poll
+   forever. Six hours covers overtime and a weather delay and still ends
+   the same night. */
+const LIVE_MAX=6*3600*1000;
+/* espnTimer / espnBusy are declared next to revealBound, above stopLive,
+   because stopLive() clears the timer and a `let` down here would leave
+   it in the temporal dead zone for any caller that ran first. */
+
+/* Games on screen that are worth asking about: started, not yet final,
+   and not so old that `status` is clearly never coming. */
+const espnWanted=()=>(WEEKS[state.week]||[])
+  .filter(g=>isLive(g) && !isFinal(g) && Date.now()<g.kick+LIVE_MAX);
+
+/* A HARD FLOOR BETWEEN REQUESTS, and it is not belt-and-braces.
+
+   Two things legitimately ask for an immediate pull: espnLoop() starting
+   up, and coming back from a backgrounded tab. Both can happen far more
+   often than once a minute. Boot alone does it twice — tick() starts the
+   loop, then watchLive() calls stopLive(), which clears the timer, and
+   the next tick starts it again a second later. iOS is worse: switching
+   apps fires visibilitychange in bursts.
+
+   Twenty seconds is well under the 60-second interval, so it never
+   delays a scheduled poll; it only collapses the accidental duplicates.
+   It also means that even if espnLoop() ever loses its idempotence, the
+   worst case is three requests a minute rather than sixty. */
+const ESPN_FLOOR=20000;
+
+async function pullEspn(){
+  if(DEMO||espnBusy)return;
+  if(Date.now()-espnLast<ESPN_FLOOR)return;
+  if(!espnWanted().length)return;
+  espnBusy=true; espnLast=Date.now();
+  const wk=state.week;
+  try{
+    /* no-store, because a cached scoreboard is the one thing this must
+       never show. The service worker leaves third-party requests alone
+       (see its fetch handler), so nothing else is caching this either. */
+    const r=await fetch(`${ESPN_URL}?seasontype=${ESPN_TYPE}&week=${wk}&dates=${ESPN_YEAR}`,
+                        {cache:'no-store'});
+    if(!r.ok)return;
+    const d=await r.json();
+    let changed=false;
+    for(const ev of (d&&d.events)||[]){
+      /* ONE BAD EVENT MUST NOT COST THE OTHERS THEIR SCORES. Every
+         subscript here is a guess about ESPN's shape, and a TBD
+         placeholder or a null score used to be enough to abort the
+         whole loop in the Python version of this. */
+      try{
+        const c=ev.competitions[0];
+        if(c.status.type.state==='pre')continue;
+        const by={}; for(const t of c.competitors)by[t.homeAway]=t;
+        const a=by.away.team.abbreviation, h=by.home.team.abbreviation;
+        const ra=by.away.score, rh=by.home.score;
+        if(ra==null||ra===''||rh==null||rh==='')continue;
+        const na=parseInt(ra,10), nh=parseInt(rh,10);
+        if(!Number.isFinite(na)||!Number.isFinite(nh))continue;
+        const k=`${a}_${h}`, was=ESPN_LIVE[k];
+        if(!was||was[0]!==na||was[1]!==nh){ESPN_LIVE[k]=[na,nh];changed=true;}
+      }catch(_){}
+    }
+    /* Only repaint when a number actually moved, and only if the week on
+       screen is still the week this fetch was for — flicking to week 3
+       mid-request must not redraw it with week 1's scores. */
+    if(changed&&state.week===wk)render();
+  }catch(_){
+    /* Deliberately empty. Every failure here means "no numbers on the
+       card", which is the behaviour this feature improves on, not a
+       regression. Nothing is worth a toast. */
+  }finally{ espnBusy=false; }
+}
+
+/* IDEMPOTENT ON PURPOSE — it is called once a second from tick().
+
+   Restarting the interval on every call would mean the 60-second clock
+   was reset a second later, every second, and the poll after the first
+   would never fire. So: no live game, stop and stay stopped; already
+   running, leave it exactly alone; otherwise start it and pull once
+   immediately, because the first score should not wait a minute. */
+function espnLoop(){
+  if(DEMO)return;
+  if(!espnWanted().length){
+    if(espnTimer){clearInterval(espnTimer);espnTimer=null;}
+    return;
+  }
+  if(espnTimer)return;
+  pullEspn();
+  espnTimer=setInterval(()=>{
+    if(document.visibilityState!=='visible')return;   // pockets are free
+    if(!espnWanted().length){clearInterval(espnTimer);espnTimer=null;return;}
+    pullEspn();
+  },60000);
+}
 
 function watchLive(){
   stopLive();
