@@ -35,13 +35,25 @@ on:
     # in November the US is on EST and every window slides an hour later
     # in UTC. Padding both ends covers the change without a second set of
     # crons nobody would remember to switch over.
-    - cron: '*/10 0-5 * * 5'     # Fri 00:00-05:59 UTC = Thursday night ET
-    - cron: '*/10 17-23 * * 0'   # Sun 17:00-23:59 UTC = Sunday 1pm and 4pm ET
-    - cron: '*/10 0-5 * * 1'     # Mon 00:00-05:59 UTC = Sunday night football
-    - cron: '*/10 0-5 * * 2'     # Tue 00:00-05:59 UTC = Monday night football
+    #
+    # EVERY FIVE MINUTES, NOT TEN. The score on a card is not decoration:
+    # scoreOf() shows it the moment kickoff passes, so this cadence IS the
+    # refresh rate of a live game as far as a player is concerned. Five is
+    # the floor GitHub's scheduler accepts, and its own lateness adds a few
+    # minutes on top, so expect 5-12 minutes behind ESPN rather than 10-20.
+    #
+    # THE COST, so nobody has to rediscover it: about 456 runs a week at
+    # ~25s each, so roughly 190 minutes of Actions a week. If the Actions
+    # allowance ever gets tight, the cheapest cut is */10 on the four
+    # single-game windows and */5 only on the two Sunday ones — thirteen
+    # games moving at once is where the extra freshness is actually felt.
+    - cron: '*/5 0-5 * * 5'      # Fri 00:00-05:59 UTC = Thursday night ET
+    - cron: '*/5 17-23 * * 0'    # Sun 17:00-23:59 UTC = Sunday 1pm and 4pm ET
+    - cron: '*/5 0-5 * * 1'      # Mon 00:00-05:59 UTC = Sunday night football
+    - cron: '*/5 0-5 * * 2'      # Tue 00:00-05:59 UTC = Monday night football
     # Weeks 16-18 add Saturday games, and there is a Black Friday game.
-    - cron: '*/10 17-23 * * 6'   # Sat 17:00-23:59 UTC = Saturday afternoon ET
-    - cron: '*/10 0-5 * * 6'     # Sat 00:00-05:59 UTC = Friday night ET
+    - cron: '*/5 17-23 * * 6'    # Sat 17:00-23:59 UTC = Saturday afternoon ET
+    - cron: '*/5 0-5 * * 6'      # Sat 00:00-05:59 UTC = Friday night ET
   workflow_dispatch:
     inputs:
       week:

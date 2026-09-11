@@ -2760,6 +2760,7 @@ console.log('\n43. A player who blocked notifications must be sent somewhere rea
 }
 
 /* ------------------------------------------------------------------ */
+const SKEW = 8000;
 console.log('\n44. The Grid must open itself at kickoff, without a reload');
 {
   /* THE BUG. The reveal listener bakes `revealAt <= now - CLOCK_SKEW_MS`
@@ -2779,7 +2780,7 @@ console.log('\n44. The Grid must open itself at kickoff, without a reload');
 
      Broken for the first game of every week; fine from the second game of
      a Sunday block onwards, which is why nobody caught it. */
-  const KICK_IN = 4000, SKEW = 8000;
+  const KICK_IN = 4000;
   const { ctx, page, errors } = await open({
     startISO: new Date(Date.now() + KICK_IN).toISOString(),
     weeks: 1, gamesPerWeek: 3, skewMs: SKEW });
@@ -2807,6 +2808,53 @@ console.log('\n44. The Grid must open itself at kickoff, without a reload');
 
   ok('no page errors', errors.length === 0, errors[0] || '');
   await ctx.close();
+
+  /* THE HALF THIS CASE MISSED THE FIRST TIME, and it shipped.
+
+     The block above loads the page BEFORE kickoff, which is the lucky
+     ordering. scheduleRevealRefresh() filtered `k > now` — kickoffs still
+     in the future — so a game that had ALREADY started was dropped and no
+     timer was ever set for its reveal moment. Open the app at 9:36 for a
+     9:35 kickoff and the column stayed sealed until a reload; the next
+     timer was the following kickoff, days away.
+
+     That is the most likely two minutes in the week for somebody to open
+     the app — they open it BECAUSE a game just started. Reported by a
+     player within twelve hours of the fix going live. */
+  const afterKick = await open({
+    startISO: new Date(Date.now() - 2000).toISOString(),   // kicked off 2s ago
+    weeks: 1, gamesPerWeek: 3, skewMs: SKEW });
+  const kickedAt = Date.now() - 2000;
+  await afterKick.page.waitForTimeout(SKEW + 9000);
+  const b2 = await afterKick.page.evaluate(() => window.__revealBounds || []);
+  ok('a game that kicked off BEFORE the app opened still reveals itself',
+     b2.some(x => x >= kickedAt), JSON.stringify(b2.map(x => Math.round((x-kickedAt)/1000))));
+  await afterKick.ctx.close();
+
+  /* AND A TIMER IS NOT ENOUGH ON A PHONE. iOS suspends JavaScript in a
+     backgrounded home-screen app, so the reveal timer does not fire while
+     the app is in a pocket — which is exactly where it is two minutes
+     after a kickoff. Simulated by hiding the page, clearing its pending
+     timers, waiting out the reveal moment, and coming back. */
+  const bg = await open({
+    startISO: new Date(Date.now() + 4000).toISOString(),
+    weeks: 1, gamesPerWeek: 3, skewMs: SKEW });
+  const bgKick = Date.now() + 4000;
+  await bg.page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable:true, get:()=>'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    for (let i = 1; i < 99999; i++) clearTimeout(i);      // as a suspend would
+  });
+  await bg.page.waitForTimeout(Math.max(0, (bgKick + SKEW + 9000) - Date.now()));
+  await bg.page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable:true, get:()=>'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await bg.page.waitForTimeout(1200);
+  const b3 = await bg.page.evaluate(() => window.__revealBounds || []);
+  ok('and it reveals on return after the timer was suspended',
+     b3.some(x => x >= bgKick), JSON.stringify(b3.map(x => Math.round((x-bgKick)/1000))));
+  await bg.ctx.close();
 }
 
 /* ------------------------------------------------------------------ */

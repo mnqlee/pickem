@@ -146,20 +146,48 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .wk .live-d{position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;
   background:var(--live);animation:pulse 1.6s infinite}
 
-.tabs{display:flex;align-items:center;gap:19px;border-top:1px solid rgba(250,247,241,.08);
-  padding-top:2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+/* ---------- PRIMARY NAVIGATION ----------
+
+   BOXED, BECAUSE PLAYERS COULD NOT FIND IT.
+
+   This was five words of 11px text at 62% opacity with a 2.5px red
+   underline on the active one, sitting directly beneath the week strip —
+   and the week strip IS boxes. So the row that looked tappable was the
+   weeks, and the app's primary navigation read as a caption for it.
+   Multiple players in week 1 said they had never noticed the tabs. Not
+   "found them confusing": never saw them.
+
+   Four things were wrong and all four are fixed here: the labels were
+   dim (now full paper), there was no container (now a bordered box), the
+   active state was a hairline underline (now a filled red box), and the
+   hit target was 44px of mostly empty space (now a 46px box you can see
+   the edges of).
+
+   WHY flex:1 1 0 AND NOT A FIXED WIDTH. Five equal boxes across a 366px
+   phone give 64px each, and STANDINGS at 11px needs 66px. A flex item's
+   default min-width is `auto`, so it never shrinks below its own text —
+   the long word takes the two pixels it needs and the others give them
+   up. Measured: boxes come out [64 64 66 64 64] at 390px, a 2px spread,
+   nothing clipped. DO NOT ADD min-width:0 to .tab — that defeats the
+   min-content floor and STANDINGS starts truncating.
+
+   The -.02em tracking is what buys those two pixels. At the previous
+   .055em the row overflowed by 7px, which is the worst possible amount:
+   it scrolls by a hair and reads as a bug rather than a design.
+
+   Six tabs, when Archive appears, still fits without scrolling at 375px
+   and up. At 320px it scrolls — and a clipped BOX says "scroll me" in a
+   way clipped text never did. */
+.tabs{display:flex;gap:4px;border-top:1px solid rgba(250,247,241,.08);
+  padding:9px 0 11px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tabs::-webkit-scrollbar{display:none}
-/* 37px tall with 19px gaps: the app's primary navigation was under the
-   44px minimum on every target, so a thumb on a moving train lands on
-   Standings when it meant Grid. Height and hit box both raised; the gap
-   comes down because the padding now provides the separation. */
-.tab{flex:0 0 auto;padding:13px 6px 12px;font-size:11px;font-weight:750;
-  letter-spacing:.055em;text-transform:uppercase;min-height:44px;
-  display:inline-flex;align-items:center;
-  background:none;border:0;font-family:inherit;
-  color:var(--chalk);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1px}
-.tab.on{color:var(--paper);border-bottom-color:var(--stamp)}
-.tabs{gap:11px}
+.tab{flex:1 1 0;padding:0 1px;font-size:11px;font-weight:850;
+  letter-spacing:-.02em;text-transform:uppercase;min-height:46px;white-space:nowrap;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:9px;background:var(--shell-2);
+  border:1px solid rgba(250,247,241,.14);font-family:inherit;
+  color:var(--paper);cursor:pointer}
+.tab.on{background:var(--stamp);border-color:var(--stamp);color:#fff}
 
 /* The rank tray used to be a 190px block of sixteen chips above the
    slate — a secondary control taking a fifth of the screen before a
@@ -4433,6 +4461,10 @@ let ARCHIVE_LIVE=null;
    from another week, and Week 12 never received a real update because
    nothing was subscribed to it. */
 let liveUnsubs=[], revealTimer=null;
+/* The `revealAt <=` bound the CURRENT reveal listener was opened with.
+   revealStale() compares kickoffs against it, so it has to be the same
+   instant watchRevealed used — recorded at the call, not guessed. */
+let revealBound=0;
 function stopLive(){
   liveUnsubs.forEach(f=>{ try{ f&&f(); }catch(e){} });
   liveUnsubs=[];
@@ -4465,19 +4497,60 @@ function stopLive(){
    it, which is precisely the bug the comment above says this exists to
    prevent. It was fixed for the second game of a Sunday block and broken
    for the first game of every week. */
+/* The skew the reveal queries use, with a literal only as a last resort. */
+const revealSkew=()=>(window.PS&&PS.CLOCK_SKEW_MS)||120000;
+
 function scheduleRevealRefresh(){
   clearTimeout(revealTimer);
-  const now=Date.now();
-  const next=(WEEKS[state.week]||[])
-    .map(g=>g.kick).filter(k=>k>now).sort((a,b)=>a-b)[0];
-  if(!next)return;
-  /* Past the kickoff by the full skew plus a few seconds, so the new
-     bound is genuinely on the far side of it. Read from PS rather than
-     retyped: one definition, in the file that uses it for the queries. */
-  const skew=(window.PS&&PS.CLOCK_SKEW_MS)||120000;
-  const wait=Math.min(next-now+skew+5000, 2147483000);
-  revealTimer=setTimeout(()=>{ if(!DEMO)watchLive(); },wait);
+  const now=Date.now(), skew=revealSkew();
+  /* SCHEDULE ON THE REVEAL MOMENT, NOT ON THE KICKOFF.
+
+     This filtered `k > now` — only kickoffs still in the future — and
+     that is wrong in a way that shipped and was reported within twelve
+     hours. Open the app at 9:36 for a 9:35 kickoff and that game is
+     already in the past, so it is dropped, so no timer is set for it at
+     all; the next timer is the following kickoff, days away. The column
+     stays sealed until a reload, which is exactly the bug this function
+     exists to prevent — now failing for the person who opens the app
+     BECAUSE a game just started, which is most people.
+
+     The moment that matters is kickoff + skew + 5s, not kickoff. A
+     kickoff can be in the past while its reveal moment is still ahead,
+     and that window is two minutes wide — the single most likely two
+     minutes for somebody to open the app. Map to the reveal moment
+     first, then filter.
+
+     Reproduced before fixing:
+       opened 5s BEFORE kickoff -> re-subscribes, reveals
+       opened 2s AFTER  kickoff -> never re-subscribes, sealed forever */
+  const at=(WEEKS[state.week]||[])
+    .map(g=>g.kick+skew+5000).filter(t=>t>now).sort((a,b)=>a-b)[0];
+  if(!at)return;
+  // Never a timeout so long it overflows setTimeout.
+  revealTimer=setTimeout(()=>{ if(!DEMO)watchLive(); },Math.min(at-now,2147483000));
 }
+
+/* A TIMER IS NOT ENOUGH ON A PHONE.
+
+   iOS suspends JavaScript in a backgrounded home-screen app, so the
+   setTimeout above does not fire while the app is not on screen — and
+   the whole point of that timer is a moment two minutes after a kickoff,
+   which is prime time for the app to be in somebody's pocket. They come
+   back to sealed dots and a timer that either fired into a suspended
+   page or is now hours late.
+
+   So re-subscribe on return as well, and only when it would change
+   something: a game in the week on screen that has passed its reveal
+   moment but is newer than the bound the current listener was opened
+   with. Without that check this would re-query on every tab switch. */
+function revealStale(){
+  const cut=Date.now()-revealSkew();
+  return (WEEKS[state.week]||[]).some(g=>g.kick<=cut && g.kick>revealBound);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  if(!DEMO && revealStale())watchLive();
+});
 
 function watchLive(){
   stopLive();
@@ -4487,6 +4560,7 @@ function watchLive(){
     WEEKS[state.week]=mapGames(games);
     render();
   }));
+  revealBound=Date.now()-revealSkew();   // same instant watchRevealed bakes in
   liveUnsubs.push(PS.watchRevealed(wk, (rows,forWk)=>{
     if((forWk??wk)!==state.week)return;
     rows.forEach(p=>{
