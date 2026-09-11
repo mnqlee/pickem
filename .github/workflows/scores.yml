@@ -27,33 +27,33 @@ name: Live scores
 # safety story: this can run 200 times a week and cannot touch a
 # standings row or send a single notification.
 
+# THE SCHEDULE IS GONE FROM THIS FILE, DELIBERATELY.
+#
+# It used to ask for `*/5` inside six game windows. GitHub never fired
+# one of them. The file sat on main for eleven hours before its first
+# window opened, then skipped roughly sixteen consecutive ticks INSIDE
+# that open window — the Actions page read "0 workflow runs" — while a
+# manual dispatch of this exact job went green in 23 seconds. Season,
+# week, secret and ESPN access were all verified correct.
+#
+# A schedule that has never once run is worse than no schedule: it reads
+# like coverage on the page and in the diff, and it is not.
+#
+# The windows moved to scores-loop.yml, which asks for ONE run per
+# window — the single-fire cron shape score-week.yml uses and GitHub
+# does honour — and does the repeating inside the job, where no
+# scheduler can drop it. This file stays as the manual one-shot: what to
+# click when a score should be written right now.
+#
+# TO PUT IT BACK, if GitHub's high-frequency cron is ever seen working:
+#   */5 0-5   * * 5   Thursday night ET
+#   */5 17-23 * * 0   Sunday 1pm and 4pm ET
+#   */5 0-5   * * 1   Sunday night football
+#   */5 0-5   * * 2   Monday night football
+#   */5 17-23 * * 6   Saturday afternoon ET (weeks 16-18)
+#   */5 0-5   * * 6   Friday night ET (Black Friday)
+# Nothing else in this file would have to change.
 on:
-  schedule:
-    # Times are UTC and the windows are deliberately an hour wider than
-    # the games at both ends, because THE CLOCKS MOVE AND THE CRON DOES
-    # NOT — see the same warning in score-week.yml. From the first Sunday
-    # in November the US is on EST and every window slides an hour later
-    # in UTC. Padding both ends covers the change without a second set of
-    # crons nobody would remember to switch over.
-    #
-    # EVERY FIVE MINUTES, NOT TEN. The score on a card is not decoration:
-    # scoreOf() shows it the moment kickoff passes, so this cadence IS the
-    # refresh rate of a live game as far as a player is concerned. Five is
-    # the floor GitHub's scheduler accepts, and its own lateness adds a few
-    # minutes on top, so expect 5-12 minutes behind ESPN rather than 10-20.
-    #
-    # THE COST, so nobody has to rediscover it: about 456 runs a week at
-    # ~25s each, so roughly 190 minutes of Actions a week. If the Actions
-    # allowance ever gets tight, the cheapest cut is */10 on the four
-    # single-game windows and */5 only on the two Sunday ones — thirteen
-    # games moving at once is where the extra freshness is actually felt.
-    - cron: '*/5 0-5 * * 5'      # Fri 00:00-05:59 UTC = Thursday night ET
-    - cron: '*/5 17-23 * * 0'    # Sun 17:00-23:59 UTC = Sunday 1pm and 4pm ET
-    - cron: '*/5 0-5 * * 1'      # Mon 00:00-05:59 UTC = Sunday night football
-    - cron: '*/5 0-5 * * 2'      # Tue 00:00-05:59 UTC = Monday night football
-    # Weeks 16-18 add Saturday games, and there is a Black Friday game.
-    - cron: '*/5 17-23 * * 6'    # Sat 17:00-23:59 UTC = Saturday afternoon ET
-    - cron: '*/5 0-5 * * 6'      # Sat 00:00-05:59 UTC = Friday night ET
   workflow_dispatch:
     inputs:
       week:

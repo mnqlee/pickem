@@ -1,0 +1,215 @@
+name: Live scores (window)
+
+# ONE RUN THAT COVERS A WHOLE GAME WINDOW, instead of a cron every five
+# minutes that GitHub will not honour.
+#
+# WHY THIS FILE EXISTS, so nobody "simplifies" it back into scores.yml.
+#
+# scores.yml asked for `*/5` inside each game window. It was never once
+# fired by the scheduler: it sat on main for eleven hours before its
+# first window opened, then skipped roughly sixteen consecutive ticks
+# inside that open window — "0 workflow runs" on the Actions page, with
+# a manual dispatch of the identical job going green in 23 seconds.
+# Season, week, secret and ESPN access were all verified fine.
+#
+# Meanwhile score-week.yml's schedule fires reliably, and its crons are
+# single-fire (`0 1 * * 1`). That is the difference this file is built
+# on: ask for ONE run per window, which is the shape that works, and put
+# the repetition INSIDE the job where no scheduler can drop it.
+#
+# It also makes the scheduler's lateness stop mattering. A `*/5` tick
+# that arrives twenty minutes late has already missed its moment; a
+# window start that arrives twenty minutes late still covers the
+# remaining five and a half hours.
+#
+# WHAT IT DOES NOT DO: it never scores anybody. `--scores-only` returns
+# before score_pools() and notify(), so this writes game documents only
+# — status, winner, awayScore, homeScore. No standings rows, no push
+# notifications, no weekly awards. Those stay in score-week.yml on its
+# four fixed runs. That separation is the safety story: this can loop
+# all day and cannot touch a standings row or send one notification.
+#
+# AND THE SCORES ON THE CARDS DO NOT DEPEND ON IT. Since v1.31.0 each
+# phone reads the ESPN scoreboard itself once a minute while a game it
+# is showing is running (see pullEspn in index.html). What this job is
+# actually for is `status: 'final'` and `winner`, which only the server
+# may write — they are what flip a card to Final, colour the Grid and
+# move the weekly standings.
+
+on:
+  # SINGLE FIRE PER WINDOW. Six hours is the GitHub job ceiling, so each
+  # of these starts a run that covers itself and then ends.
+  #
+  # Times are UTC. From the first Sunday in November the US goes to EST
+  # and every window slides an hour later in UTC — these all start an
+  # hour early and run long for exactly that reason, the same warning
+  # that is in score-week.yml.
+  # WINDOWS OVERLAP ON PURPOSE. A run lasts 350 minutes, so back-to-back
+  # starts six hours apart leave a gap every time GitHub is a few minutes
+  # late — and it usually is. Starting every five hours means the next
+  # window is already running before the last one closes, and a late
+  # start costs nothing.
+  #
+  # Overlapping runs are harmless: pull_scores() writes a game document
+  # only when its score or status actually changed, so the second run of
+  # a pair writes nothing. The job is idempotent by construction.
+  #
+  # COVERAGE CHECKED AGAINST REAL KICKOFFS, in both EDT and EST, because
+  # a window that ends while a game is still being played is the same
+  # bug as no window at all:
+  #   Sun 1pm ET   17:00 UTC, ends ~20:15   -> Sun 16:00
+  #   Sun 4:25 ET  20:25 UTC, ends ~23:40   -> Sun 21:00
+  #   SNF 8:20 ET  00:20 UTC Mon, ends ~03:40 -> Mon 02:00 (and EST's
+  #                                              04:40 finish too)
+  #   MNF 8:15 ET  00:15 UTC Tue, ends ~03:30 -> Mon 23:00
+  #   TNF 8:15 ET  00:15 UTC Fri, ends ~03:30 -> Thu 23:00
+  #   Sat late     00:15 UTC Sun (wks 16-18) -> Sat 23:00
+  schedule:
+    - cron: '0 16 * * 0'   # Sun 16:00 UTC -> the 1pm ET slate
+    - cron: '0 21 * * 0'   # Sun 21:00 UTC -> the 4pm ET slate, to the whistle
+    - cron: '0 2 * * 1'    # Mon 02:00 UTC -> Sunday Night Football, EDT or EST
+    - cron: '0 23 * * 1'   # Mon 23:00 UTC -> Monday Night Football
+    - cron: '0 23 * * 4'   # Thu 23:00 UTC -> Thursday Night Football
+    - cron: '0 23 * * 5'   # Fri 23:00 UTC -> Black Friday / Friday night
+    - cron: '0 16 * * 6'   # Sat 16:00 UTC -> Saturday afternoon, weeks 16-18
+    - cron: '0 23 * * 6'   # Sat 23:00 UTC -> Saturday night, weeks 16-18
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'How long to keep pulling (default 350, max 350)'
+        required: false
+      every:
+        description: 'Seconds between pulls (default 300, min 60)'
+        required: false
+      week:
+        description: 'Week to refresh (blank = auto-detect)'
+        required: false
+
+# NO CONCURRENCY GROUP HERE, and that is a considered choice rather than
+# an omission. Both options are wrong for a six-hour job:
+#
+#   cancel-in-progress: true  — the 21:00 window would CANCEL the 16:00
+#     one mid-pull. It would work, but every Sunday would leave a trail
+#     of "cancelled" runs on the Actions page, which is indistinguishable
+#     from a failure at a glance and trains you to ignore that page.
+#   cancel-in-progress: false — the 21:00 window would QUEUE behind the
+#     16:00 one and start five hours late, having covered nothing.
+#
+# So: let them overlap. pull_scores() only writes a game whose score or
+# status actually changed, so a concurrent second run writes nothing and
+# costs nothing. This repo is public, and GitHub-hosted runners are free
+# for public repositories, so the extra minutes are free too. It also
+# means the manual one-shot in scores.yml can be clicked DURING a window
+# without cancelling it.
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    # Must exceed the loop's own budget, or GitHub kills the job mid-pull
+    # and the run goes red for no real reason. 350 + margin.
+    timeout-minutes: 358
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      # From requirements.txt, not by name. `cache: 'pip'` above globs for
+      # that file and fails the whole job when it is missing — which is
+      # exactly how "Score the week" died silently for days.
+      - run: pip install -r requirements.txt
+
+      - name: Write service account key
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          # An unset secret is the empty string and `echo` still succeeds,
+          # so this step would go green having written one newline, and
+          # the failure would surface six frames deep inside
+          # firebase_admin as a JSON parse error naming neither the
+          # secret nor this file.
+          if [ -z "${SA:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is not set on this repository."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret."
+            exit 1
+          fi
+          printf '%s' "$SA" > /tmp/sa.json
+          python -c "import json,sys; json.load(open('/tmp/sa.json'))" || {
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON."
+            exit 1
+          }
+
+      - name: Pull scores every few minutes until the window closes
+        # Inputs go through the environment, never straight into the
+        # shell: a dispatch input of `1; cat /tmp/sa.json` would
+        # otherwise print the Firebase admin key into a public run log.
+        env:
+          FIREBASE_SERVICE_ACCOUNT_FILE: /tmp/sa.json
+          SEASON: ${{ vars.SEASON || '2026' }}
+          IN_WEEK: ${{ inputs.week }}
+          IN_MINUTES: ${{ inputs.minutes }}
+          IN_EVERY: ${{ inputs.every }}
+        run: |
+          set -u
+
+          # Every input is validated as digits-only and then clamped.
+          # A blank input on a scheduled run takes the default.
+          case "${IN_WEEK:-}" in
+            ''|*[!0-9]*) WEEK_ARG="" ;;
+            *)           WEEK_ARG="--week ${IN_WEEK}" ;;
+          esac
+          case "${IN_MINUTES:-}" in
+            ''|*[!0-9]*) MINUTES=350 ;;
+            *)           MINUTES="$IN_MINUTES" ;;
+          esac
+          case "${IN_EVERY:-}" in
+            ''|*[!0-9]*) EVERY=300 ;;
+            *)           EVERY="$IN_EVERY" ;;
+          esac
+          [ "$MINUTES" -gt 350 ] && MINUTES=350
+          [ "$MINUTES" -lt 1 ]   && MINUTES=1
+          [ "$EVERY" -lt 60 ]    && EVERY=60      # be a good citizen to ESPN
+          [ "$EVERY" -gt 1800 ]  && EVERY=1800
+
+          END=$(( $(date +%s) + MINUTES * 60 ))
+          echo "Window: ${MINUTES} min, a pull every ${EVERY}s, season ${SEASON}."
+          echo "Closes at $(date -u -d "@${END}" +%H:%M:%SZ 2>/dev/null || echo "${END}")."
+
+          n=0
+          fails=0
+          while : ; do
+            n=$(( n + 1 ))
+            echo "::group::pull ${n} — $(date -u +%H:%M:%S)Z"
+            # A FAILED PULL MUST NOT END THE WINDOW. One ESPN hiccup, one
+            # transient Firestore error, and a `set -e` style script would
+            # exit here and leave the remaining five hours uncovered —
+            # which is the whole failure this job exists to prevent.
+            if python scripts/score_week.py --season "$SEASON" $WEEK_ARG --scores-only; then
+              :
+            else
+              fails=$(( fails + 1 ))
+              echo "::warning::pull ${n} failed; continuing (${fails} so far)"
+            fi
+            echo "::endgroup::"
+
+            REMAIN=$(( END - $(date +%s) ))
+            if [ "$REMAIN" -le "$EVERY" ]; then
+              echo "Window closed after ${n} pull(s), ${fails} failed."
+              break
+            fi
+            sleep "$EVERY"
+          done
+
+          # Red only if NOTHING worked. A window that pulled 70 times and
+          # missed twice did its job; going red on that trains everyone to
+          # ignore the emails, which is how the last silent failure stayed
+          # silent for nine days.
+          if [ "$fails" -ge "$n" ]; then
+            echo "::error::every pull in this window failed."
+            exit 1
+          fi
+
+      - name: Shred the key
+        if: always()
+        run: rm -f /tmp/sa.json
