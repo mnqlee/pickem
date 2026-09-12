@@ -2762,7 +2762,28 @@ function weekSum(pl,w){
          points out of the season total for every player at once — and
          permanently for any week that never fully finalises, such as
          one holding a postponed game. */
-    const loaded=w===state.week;
+    /* Number(w), NOT w. THIS ONE COERCION IS THE WHOLE BUG BELOW.
+
+       weekSum is called from two places with two different types. The
+       weekly table passes state.week, a NUMBER. The season table sums
+       `for (const w in WEEKS)`, and a for-in key is always a STRING.
+       So `w === state.week` was "1" === 1 — false — and `loaded` was
+       false for EVERY week on the season tab, including the one on
+       screen. `!loaded` then made the server record win whenever one
+       existed, and the comment above became a description of behaviour
+       this code did not have: live figures for the loaded week were
+       live on one tab and stale on the other.
+
+       What a real pool saw, mid-week-1 with two of sixteen games final:
+       This Week had Bob on 15, Season had him on 10. Everyone whose
+       second pick was WRONG agreed on both tabs; everyone who got it
+       RIGHT was short on Season by exactly their stake, because the
+       banked snapshot predated that game going final. One player
+       dropped out of the top eight on one tab while sitting fourth on
+       the other, and every Season row read "1 of 2 correct" — the same
+       figure for all of them, which is the signature of a per-player
+       number being read from somewhere it isn't. */
+    const loaded=Number(w)===Number(state.week);
     const settled=(WEEKS[w]||[]).length>0&&WEEKS[w].every(isFinal);
     if(rec&&(settled||!loaded))return {pts:rec.pts||0, hits:rec.hits||0};
   }

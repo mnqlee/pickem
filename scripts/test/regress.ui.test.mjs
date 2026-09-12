@@ -3111,6 +3111,174 @@ console.log('\n46. A live score must appear without waiting on any scheduler');
   }
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\n47. Season and This Week must not disagree about the same week');
+{
+  /* THE BUG, reported from a live pool with 27 players in it.
+
+     Mid-week-1, with two of sixteen games final, the two Standings tabs
+     showed different numbers for the same people:
+
+       THIS WEEK            SEASON
+       Lee      16          Lee      16
+       Bob      15          Mario    15
+       Mario    15          Star     15
+       Ron Ron  15          Charles  13
+       Star     15          Dr House 12
+       Dr House 14          TK       11
+       Charles  13          Bob      10
+       Chris    12          Chris    10
+
+     The tell was who matched. Every player whose second pick was WRONG
+     agreed across both tabs; every player who got it RIGHT was short on
+     the Season tab by exactly the stake they had on it. Ron Ron fell out
+     of the top eight entirely. And every Season row read "1 of 2
+     correct" — the same figure for all of them, which is not something a
+     per-player calculation produces.
+
+     So the Season tab was showing the last scoring run's snapshot,
+     banked when the opener was final and the second game was not, while
+     This Week showed the live calculation. Both were internally
+     consistent; they were answers to different moments.
+
+     THE CAUSE, and it is one character. weekSum() decides live-vs-server
+     with `const loaded = w === state.week`. The weekly branch passes
+     state.week, a NUMBER. The season branch sums `for (const w in WEEKS)`
+     — and a for-in key is a STRING. "1" === 1 is false, so `loaded` was
+     false for every week including the one on screen, `!loaded` was
+     true, and the server record won whenever one existed.
+
+     Which makes the comment above that line an accurate description of
+     behaviour the code did not have: "Live figures ONLY for the week
+     currently loaded" was true on one tab and false on the other.
+
+     This test pins the invariant rather than the mechanism: with a
+     single week in the fixture, the Season total and the This Week total
+     are the same sum and must agree to the point. The stub deliberately
+     returns a server record whose points are unrelated to the picks, so
+     a test cannot pass by accident if the wrong source is read. */
+  const { ctx, page, errors } = await open({
+    // One game final, the rest of the week still to come — the exact
+    // shape that makes a scoring snapshot disagree with live play.
+    startISO: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    weeks: 1, gamesPerWeek: 4 });
+
+  const board = pg => pg.evaluate(() =>
+    [...document.querySelectorAll('#board .row')].map(r => ({
+      name: (r.querySelector('.who b') || {}).textContent || '',
+      pts:  (r.querySelector('.pts b') || {}).textContent || '',
+      sub:  (r.querySelector('.who .mono') || {}).textContent || '' })));
+
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(500);
+  await page.click('#standTabs [data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const wkRows = await board(page);
+
+  await page.click('#standTabs [data-stand="season"]').catch(() => {});
+  await page.waitForTimeout(400);
+  const seRows = await board(page);
+
+  ok('both tabs rendered a table', wkRows.length > 2 && seRows.length > 2,
+     `week=${wkRows.length} season=${seRows.length}`);
+
+  const seBy = Object.fromEntries(seRows.map(r => [r.name, r.pts]));
+  const mismatched = wkRows.filter(r => seBy[r.name] !== undefined
+                                     && seBy[r.name] !== r.pts);
+  /* THE ASSERTION THAT KILLS THE BUG. */
+  ok('every player has the same points on both tabs for a one-week season',
+     mismatched.length === 0,
+     JSON.stringify(mismatched.map(r => [r.name, r.pts, seBy[r.name]])).slice(0, 300));
+
+  /* The order follows from the points, but check it anyway: the reported
+     symptom people actually noticed was a player vanishing from the top
+     of one table while sitting fourth on the other. */
+  ok('and both tabs rank them in the same order',
+     wkRows.map(r => r.name).join('|') === seRows.map(r => r.name).join('|'),
+     `week=${wkRows.map(r => r.name).slice(0, 5).join(',')} season=${seRows.map(r => r.name).slice(0, 5).join(',')}`);
+
+  /* "1 of 2 correct" on every row was the loudest clue and is worth its
+     own assertion: a per-player figure that is identical for everybody
+     is a figure being read from the wrong place. */
+  const subs = seRows.map(r => r.sub.match(/(\d+) of (\d+) correct/)).filter(Boolean);
+  ok('the correct-count is not the same value for every player',
+     subs.length > 2 && new Set(subs.map(m => m[1])).size > 1,
+     JSON.stringify(seRows.slice(0, 6).map(r => r.sub)));
+
+  /* AND THE LINE ITSELF, because that sentence is what a player reads.
+     It is assembled from two sources — `${hits} of ${gp} correct` —
+     where hits came from weekSum and gp was counted live on the phone.
+     With the bug that put a STALE number and a FRESH one in the same
+     sentence: "1 of 2 correct" for a player who had gone 2 for 2, with
+     the Grid beside it showing both picks green. Checking points alone
+     would not have caught a future edit that reads hits from somewhere
+     else again. */
+  const hitsOf = rows => Object.fromEntries(rows.map(r =>
+    [r.name, (r.sub.match(/(\d+) of (\d+) correct/) || [,'?','?']).slice(1, 3).join('/')]));
+  const wkHits = hitsOf(wkRows), seHits = hitsOf(seRows);
+  const hitMismatch = Object.keys(wkHits).filter(n =>
+    seHits[n] !== undefined && seHits[n] !== wkHits[n]);
+  ok('and the "X of Y correct" line agrees on both tabs',
+     hitMismatch.length === 0,
+     JSON.stringify(hitMismatch.map(n => [n, wkHits[n], seHits[n]])).slice(0, 300));
+
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+
+  /* THE OTHER HALF OF THE SAME FUNCTION, and it had no test at all —
+     which I only discovered by mutating the fix above. Replacing the
+     comparison with `const loaded = true` — the obvious-looking way to
+     "just always use the live figure" — passed all 320 checks.
+
+     It must not. weekSum's comment records that this already happened in
+     production: loadWeek() keeps one week of everyone's picks in memory,
+     so weekPoints() finds no picks for any past week. Prefer the client
+     calculation for a week that is not loaded and that week's points
+     vanish from the season total for every player at once — and
+     permanently, for any week that never fully finalises.
+
+     Mid-Sunday, the way a player reaches this is entirely ordinary:
+     tap week 2 to look at next week's slate, tap Standings, and the
+     season table has forgotten the season.
+
+     The invariant, stated so it survives the stub's fabricated numbers:
+     switching to a week whose picks are NOT loaded must not zero out a
+     player's season total. It is allowed to change — live-for-loaded
+     versus banked-for-everything-else is the design — but a week that
+     scored points may never contribute nothing. */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+      weeks: 2, gamesPerWeek: 4 });
+
+    const total = pg => pg.evaluate(() => {
+      const r = document.querySelector('#board .row');
+      return r ? ((r.querySelector('.pts b') || {}).textContent || '') : '';
+    });
+
+    await page.click('[data-tab="standings"]').catch(() => {});
+    await page.waitForTimeout(400);
+    await page.click('#standTabs [data-stand="season"]').catch(() => {});
+    await page.waitForTimeout(400);
+    const onWk1 = await total(page);
+    ok('the season table has points while week 1 is loaded',
+       Number(onWk1) > 0, `top row = ${JSON.stringify(onWk1)}`);
+
+    // Peek at next week's slate, exactly as a player would.
+    await page.click('.wk[data-wk="2"]').catch(() => {});
+    await page.waitForTimeout(600);
+    await page.click('[data-tab="standings"]').catch(() => {});
+    await page.click('#standTabs [data-stand="season"]').catch(() => {});
+    await page.waitForTimeout(400);
+    const onWk2 = await total(page);
+    ok('and still has them after browsing to a week whose picks are not loaded',
+       Number(onWk2) > 0, `top row = ${JSON.stringify(onWk2)} (was ${JSON.stringify(onWk1)})`);
+
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+}
+
 /* NOT COVERED HERE, deliberately, and worth knowing about.
 
    weekSum() now prefers the server's figure for any week that is not the

@@ -11,6 +11,12 @@ GCP_PROJECT = "pickem-c0d06"
 # so it must match SEASON in index.html.
 SEASON = "2026"
 
+# Which repository nudgeScores() asks to run the score pull. A plain var
+# and not a secret: it is public information, and it appears in the log
+# line for a failed dispatch, which is exactly where you want to be able
+# to read it.
+GH_REPO = "mnqlee/pickem"
+
 [[kv_namespaces]]
 binding = "SESSIONS"          # reused for the reminder-sent markers
 id = "15a1d88c2a5045fcacae2f207d09b401"
@@ -21,6 +27,14 @@ id = "15a1d88c2a5045fcacae2f207d09b401"
 #   wrangler secret put ADMIN_KEY -c wrangler-live.toml
 #     any long random string. Guards the /__live/ endpoints, one of
 #     which sends real notifications to real phones.
+#   wrangler secret put GH_TOKEN  -c wrangler-live.toml
+#     a GitHub fine-grained token, scoped to mnqlee/pickem ONLY, with
+#     Actions: Read and write and nothing else. nudgeScores() uses it to
+#     ask GitHub to run the score pull, because GitHub's own scheduler
+#     cannot be relied on to do it (see the long note on that function).
+#     Without this secret the Worker still sends reminders normally and
+#     the nudge returns {skipped:'GH_TOKEN not set'} — it degrades, it
+#     does not fail.
 
 # ---------- OBSERVABILITY ----------
 # LOGS ON, AND SET HERE RATHER THAN IN THE DASHBOARD.

@@ -46,7 +46,14 @@ export default {
        log to say so. */
     const guard = (name, p) => p.catch(e =>
       console.log(name + ' cron failed:', (e && e.stack) || String(e)));
-    if (event.cron.startsWith('*/5')) ctx.waitUntil(guard('remind', remind(env)));
+    if (event.cron.startsWith('*/5')) {
+      ctx.waitUntil(guard('remind', remind(env)));
+      /* Separately guarded, deliberately. Reminders are the job this
+         Worker exists for and the one thing here that has never failed;
+         a throw inside the scores nudge must not take them down with
+         it. Two waitUntils, two catches, no shared fate. */
+      ctx.waitUntil(guard('nudge', nudgeScores(env)));
+    }
     else ctx.waitUntil(guard('scores', scores(env)));
   },
   /* Manual triggers. All require ?key= matching the ADMIN_KEY secret,
@@ -54,7 +61,12 @@ export default {
        /__live/scores   pull scores now
        /__live/remind   dry run: who WOULD be notified, sends nothing
        /__live/test     send a real push right now, to verify end to end
-                        without waiting for a tier window                 */
+                        without waiting for a tier window
+       /__live/nudge    ask GitHub to pull scores now, if a game is live.
+                        Exists so the GH_TOKEN and the whole bridge can
+                        be proved in one request rather than by waiting
+                        five minutes and reading a log — which is how the
+                        last broken secret went unnoticed for nine days. */
   async fetch(req, env) {
     const u = new URL(req.url);
     const p = u.pathname;
@@ -65,6 +77,7 @@ export default {
     if (p === '/__live/scores') return json(await scores(env));
     if (p === '/__live/remind') return json(await remind(env, true));
     if (p === '/__live/test')   return json(await testPush(env, u.searchParams));
+    if (p === '/__live/nudge')  return json(await nudgeScores(env));
     return new Response('not found', { status: 404 });
   }
 };
@@ -415,6 +428,110 @@ const TIERS = [
   ['final',   75,   10, true]
 ];
 
+/* ============================================================
+   POKE GITHUB TO PULL SCORES
+
+   WHY A WORKER TRIGGERS A GITHUB JOB, which looks absurd written down.
+
+   The two halves of this system each have exactly one thing they cannot
+   do, and they are different things:
+
+     This Worker       fires every 5 minutes, reliably, forever —
+                       1,640 invocations in 24 hours, never a miss.
+                       CANNOT reach ESPN: Akamai answers Cloudflare's
+                       egress with a deny page (`espn 403 :: Access
+                       Denied`) on the address, not the request.
+     GitHub Actions    CAN reach ESPN and runs the pull green in 23
+                       seconds every time it is asked.
+                       CANNOT be relied on to ask itself. An
+                       every-five-minutes schedule honoured 1 tick in
+                       ~36, that one ~90 minutes late; a single-fire
+                       cron was still absent 52 minutes past its slot.
+
+                       (Written without the cron spelling on purpose:
+                       an asterisk-slash inside a block comment ends the
+                       comment, and writing it here the obvious way is
+                       what broke this file the first time.)
+
+   So the reliable clock pokes the capable runner. Neither side is doing
+   anything it is bad at.
+
+   WHY IT ASKS FIRESTORE INSTEAD OF READING A CRON WINDOW: because a
+   window is a guess that has to be maintained, and it has to be
+   maintained twice — once for EDT and once for EST — and it is wrong for
+   a flexed game, a postponed game, and the first week of the season,
+   which had a Wednesday opener. "Is a game in progress right now" is a
+   fact, and this Worker already holds the credentials to ask it. No
+   games on, no dispatch, no GitHub run, nothing to explain.
+
+   COST: one Firestore query per 5 minutes (a range on `kickoff`, single
+   field, no composite index), and one GitHub run per 5 minutes only
+   while a game is actually being played. A full Sunday is roughly 130
+   dispatches of a 25-second job — free on a public repository.
+
+   IT WRITES NOTHING ITSELF. It cannot: the workflow it triggers runs
+   `--scores-only`, which returns before score_pools() and notify(). The
+   separation survives the indirection.
+   ============================================================ */
+
+/* A game nobody ever marks final would otherwise keep this dispatching
+   forever. Six hours covers overtime and a weather delay and still ends
+   the same night — the same ceiling index.html uses for its own ESPN
+   polling, deliberately. */
+const NUDGE_MAX_AGE = 6 * 3600 * 1000;
+
+async function nudgeScores(env) {
+  /* NO TOKEN IS NOT AN ERROR. Until the secret is set this Worker must
+     keep doing its real job — reminders — without a red mark in the
+     log every five minutes. Say so once, quietly, and return. */
+  if (!env.GH_TOKEN) return { skipped: 'GH_TOKEN not set' };
+  const repo = env.GH_REPO || 'mnqlee/pickem';
+  const season = env.SEASON || '2026';
+  const now = Date.now();
+
+  /* Both filters are ranges on the SAME field, which is what keeps this
+     a single-field query needing no composite index — the same shape
+     remind() uses a few lines down. */
+  const started = await fsQuery(env, `/seasons/${season}`, 'games', [
+    ['kickoff', 'GREATER_THAN', new Date(now - NUDGE_MAX_AGE)],
+    ['kickoff', 'LESS_THAN',    new Date(now)]
+  ]);
+  /* `status` is what only the server writes, so this is the honest
+     question: has a game kicked off that nobody has recorded a result
+     for yet. */
+  const live = started.filter(g => g.status !== 'final');
+  if (!live.length) return { skipped: 'nothing live' };
+
+  const r = await fetch(
+    `https://api.github.com/repos/${repo}/actions/workflows/scores.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GH_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        // GitHub rejects an API request with no User-Agent outright.
+        'User-Agent': 'pickem-live-worker',
+        'Content-Type': 'application/json'
+      },
+      // Schedules and dispatches both only run from the default branch.
+      body: JSON.stringify({ ref: 'main' })
+    });
+
+  /* 204 No Content is success here — there is no body to read, and
+     treating a falsy body as failure would log an error on every
+     successful dispatch. Anything else, log the reason: a revoked or
+     under-scoped token gives 403 with a message worth reading, and a
+     renamed workflow file gives 404. */
+  if (r.status === 204) {
+    console.log(`nudge: ${live.length} live, dispatched scores.yml`);
+    return { dispatched: true, live: live.length };
+  }
+  const why = await r.text().then(t => t.slice(0, 200).replace(/\s+/g, ' '))
+                            .catch(() => '(body unreadable)');
+  console.log(`nudge: dispatch failed ${r.status} :: ${why}`);
+  return { dispatched: false, status: r.status };
+}
+
 async function remind(env, dry = false) {
   const season = env.SEASON || '2026';
   const now = Date.now();
@@ -437,6 +554,27 @@ async function remind(env, dry = false) {
     if (!uids.length) continue;
 
     const weeks = [...new Set(upcoming.map(g => g.wk))];
+    /* EVERY GAME OF THE WEEK THAT CAN STILL BE PICKED — which is not the
+       same set as `upcoming`, and that difference is why the week-level
+       count needs its own query.
+
+       `upcoming` stops at 48 hours because that is the widest reminder
+       tier. On a Saturday, Monday night football is 72 hours out, so it
+       is absent — and a "unpicked this week" figure built from
+       `upcoming` would have quietly under-counted by exactly the games
+       nobody has thought about yet.
+
+       Filtered to kickoff > now on purpose: a game that has already
+       locked is not something the player can act on, and counting it
+       would make the number an accusation rather than a to-do list.
+
+       One equality query per week per run, so one or two per five
+       minutes. Cheap, and it is the number the message is about. */
+    const stillOpen = {};
+    for (const w of weeks) {
+      stillOpen[w] = (await fsQuery(env, `/seasons/${season}`, 'games',
+        [['wk', 'EQUAL', w]])).filter(g => g.kickoff.getTime() > now);
+    }
     const picks = {};
     for (const w of weeks) {
       for (const p of await fsQuery(env, `/pools/${pid}`, 'picks', [['wk', 'EQUAL', w]])) {
@@ -481,7 +619,11 @@ async function remind(env, dry = false) {
           if (await env.SESSIONS.get(key)) continue;
 
           const n = missing.length;
-          const { title, body } = compose(tier, wk, n, when(+slot, tz), mins);
+          /* What the WEEK still owes, not just this slot. Same picked-set,
+             wider game list — see stillOpen above. */
+          const mine = picks[uid] || new Set();
+          const weekLeft = (stillOpen[wk] || []).filter(g => !mine.has(g._id)).length;
+          const { title, body } = compose(tier, wk, n, weekLeft, when(+slot, tz), mins);
           if (dry) { sent.push({ uid, tier, n, title }); continue; }
 
           /* Only record a reminder as sent if it ACTUALLY reached a
@@ -539,13 +681,59 @@ function when(ms, tz) {
       hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
   } catch { return 'kickoff'; }
 }
-function compose(tier, wk, n, w, mins) {
-  const g = n === 1 ? 'game' : 'games';
-  if (tier === 'open')  return { title: `Week ${wk} is open`, body: `${n} ${g} to pick. First kickoff ${w} your time.` };
-  if (tier === 'day')   return { title: `Week ${wk}, ${n} left`, body: `You still need ${n} ${n === 1 ? 'pick' : 'picks'} before ${w}.` };
-  if (tier === 'hours') { const h = Math.max(1, Math.floor(mins / 60));
-    return { title: `${n} unpicked`, body: `${h} hour${h > 1 ? 's' : ''} until kickoff. After that they score zero.` }; }
-  return { title: `Last call, ${n} ${g}`, body: `Kickoff in ${mins} minutes. Unpicked games score zero.` };
+/* ONE REMINDER ANSWERS TWO DIFFERENT QUESTIONS, and the old copy
+   conflated them into a sentence that was false.
+
+     n         picks this DEADLINE needs — the games in one kickoff slot
+     weekLeft  picks the WEEK still owes, across every game not yet locked
+
+   Reminders fire per kickoff slot, because that is what a deadline is.
+   But the old title was week-level — "Week 1 is open" — over a
+   slot-level body, "1 game to pick". So the owner, with the whole
+   Sunday slate and Monday night unpicked, was told he had one game to
+   pick, three times, days after the week had actually opened. Every
+   number in it was true and the message was a lie.
+
+   Two fixes, and they are the same fix. No title claims a week-level
+   event any more: a reminder names ITS OWN deadline, so three of them
+   for three Sunday slots read as three deadlines rather than the week
+   opening three times. And when the week owes more than this deadline
+   needs, the body says so, so the small number is never mistaken for
+   the whole job.
+
+   `final` deliberately carries no week-level tail. At ten to seventy-five
+   minutes out, what somebody still owes on Tuesday is noise. */
+function compose(tier, wk, n, weekLeft, w, mins) {
+  const picks = k => `${k} ${k === 1 ? 'pick' : 'picks'}`;
+  /* The week sentence, and it carries the week number so no other line
+     has to. The first draft of this opened every body with "Week 1." and
+     then said "Week 1" again in the tail, which on a phone reads as a
+     stutter. Say a thing once. */
+  const tail = weekLeft > n
+    ? `${weekLeft} Week ${wk} games still need a pick.`
+    : `Nothing else in Week ${wk} needs a pick.`;
+
+  if (tier === 'open') return {
+    title: `${picks(n)} due ${w}`,
+    body: tail };
+
+  if (tier === 'day') return {
+    title: `${picks(n)} due ${w}`,
+    body: `Less than a day. ${tail}` };
+
+  if (tier === 'hours') {
+    const h = Math.max(1, Math.floor(mins / 60));
+    /* No kickoff time here on purpose: the title already says how long
+       there is, and at this range the consequence earns the space more
+       than a clock reading does. */
+    return {
+      title: `${picks(n)} due in ${h} hour${h > 1 ? 's' : ''}`,
+      body: `Unpicked games score zero. ${tail}` };
+  }
+
+  return {
+    title: `Last call — ${picks(n)}`,
+    body: `Kickoff in ${mins} minutes. Unpicked games score zero.` };
 }
 
 /* Send one notification. Returns 'ok' | 'dead' | 'fail' — the CALLER has
