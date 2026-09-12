@@ -74,6 +74,27 @@ console.log('\n5. A game nobody ever marked final stops being nudged');
   ok('both filters are on the same field (no composite index)',
      new Set(seen.map(w=>w[0])).size === 1, JSON.stringify(seen.map(w=>w[0]))); }
 
+console.log('\n5b. force=1 dispatches with nothing live — and ONLY with the flag');
+{ /* The last untested link before a real game: does the token actually
+     carry Actions write. Without this flag the first answer arrives
+     mid-Sunday. */
+  calls=[]; fakeGitHub(204); withGames([]);
+  const off = await M.nudgeScores({ GH_TOKEN:'t' });
+  ok('without the flag, nothing live means no dispatch', off.skipped === 'nothing live', JSON.stringify(off));
+  ok('and GitHub was not called', calls.length === 0, JSON.stringify(calls));
+
+  calls=[]; fakeGitHub(204); withGames([]);
+  const on = await M.nudgeScores({ GH_TOKEN:'t' }, true);
+  ok('with force, it dispatches anyway', on.dispatched === true, JSON.stringify(on));
+  ok('and says it was forced, so a log is never misread', on.forced === true, JSON.stringify(on));
+  ok('it really did POST', calls.length === 1 && calls[0].method === 'POST', JSON.stringify(calls));
+
+  calls=[]; fakeGitHub(403, '{"message":"Resource not accessible by personal access token"}');
+  withGames([]);
+  const bad = await M.nudgeScores({ GH_TOKEN:'t' }, true);
+  ok('an under-scoped token surfaces as 403, not silence',
+     bad.dispatched === false && bad.status === 403, JSON.stringify(bad)); }
+
 console.log('\n6. GitHub says no: reported, not thrown');
 for (const [st, label] of [[403,'a revoked or under-scoped token'],
                            [404,'a renamed workflow file'],
@@ -83,7 +104,44 @@ for (const [st, label] of [[403,'a revoked or under-scoped token'],
   try { r = await M.nudgeScores({ GH_TOKEN:'t' }); } catch(e){ threw=true; }
   ok(`${st} (${label}) does not throw`, !threw);
   ok(`${st} is reported as not dispatched`, r && r.dispatched === false && r.status === st, JSON.stringify(r));
+  /* THE STATUS ALONE IS A RIDDLE. 403 is permissions, 404 a missing
+     workflow, 422 a bad ref — and a 400 is none of those, so the only
+     way to know is GitHub's own sentence. Logging it and returning a
+     bare number repeats the mistake this file already made with the
+     word "forbidden". */
+  ok(`${st} carries GitHub's reason back to the caller`,
+     r && typeof r.why === 'string' && /nope/.test(r.why), JSON.stringify(r));
 }
+
+console.log('\n6b. A garbled token is diagnosable without disclosing it');
+{ const SECRET = 'github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz0123456789';
+  /* The real symptom: 400 with an EMPTY body, because a header value
+     carrying whitespace is rejected in front of GitHub's API. */
+  calls=[]; fakeGitHub(400, ''); withGames([g(-30,'live')]);
+  const r = await M.nudgeScores({ GH_TOKEN: SECRET + '\n' }, false);
+  ok('an empty body is explained, not echoed as blank',
+     /rejected before/.test(r.why), JSON.stringify(r.why));
+  ok('and it reports the whitespace it had to trim',
+     r.token.hadSurroundingWhitespace === true, JSON.stringify(r.token));
+  ok('the token is trimmed before it reaches the header',
+     !calls[0].auth.includes('\n') && calls[0].auth === 'Bearer ' + SECRET, 'header had a newline');
+  ok('names the prefix family', /fine-grained/.test(r.token.family), r.token.family);
+  ok('reports a length', r.token.length === SECRET.length, String(r.token.length));
+
+  /* NOTHING about the value itself. */
+  const dump = JSON.stringify(r);
+  ok('the response never contains the token', !dump.includes(SECRET));
+  ok('nor any 8-character run of it', !dump.includes(SECRET.slice(11, 19)));
+
+  calls=[]; fakeGitHub(400, ''); withGames([g(-30,'live')]);
+  const trunc = await M.nudgeScores({ GH_TOKEN: 'github_pat_11AB' }, false);
+  ok('a truncated token shows an obviously wrong length',
+     trunc.token.length === 15, String(trunc.token.length));
+
+  calls=[]; fakeGitHub(400, ''); withGames([g(-30,'live')]);
+  const junk = await M.nudgeScores({ GH_TOKEN: 'not-a-token' }, false);
+  ok('a non-token says so plainly', /unrecognised prefix/.test(junk.token.family), junk.token.family);
+  ok('and flags the illegal characters', junk.token.onlyTokenCharacters === false, JSON.stringify(junk.token)); }
 
 console.log('\n7. Network failure propagates to the guard, not to reminders');
 { fakeGitHub('throw'); withGames([g(-30,'live')]);

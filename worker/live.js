@@ -71,13 +71,42 @@ export default {
     const u = new URL(req.url);
     const p = u.pathname;
     if (!p.startsWith('/__live/')) return new Response('not found', { status: 404 });
-    if (!env.ADMIN_KEY || u.searchParams.get('key') !== env.ADMIN_KEY)
-      return new Response('forbidden', { status: 403 });
+
+    /* THREE DIFFERENT FAILURES, THREE DIFFERENT ANSWERS.
+
+       This was one line — `if (!env.ADMIN_KEY || key !== env.ADMIN_KEY)`
+       — returning the bare word "forbidden" for all of them. So "this
+       Worker has no ADMIN_KEY configured" was indistinguishable from
+       "your key is wrong", and that cost a real afternoon: a
+       `wrangler secret put` that dropped its `-c wrangler-live.toml`
+       saved the secret to the OTHER Worker in this folder, reported
+       "Success", and every key tried afterwards came back forbidden
+       with nothing to say which of the two things was wrong. There is
+       no amount of guessing keys that gets you out of that, and the
+       response was actively steering the guessing.
+
+       None of this leaks the secret: it says whether a key ARRIVED and
+       whether one is CONFIGURED, never anything about either value. A
+       wrong key still just says wrong key. */
+    const supplied = u.searchParams.get('key');
+    if (!env.ADMIN_KEY) return new Response(
+      'no ADMIN_KEY is configured on this Worker. Set it with:\n' +
+      '  wrangler secret put ADMIN_KEY -c wrangler-live.toml\n' +
+      'and check it landed here, not on the auth Worker:\n' +
+      '  wrangler secret list -c wrangler-live.toml\n', { status: 503 });
+    if (!supplied) return new Response(
+      'no key supplied. Add ?key=YOUR_ADMIN_KEY to the URL.\n', { status: 403 });
+    if (supplied !== env.ADMIN_KEY) return new Response(
+      'that key does not match this Worker\'s ADMIN_KEY.\n' +
+      'A key pasted from a password manager can contain + & # % or /,\n' +
+      'which a URL reads as punctuation and mangles before it gets here.\n' +
+      'Letters and digits only is the safe shape.\n', { status: 403 });
 
     if (p === '/__live/scores') return json(await scores(env));
     if (p === '/__live/remind') return json(await remind(env, true));
     if (p === '/__live/test')   return json(await testPush(env, u.searchParams));
-    if (p === '/__live/nudge')  return json(await nudgeScores(env));
+    if (p === '/__live/nudge')
+      return json(await nudgeScores(env, u.searchParams.get('force') === '1'));
     return new Response('not found', { status: 404 });
   }
 };
@@ -480,7 +509,7 @@ const TIERS = [
    polling, deliberately. */
 const NUDGE_MAX_AGE = 6 * 3600 * 1000;
 
-async function nudgeScores(env) {
+async function nudgeScores(env, force = false) {
   /* NO TOKEN IS NOT AN ERROR. Until the secret is set this Worker must
      keep doing its real job — reminders — without a red mark in the
      log every five minutes. Say so once, quietly, and return. */
@@ -500,13 +529,38 @@ async function nudgeScores(env) {
      question: has a game kicked off that nobody has recorded a result
      for yet. */
   const live = started.filter(g => g.status !== 'final');
-  if (!live.length) return { skipped: 'nothing live' };
+  /* `force` EXISTS TO TEST THE LAST UNTESTED LINK, and only that.
+
+     Everything else about this path can be proved on a quiet Saturday:
+     the ADMIN_KEY gate answers, the token is read, the Firestore query
+     returns. What cannot be proved without actually POSTing is whether
+     the token carries `Actions: Read and write` — a token scoped wrong
+     looks perfect right up until GitHub answers 403, and without this
+     flag the first time that happens is during a game.
+
+     So `?force=1` skips only the is-anything-live test. It is behind
+     ADMIN_KEY, and the worst it can do is run a scores pull that finds
+     nothing changed — which is what the pull does all day anyway.
+     The scheduled path never sets it. */
+  if (!live.length && !force) return { skipped: 'nothing live' };
+
+  /* TRIMMED, AND THAT IS A FIX RATHER THAN TIDINESS.
+
+     A secret set by pasting into a terminal prompt very often arrives
+     with a trailing newline or a stray space on the end. Whitespace is
+     not legal inside an HTTP header value, so `Bearer <token>\n` is a
+     malformed header — and a malformed header is rejected in front of
+     GitHub's API, which answers 400 with an EMPTY body rather than the
+     JSON {"message": ...} the API itself always returns. An empty-bodied
+     400 is therefore the signature of this exact fault, and it cost a
+     round trip to recognise. */
+  const tok = String(env.GH_TOKEN).trim();
 
   const r = await fetch(
     `https://api.github.com/repos/${repo}/actions/workflows/scores.yml/dispatches`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.GH_TOKEN}`,
+        Authorization: `Bearer ${tok}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
         // GitHub rejects an API request with no User-Agent outright.
@@ -523,13 +577,51 @@ async function nudgeScores(env) {
      under-scoped token gives 403 with a message worth reading, and a
      renamed workflow file gives 404. */
   if (r.status === 204) {
-    console.log(`nudge: ${live.length} live, dispatched scores.yml`);
-    return { dispatched: true, live: live.length };
+    console.log(`nudge: ${live.length} live, dispatched scores.yml${force ? ' (forced)' : ''}`);
+    return { dispatched: true, live: live.length, ...(force ? { forced: true } : {}) };
   }
-  const why = await r.text().then(t => t.slice(0, 200).replace(/\s+/g, ' '))
+  /* RETURN THE REASON, DO NOT JUST LOG IT.
+
+     This used to log GitHub's explanation and hand back only
+     `{dispatched:false, status:400}`. A bare status is a riddle: 403 is
+     permissions, 404 is a missing workflow, 422 is a bad ref — and 400
+     is none of those and means reading the body is the only way to
+     know. Logging it to a sink nobody has open, while the person
+     holding the URL gets a number, is the identical mistake this file
+     already made once with the word "forbidden".
+
+     Safe to return: GitHub's error bodies describe the REQUEST, never
+     the credential, and this endpoint is behind ADMIN_KEY. */
+  const why = await r.text().then(t => t.slice(0, 300).replace(/\s+/g, ' '))
                             .catch(() => '(body unreadable)');
-  console.log(`nudge: dispatch failed ${r.status} :: ${why}`);
-  return { dispatched: false, status: r.status };
+
+  /* THE TOKEN'S SHAPE, NEVER ITS VALUE.
+
+     A 400 with an empty `why` says the request never reached GitHub's
+     API, and the only part of it that a paste can corrupt is the
+     credential. Without this, the next step is guessing; with it, a
+     truncated or whitespace-laden secret is obvious at a glance.
+
+     What it discloses is deliberately useless to anyone: which public
+     prefix family the token is from, how long it is (a published,
+     fixed length for each family), and whether it contains anything
+     outside [A-Za-z0-9_]. No character of the token itself, and the
+     whole endpoint is behind ADMIN_KEY. Shown only on failure. */
+  const raw = String(env.GH_TOKEN);
+  const shape = {
+    family: /^github_pat_/.test(tok) ? 'github_pat_ (fine-grained)'
+          : /^ghp_/.test(tok)        ? 'ghp_ (classic)'
+          : 'unrecognised prefix — is this a GitHub token at all?',
+    length: tok.length,
+    hadSurroundingWhitespace: raw !== tok,
+    onlyTokenCharacters: /^[A-Za-z0-9_]+$/.test(tok)
+  };
+  console.log(`nudge: dispatch failed ${r.status} :: ${why || '(empty body)'} ` +
+              `:: token ${shape.family}, ${shape.length} chars, ` +
+              `clean=${shape.onlyTokenCharacters}, trimmed=${shape.hadSurroundingWhitespace}`);
+  return { dispatched: false, status: r.status,
+           why: why || '(empty body — the request was rejected before GitHub\'s API)',
+           token: shape };
 }
 
 async function remind(env, dry = false) {
