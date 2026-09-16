@@ -128,9 +128,39 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 @media (max-width:379px){ .clock{max-width:46vw;font-size:10px} }
 .clock .dot{flex:0 0 auto}
 .clock .dot{width:5px;height:5px;border-radius:50%;background:var(--lock);animation:pulse 2.2s infinite}
+/* THREE STATES, AND ONLY THE COLOUR AND THE MARKER CHANGE.
+   The words never pulse — only the dot does. Fading the text makes the
+   line unreadable for about a second of every cycle, and this is the
+   one line people read at a glance.
+   --live (#63B257) is right here and --hit is not: on this dark shell
+   --live is 6.77:1 and --hit is 2.85:1. On the light card paper it is
+   the other way round, which is why the cards use --hit for the same
+   idea. Same tokens, opposite grounds. */
+.clock.live{color:var(--live)}
+.clock.live .dot{background:var(--live)}
+/* Finished: no dot, no pulse, no gold. Nothing is pending, so nothing
+   moves, and a tick takes the dot's slot rather than leaving a static
+   dot sitting there looking like it is still waiting on something. */
+.clock .tick{display:none}
+.clock.done{color:var(--chalk)}
+.clock.done .dot{display:none}
+.clock.done .tick{display:block;flex:0 0 auto;width:11px;height:11px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 
-.weeks{display:flex;gap:6px;overflow-x:auto;margin:10px -14px 0;padding:0 14px 9px;scrollbar-width:none}
+/* U3 — the week strip's caption. Deliberately the same treatment as the
+   "WEEKLY NFL" line over the wordmark (.b1: 9px, 800, .2em, --chalk), so
+   the two small caps labels on the screen are visibly the same kind of
+   thing rather than two near-misses. */
+/* U3, to the pixel: 9px / 800 / .2em, and padding:4px 0 5px. The size
+   was settled by rendering T1 (9.5px, exactly .b1) and T2 (8.5px)
+   individually, then bracketing the gap between them — U3 is the 9px
+   midpoint. The padding is part of what was approved, not a detail to
+   re-derive: my first pass used 2px 0 7px, which sits the label 2px
+   high in the gap. */
+.wklab{text-align:center;text-transform:uppercase;color:var(--chalk);
+  padding:4px 0 5px;line-height:1;
+  font-size:9px;font-weight:800;letter-spacing:.2em}
+.weeks{display:flex;gap:6px;overflow-x:auto;margin:0 -14px 0;padding:0 14px 9px;scrollbar-width:none}
 .weeks::-webkit-scrollbar{display:none}
 .wk{flex:0 0 auto;min-width:46px;min-height:44px;padding:7px 9px;border-radius:8px;
   background:var(--shell-2);border:1px solid transparent;text-align:center;cursor:pointer;
@@ -175,9 +205,12 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    .055em the row overflowed by 7px, which is the worst possible amount:
    it scrolls by a hair and reads as a bug rather than a design.
 
-   Six tabs, when Archive appears, still fits without scrolling at 375px
-   and up. At 320px it scrolls — and a clipped BOX says "scroll me" in a
-   way clipped text never did. */
+   FIVE tabs, fixed. There used to be a sixth — Archive — that appeared
+   and disappeared with one field in the pool document, which is the
+   worst thing a tab row can do: the five tabs people use every Sunday
+   moved sideways for a closed pool. It is a Settings section now, so
+   this row's width is settled. At 320px it still scrolls by a hair, and
+   a clipped BOX says "scroll me" in a way clipped text never did. */
 .tabs{display:flex;gap:4px;border-top:1px solid rgba(250,247,241,.08);
   padding:9px 0 11px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tabs::-webkit-scrollbar{display:none}
@@ -256,18 +289,51 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .meta .net{border:1px solid rgba(21,23,27,.28);border-radius:3px;padding:0 3px;
   font-size:8.5px;font-weight:800;letter-spacing:.06em}
 .meta .cd{margin-left:auto;font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:9.5px}
+/* S2 — the network and the line sit BETWEEN THE TWO ENDS, and this is
+   what that does and does not mean.
+   The first child takes an auto right margin and .cd already takes an
+   auto left one, so flex splits the LEFTOVER space equally between them
+   and the pair floats midway between the left slot and the right chip.
+   That is geometrically the centre of the card only when the two end
+   slots happen to be the same width — "3rd · 5:42" on the left against
+   "IN PROGRESS" on the right is not, so the pair sits slightly left of
+   true centre there. That is S2 as it was drawn and chosen, and it is
+   worth being exact about, because "centred" invites somebody to
+   "fix" it later with position:absolute — which is the version that
+   overlapped the clock on a narrow card and is why margins are used. */
+.meta>:first-child{margin-right:auto}
 .meta .cd.soon{color:var(--lock)}
 .meta .cd.urgent{color:var(--stamp)}
 /* --live on paper is 2.43:1; --hit is 5.6:1 and reads as the same idea. */
 .meta .cd.live{color:var(--hit)}
-.meta .cd.live::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;
-  background:var(--live);margin-right:5px;vertical-align:1px;animation:pulse 1.6s infinite}
+/* THE DOT LIVES ON .cd.live, not on a class of its own.
+   It was moved onto a bespoke left-slot class while building P1, which
+   left the shared class with no dot at all — so the clock on the left
+   had no dot and neither did IN PROGRESS on the right. Back where it
+   belongs; `.nodot` below is what takes it off the right-hand half. */
+.meta .cd.live::before{content:'';display:inline-block;width:5px;height:5px;
+  border-radius:50%;background:var(--live);margin-right:5px;vertical-align:1px;
+  animation:pulse 1.6s infinite}
+/* P1 — two modifiers, and deliberately nothing more.
+   The left and right halves of a live row are BOTH .cd.live, so they
+   cannot drift apart in colour, weight or size — which is what "same
+   green, weight and size throughout" meant. A bespoke class for the
+   left slot was the first attempt and it immediately diverged: its own
+   font and its own green. These two lines are the whole change. */
+.meta .cd.lefted{margin-left:0}
+.meta .cd.nodot::before{display:none}
 /* FINAL is settled, so it is quiet: muted, and no dot at all. The pulsing
    dot is the one piece of motion on the card and it has to keep meaning
    exactly one thing — this game is being played right now. A finished
    game wearing it drains that meaning, and by the end of a Sunday there
    would be thirteen of them competing for the same attention. */
-.meta .cd.done,.tbmeta .cd.done{color:var(--chalk)}
+/* --chalk IS A DARK-SHELL TOKEN AND THIS IS A LIGHT CARD.
+   rgba(250,247,241,.62) over --paper-2 measures 1.09:1 — the word
+   FINAL was very nearly invisible on every finished card, which is
+   half the slate by Sunday night. --ink-mute is the card's own quiet
+   token (the losing side already uses it) and measures 5.30:1.
+   The same rule was doing it on the tiebreaker card too. */
+.meta .cd.done,.tbmeta .cd.done{color:var(--ink-mute)}
 
 /* 82px -> 72px. One game occupied roughly 300px of an 844px screen once
    the meta row and the stake bar were counted, so barely two and a half
@@ -284,7 +350,13 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    mind. It is de-emphasised now by weight and by the flat backdrop, not
    by making it unreadable. */
 .side.lost{flex-grow:.94;background:var(--paper-2);color:var(--ink-mute)}
-.side.lost .mark{filter:grayscale(1) contrast(.62);opacity:.66;width:34px;height:34px;border-radius:9px;font-size:11px}
+/* R2 — THE BADGE KEEPS ITS TEAM COLOUR EVEN ON THE LOSING SIDE.
+   It used to be `grayscale(1) contrast(.62)` at .66 opacity, so the one
+   element on the card whose whole job is to identify the team lost the
+   only thing that identifies it. The side is still clearly de-emphasised
+   — flat backdrop, muted text, smaller badge — but you can still tell at
+   a glance which team it is. */
+.side.lost .mark{width:34px;height:34px;border-radius:9px;font-size:11px}
 .side.lost .team{font-size:14.5px;letter-spacing:-.03em;font-weight:700}
 .side.lost .city{font-size:9px;opacity:.9}
 /* A pressed state, so a tap is acknowledged before any data moves. */
@@ -374,10 +446,50 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
   60%{transform:rotate(-7deg) scale(.9);opacity:1}100%{transform:rotate(-7deg) scale(1)}}
 
 .card.locked .side{pointer-events:none;cursor:default}
-.card.locked .match{filter:saturate(.45) brightness(.94)}
+/* THE DESATURATION IS GONE.
+   It was `filter:saturate(.45) brightness(.94)` on the whole .match the
+   moment a game kicked off, which drained every team colour on the card
+   at exactly the point people started watching it — and it was why the
+   colour in the badge disagreed with the colour in the pool bar below,
+   since the bar sits outside .match and was never filtered. True colours
+   in both places now; "locked" is carried by the lock band and the meta
+   row, which say it in words. */
 .lockband{background:#1F1D1B;color:var(--paper);padding:6px 11px;font-size:9px;font-weight:800;
   letter-spacing:.11em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
-.lockband .miss{color:var(--stamp)}
+/* Q2 — THE WHOLE STRIP FILLS, AND EVERY LETTER ON IT GOES WHITE.
+   Not a perimeter: that was N3, and it was shown alongside this and
+   not chosen. The fill is --hit and --stamp exactly as the palette
+   already defines them, which is the whole point of Q2 over Q1's
+   darker pair and Q3's brighter one — no new colours enter the app.
+   Measured white-on-fill: 6.2:1 on the green, 5.3:1 on the red. Both
+   clear 4.5:1, so the 9px text passes as small text rather than
+   leaning on the large-text allowance.
+   The `span` in the selector is load-bearing because of ONE span:
+   .lockband .miss, which sets its own #E0645A. Without the span half,
+   the losing line stayed that red on the red fill — the "red on red"
+   this replaced. (.won-pts is the other span in there and is NOT part
+   of this: it carries no colour rule at all, and is only a hook. An
+   earlier version of this comment named it as a second reason the
+   selector was needed, which would have made deleting the .miss rule
+   look safe. It is not safe — see the note on .miss below.) */
+/* "No pick · 0 pts" on a game that is LIVE but not finished still needs
+   to stand out against the dark strip — that is the one case where the
+   strip carries no fill and the text is the only signal. --stamp there
+   measured 3.18:1, which at 9px fails; #E0645A is 4.91:1 and is the
+   same red the Grid's no-pick cell already uses.
+   Deleting this rule outright was tempting because the fill makes it
+   redundant on a FINISHED card. It is not redundant on a live one. */
+.lockband .miss{color:#E0645A}
+.lockband.won{background:var(--hit)}
+.lockband.lost{background:var(--stamp)}
+/* The `span` half IS load-bearing, and mutation testing is what proved
+   it: .lockband .miss above sets its own colour, so without these the
+   losing line stayed red on the red fill — the exact "red on red" Q2
+   replaces. (My first version dropped the .miss rule instead and then
+   claimed the span selector was load-bearing when it no longer was. It
+   is now, and .miss is the single span that makes it so.) */
+.lockband.won,.lockband.won span,
+.lockband.lost,.lockband.lost span{color:#fff}
 
 /* ---------- GRID ---------- */
 .tbwrap{margin:22px var(--pad) 0}
@@ -409,21 +521,13 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
   display:flex;justify-content:space-between}
 .tbband .miss{color:var(--stamp)}
 
-.tbpanel{margin:16px var(--pad) 0;background:var(--shell-2);border-radius:10px;padding:14px}
-.tbpanel h4{margin:0 0 3px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
-.tbpanel .actual{font-size:11.5px;color:var(--chalk);margin-bottom:11px}
-.tbpanel .actual b{color:var(--lock);font-family:'Roboto Mono',monospace}
-.tbrow{display:flex;align-items:center;gap:10px;padding:8px 0;
-  border-top:1px solid rgba(250,247,241,.07);font-size:12.5px}
-.tbrow:first-of-type{border-top:0}
-.tbrow .nm{flex:1;font-weight:600}
-.tbrow .gs{font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px}
-.tbrow .df{font-size:10px;color:var(--chalk);min-width:52px;text-align:right;font-weight:600}
-.tbrow.win .gs{color:var(--live)}
-.tbrow.over .gs{color:rgba(250,247,241,.6);text-decoration:line-through}
-.tbrow.me{color:var(--paper)}
-.tbrow.me .nm::after{content:' · you';font-size:9.5px;color:var(--stamp);
-  letter-spacing:.06em;text-transform:uppercase;font-weight:800}
+/* .tbpanel and .tbrow are GONE, not merely unused. They styled the
+   28-row tiebreaker panel that .tbstrip replaced (see tbPanel), and a
+   stylesheet this size cannot afford orphan rules on short class names
+   — .pre already collided with .row.pre once and painted every player's
+   name gold with nothing erroring. If the panel ever comes back, so can
+   its CSS; leaving it here only guarantees the next person wonders
+   which of the two is live. */
 
 .gridhead{padding:14px var(--pad) 10px;display:flex;align-items:baseline;justify-content:space-between}
 .gridhead h3{margin:0;font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
@@ -477,14 +581,22 @@ th.pl,td.pl{position:sticky;left:0;z-index:3;background:var(--shell);
 thead th{height:54px;vertical-align:bottom;padding-bottom:6px;
   position:sticky;top:0;z-index:5;background:var(--shell-2)}
 th.pl{z-index:6}
-th.gm{min-width:50px;width:50px;text-align:center;font-weight:700;line-height:1.25}
-th.gm .aw{color:var(--chalk);font-size:10px;letter-spacing:.02em}
-th.gm .hm{color:var(--paper);font-size:10px;letter-spacing:.02em}
-th.gm .sep{height:1px;background:rgba(250,247,241,.18);margin:2px 9px}
-th.gm .st{font-size:7.5px;letter-spacing:.08em;text-transform:uppercase;margin-top:3px;color:var(--chalk)}
-th.gm .st.final{color:rgba(250,247,241,.4)}
-th.gm .st.live{color:var(--live)}
-th.gm .st.open{color:var(--lock)}
+/* th.gm IS EXACTLY THE GAME COLUMNS, and the tiebreaker is not one.
+   It shares every pixel of this geometry — it has to, or its divider
+   stops lining up — but it carries its own class, because "how many
+   games are in this week" is a question people answer by counting
+   th.gm. When the tiebreaker header was a th.gm too, a test that did
+   precisely that computed a 17-game slate and every payout came out one
+   point high. Geometry shared, identity separate. */
+th.gm,th.tbcol{min-width:50px;width:50px;text-align:center;font-weight:700;line-height:1.25}
+th.gm .aw,th.tbcol .aw{color:var(--chalk);font-size:10px;letter-spacing:.02em}
+th.gm .hm,th.tbcol .hm{color:var(--paper);font-size:10px;letter-spacing:.02em}
+th.gm .sep,th.tbcol .sep{height:1px;background:rgba(250,247,241,.18);margin:2px 9px}
+th.gm .st,th.tbcol .st{font-size:7.5px;letter-spacing:.08em;text-transform:uppercase;
+  margin-top:3px;color:var(--chalk)}
+th.gm .st.final,th.tbcol .st.final{color:rgba(250,247,241,.4)}
+th.gm .st.live,th.tbcol .st.live{color:var(--live)}
+th.gm .st.open,th.tbcol .st.open{color:var(--lock)}
 thead th.pl{font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--chalk);font-weight:700}
 
 tbody tr td{border-top:1px solid rgba(250,247,241,.07);height:46px}
@@ -496,6 +608,17 @@ td.pl{vertical-align:middle}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plmeta span{display:block;font-size:9.5px;color:var(--chalk);margin-top:1px}
 tbody tr.lead td{background:rgba(232,184,75,.09)}
+/* THE LEADER'S PINNED CELLS HAVE TO BE OPAQUE.
+   The rule above also matches td.pl and td.tot, and a translucent colour
+   beats the opaque var(--shell) they are declared with — so the two
+   STICKY columns went see-through on exactly one row. Scroll the Grid
+   sideways and the leader's name had team codes sliding through it, and
+   their points had cells sliding under them. Every other row was fine,
+   which is why it survived: it is only ever the top row, only while
+   scrolled, and the render looks correct sitting still.
+   #211D16 is var(--shell) with that gold at full opacity, so the row
+   still reads as tinted — it just stops being a window. */
+tbody tr.lead td.pl,tbody tr.lead td.tot{background:#211D16}
 tbody tr.up .arrow{color:#7BB661}
 tbody tr.down .arrow{color:#C8342A}
 tbody tr.lead td.pl .plrank{color:#E8B84B}
@@ -521,6 +644,33 @@ tbody tr.me .plrank{color:var(--stamp)}
 .cell.miss b{text-decoration:line-through;text-decoration-thickness:1.5px}
 .cell.none{background:transparent;border-color:rgba(200,52,42,.3);color:#E0645A}
 
+/* ---- the tiebreaker column ----
+   50px, and no .hm size override — both deliberate, see the head-cell
+   comment in renderGrid. The number carries the state and the cell
+   stays neutral: a FILLED green cell was the first attempt and it read
+   as a seventeenth correct pick, which the tiebreaker is not. */
+th.tbcol .hm{color:var(--lock)}
+.cell.tbc b{font-size:14px;font-family:'Roboto Mono',monospace}
+.cell.tbc i{font-size:6.5px;letter-spacing:.04em;font-weight:800;opacity:1;
+  font-family:inherit;text-transform:uppercase}
+/* #7FC96F rather than --live: 8.8:1 against this cell versus --live's
+   6.3:1, and at 14px it is a small target. */
+.cell.tbc.won b,.cell.tbc.won i{color:#7FC96F}
+.cell.tbc.over{background:transparent;border-color:rgba(250,247,241,.1);
+  color:rgba(250,247,241,.5)}
+.cell.tbc.over b{text-decoration:line-through;text-decoration-thickness:1.5px}
+.cell.tbc.pool{background:#161514;color:var(--chalk)}
+
+/* The one line that replaced the 28-row panel. */
+.tbstrip{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+  margin:12px var(--pad) 0;padding:9px 11px;background:var(--shell-2);
+  border-radius:8px;border-left:3px solid var(--lock)}
+.tbstrip .k{font-size:9px;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--lock)}
+.tbstrip .v{font-size:11px;color:var(--chalk)}
+.tbstrip .v b{color:var(--paper);font-weight:800}
+.tbstrip .w{flex:1 0 100%;font-size:11px;color:#7FC96F;font-weight:700;margin-top:3px}
+
 td.tot{position:sticky;right:0;z-index:3;background:var(--shell);min-width:52px;text-align:center;
   box-shadow:-6px 0 8px -6px rgba(0,0,0,.65)}
 th.tot{position:sticky;right:0;z-index:4;background:var(--shell);min-width:52px;text-align:center;
@@ -538,6 +688,13 @@ tbody tr.me td.tot{background:#241F1E}
 .lg-miss{background:transparent}
 .lg-pend{background:var(--shell-3)}
 .lg-hid{background:transparent;border-style:dashed}
+/* The tiebreaker swatch shows a green NUMERAL rather than a green
+   block, because that is what the column actually does — a filled
+   green square in the legend would promise a filled green cell. */
+.lg-tb{background:var(--shell-2);position:relative}
+.legend .lg-tb::after{content:'47';position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Roboto Mono',monospace;font-size:6.5px;font-weight:700;color:#7FC96F}
 
 .empty{margin:26px var(--pad);padding:30px 20px;border-radius:12px;
   border:1.5px dashed rgba(250,247,241,.16);text-align:center}
@@ -1193,6 +1350,29 @@ tbody tr.me td.tot{background:#241F1E}
 .leadtag{position:absolute;top:-7px;right:11px;background:#E8B84B;color:#231F16;
   font-size:8px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;
   padding:2px 6px;border-radius:3px}
+/* Row two carries an absolutely-positioned banner of its own, and
+   .row.lead is the only row declared position:relative — without this
+   the runner-up tag would anchor to the board and float somewhere near
+   the top of the table. */
+.row.hastag{position:relative}
+/* #B9C1CB is the SILVER constant badgeSVG already draws the 2ND seal
+   with, so the banner and the seal beside it cannot drift apart. */
+.leadtag.silver{background:#B9C1CB;color:#1E2126}
+/* The runner-up row, one step quieter than the leader's gold. */
+.row.second{background:linear-gradient(90deg,rgba(185,193,203,.10),rgba(185,193,203,.02));
+  border-left-color:#B9C1CB}
+.row.second .rank{color:#C8CFD8}
+.row.second .who b{color:#EAEEF2}
+.row.second .pts b{color:#C8CFD8}
+/* "You" still wins the left edge on your own row, whatever else it is.
+   And the row still has to LOOK like yours: .row.me sets its own flat
+   #2A2724, which .row.second's gradient replaced outright, so the one
+   row a player scrolls to find — their own, when they came second —
+   lost the "me" tint and kept only a red edge. This is the same blend
+   .row.me.lead already does for the gold row: the honour's colour, with
+   the stamp red mixed in at the left. */
+.row.second.me{border-left-color:var(--stamp)}
+.row.me.second{background:linear-gradient(90deg,rgba(185,193,203,.13),rgba(200,52,42,.08))}
 
 /* movement as results land */
 .arrow{font-style:normal;font-size:7px;margin-left:3px;vertical-align:2px}
@@ -1246,6 +1426,21 @@ tbody tr.me td.tot{background:#241F1E}
   text-transform:uppercase;color:var(--chalk)}
 .arch-foot{margin:16px 0 4px;padding:11px 12px;border-radius:9px;background:var(--shell-2);
   font-size:11.5px;line-height:1.5;color:var(--chalk)}
+/* IN SETTINGS, THE ARCHIVE IS A SECTION AND NOT A PAGE. Every rule
+   above was written for a full-width tab of its own, and dropping that
+   markup inside .opt unchanged gives three wrong things at once:
+   .opt already pads 15px and .arch pads again, so the content sits in
+   a double gutter; a 23px page title next to the 13.5px headings of
+   every other section; and .arch-foot's var(--shell-2) is exactly
+   .opt's own background, so the closing note becomes an invisible box.
+   Scoped so the tab's own layout is not disturbed if it ever returns. */
+.opt .arch{padding:0}
+.opt .arch-head{padding:0 0 2px}
+.opt .arch-head h2{font-size:15px;letter-spacing:-.02em}
+.opt .arch-head p{font-size:11.5px;margin-top:5px}
+.opt .arch-final{margin:14px 0 8px}
+.opt .arch-foot{margin:14px 0 0;background:rgba(250,247,241,.05);
+  border:1px solid var(--rule)}
 
 /* The kickoff-reminder banner used to live here. Removed on request, and
    the reason it had to go is worth keeping: it reported the DEVICE's
@@ -1291,17 +1486,38 @@ tbody tr.me td.tot{background:#241F1E}
       <span class="b1">Weekly NFL</span>
       <span class="b2">Pick’em <em id="modeTag">CONF</em><em id="preTag" class="pre hide">PRE</em></span>
     </div>
-    <div class="clock"><span class="dot"></span><span id="countdown">—</span></div>
+    <!-- The dot and the tick are both here, and CSS shows exactly one of
+         them per state (see .clock.done). Keeping them as static markup
+         rather than building them in tick() means the 1-second interval
+         only ever writes text. -->
+    <div class="clock" id="clock"><span class="dot"></span><svg class="tick"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+        ><path d="M5 13l5 5L19 7"/></svg><span id="countdown">—</span></div>
   </div>
-  <div class="weeks" id="weeks"></div>
+  <!-- G3 + U3 — TABS ABOVE THE WEEK NUMBERS, with a centred label.
+       The strip used to sit above the tabs, which put the least-used
+       control (picking a different week) in front of the most-used one
+       (changing tab) and left the numbers unlabelled: after one week
+       nobody needs "WK" on all eighteen chips, but they do need to know
+       the row is weeks at all. One quiet centred caption does that for
+       the whole strip. -->
   <div class="tabs" role="tablist" aria-label="Sections">
     <button class="tab on" type="button" role="tab" aria-selected="true" data-tab="picks">Picks</button>
     <button class="tab" type="button" role="tab" aria-selected="false" data-tab="grid">Grid</button>
     <button class="tab" type="button" role="tab" aria-selected="false" data-tab="standings">Standings</button>
-    <button class="tab hide" type="button" role="tab" aria-selected="false" data-tab="archive" id="tabArchive">Archive</button>
+    <!-- THE ARCHIVE TAB IS GONE, and the panel now lives in Settings.
+         It was a sixth tab that appeared and disappeared depending on
+         one field in the pool document, on a row that already scrolls
+         at 320px — so the five tabs people use every Sunday shifted
+         sideways to make room for a closed pool nobody opens twice.
+         A finished season is reference material, which is what Settings
+         is for. See renderArchive(). -->
     <button class="tab" type="button" role="tab" aria-selected="false" data-tab="help">Help</button>
     <button class="tab" type="button" role="tab" aria-selected="false" data-tab="settings">Settings</button>
   </div>
+  <div class="wklab">NFL Week</div>
+  <div class="weeks" id="weeks"></div>
 </div>
 
 <div id="v-picks">
@@ -1351,7 +1567,8 @@ tbody tr.me td.tot{background:#241F1E}
   <div class="board" id="board"></div>
 </div>
 
-<div id="v-archive" class="hide"><div class="arch" id="archBody"></div></div>
+<!-- #v-archive used to be here. The archive is a Settings section now:
+     see #archOpt inside #v-settings. -->
 
 <div id="v-help" class="hide">
   <div class="helpwrap">
@@ -1492,6 +1709,20 @@ tbody tr.me td.tot{background:#241F1E}
 
 <div id="v-settings" class="hide">
   <div class="settings">
+    <!-- THE ARCHIVE, FIRST IN SETTINGS AND HIDDEN UNTIL THERE IS ONE.
+         It was its own tab, which meant the tab row grew a sixth button
+         whenever a pool document carried an archive and lost it again
+         when the flag was flipped — on a row that already scrolls at
+         320px, shifting the five tabs people use every Sunday.
+         The three visibility states are unchanged and still decided by
+         archiveVisible(): 'public' everyone, 'owner' the owner only
+         (marked as hidden), 'off' nobody, with the security rule
+         denying the read outright so the client never holds the
+         document at all. The only thing that moved is where it draws.
+         It sits ABOVE Scoring deliberately: when it is there at all it
+         is the answer to "what happened last season", which is a
+         question, where everything below it is a control. -->
+    <div class="opt hide" id="archOpt"><div class="arch" id="archBody"></div></div>
     <div class="opt">
       <!-- The Straight-up / Confidence switch used to live here. It was
            owner-only, it changed how the ENTIRE pool scored for the rest
@@ -1769,6 +2000,11 @@ const nGames=w=>(WEEKS[w]||[]).length;
    Verified exhaustively against the Python across ranks -3..19 and slates
    of 10..18 games. See case 34. */
 const pay=(r,n)=>!r?1:Math.max(0,Math.min(n,RANK_ONE_IS_BEST?(n+1-r):r));
+/* "1 PTS" appeared in four places — the stake bar, the rank picker and
+   both halves of the lock band — because the lowest rank pays exactly
+   one point and every one of them hardcoded the plural. One helper so
+   the fifth place to print a points figure cannot get it wrong either. */
+const ptsLbl=n=>`${n} ${Math.abs(n)===1?'pt':'pts'}`;
 const perfectScore=n=>n*(n+1)/2;
 const hash=s=>{let x=2166136261;for(const c of s)x=Math.imul(x^c.charCodeAt(0),16777619);return x>>>0;};
 /* MY key. In DEMO this is a name; live it is set to the signed-in uid the
@@ -1888,6 +2124,40 @@ const demoScore=g=>{const h=hash(g.id+'sc');
    anything in the scoring path reads this, one stale phone becomes a
    scoring bug. */
 const ESPN_LIVE=Object.create(null);
+/* ESPN's own words for where the game is: "3rd 5:42", "Halftime",
+   "End of 3rd". Deliberately NOT parsed into quarter and clock and
+   reassembled — ESPN already writes the string a fan expects, including
+   the cases a naive "Q3 5:42" formatter gets wrong (halftime has no
+   clock, end-of-quarter has no time left, overtime is not quarter 5).
+   Same isolation as ESPN_LIVE above: display only. Nothing in the
+   scoring path may read this. */
+const ESPN_CLOCK=Object.create(null);
+/* The string to print top-left on a live card, or null to fall back to
+   the kickoff time. Only ever for a game that has started and has not
+   been written final, so a stale string cannot outlive the game. */
+const liveClock=g=>{
+  if(!isLive(g)||isFinal(g))return null;
+  const s=ESPN_CLOCK[`${g.a}_${g.h}`];
+  if(!s)return null;
+  /* ESPN GOES FINAL BEFORE WE DO, AND THAT GAP IS MINUTES LONG.
+     pullEspn only skips state==='pre', so a game in state 'post' passes
+     straight through and shortDetail becomes "Final" or "Final/OT". Our
+     own isFinal(g) is a SERVER write that lands when the scoring run
+     gets there. Between the two, this slot was printing the word "Final"
+     styled as a running clock — green, with the pulsing dot, beside "In
+     progress" on the right. Return null instead and let the caller fall
+     back to the kickoff time, which is at least not a contradiction. */
+  if(/\b(final|postponed|canceled|cancelled|suspended|delayed|forfeit)\b/i.test(s))
+    return null;
+  /* "3rd 5:42" -> "3rd · 5:42", which is how P1 was drawn. Deliberately
+     narrow: ONLY a quarter (or an OT) followed by a clock. "END 3RD" and
+     "HALFTIME" also contain a space and must be left exactly as ESPN
+     sent them — a blanket space-to-middot swap would print "END · 3RD".
+     This is the one transform applied to the string; everything else
+     passes through untouched. */
+  return String(s).replace(
+    /^(\d+(?:st|nd|rd|th)|OT\d*)\s+(\d{1,2}:\d{2})$/i, '$1 · $2');
+};
 const scoreOf=g=>{
   if(!isLive(g))return null;
   if(!DEMO){
@@ -1983,6 +2253,71 @@ const botGuess=(pl,w)=>DEMO?38+(hash(pl+'tb'+w)%22):(TIEBREAKS[pl+'|'+w]??null);
 const tbActual=g=>{
   if(!DEMO){const s=scoreOf(g);return s?s[0]+s[1]:null;}
   return 34+(hash(g.id+'total')%24);};
+
+/* ONE PLACE THAT DECIDES THE TIEBREAKER.
+   The Grid column and the line underneath it both read this, so they
+   cannot disagree about who was closest — which they would, since the
+   two used to compute it separately and one of them got it wrong.
+   `best` is deliberately an ARRAY. Closest-without-going-over can be a
+   tie, and the old code used reduce(), which returns whichever row it
+   happens to meet first: two players on the same guess got two
+   different colours for identical answers. */
+function tbState(w){
+  const g=tbGame(w);
+  if(!isLive(g))return {g,sealed:true,final:false,actual:null,rows:[],best:[]};
+  const F=isFinal(g), actual=F?tbActual(g):null;
+  const rows=PLAYERS.map(p=>({p,guess:p===ME?(state.tb[w]??null):botGuess(p,w)}))
+                    .filter(r=>r.guess!=null);
+  let best=[];
+  if(F&&actual!=null&&rows.length){
+    const under=rows.filter(r=>r.guess<=actual);
+    const pool=under.length?under:rows;
+    const bd=Math.min(...pool.map(r=>Math.abs(r.guess-actual)));
+    best=pool.filter(r=>Math.abs(r.guess-actual)===bd).map(r=>r.p);
+  }
+  return {g,sealed:false,final:F,actual,rows,best};
+}
+/* tbSortKey / tbCmp USED TO LIVE HERE and are deliberately gone.
+   They reimplemented apply_tiebreak's key so the Grid could break a
+   week-points tie "the way the server does". The server does not do
+   that: apply_tiebreak is a secondary key on the SEASON total, and the
+   weekly award shares a tied place outright. Keeping the functions
+   around would only invite the same wrong conclusion again. */
+
+/* ONE GRID CELL. The number, and a word only where a word is true:
+     green + Winner  -> closest, and the top two were level on points,
+                        so this guess is what actually won the week
+     green + Closest -> closest, but the week was already settled on
+                        points, so it decided nothing
+     plain           -> under the total, beaten
+     struck through  -> busted (over), same as a wrong pick
+   No +/- deltas. The actual total is in the column header, and
+   twenty-eight rows of small signed numbers is exactly the clutter the
+   28-row panel this replaces was guilty of. */
+function tbGridCell(T,pl){
+  const box=(cls,inner)=>`<td class="tbtd"><div class="cell ${cls}">${inner}</div></td>`;
+  // Same reveal rule as a pick cell: sealed to everyone but its owner.
+  if(T.sealed)
+    return pl===ME&&state.tb[state.week]!=null
+      ? box('tbc','<b>'+state.tb[state.week]+'</b>')
+      : box('tbc hidden','<b>&bull;&bull;&bull;</b>');
+  const r=T.rows.find(x=>x.p===pl);
+  if(!r)return box('tbc none','<b>&mdash;</b>');
+  if(!T.final||T.actual==null)return box('tbc','<b>'+r.guess+'</b>');
+  const best=T.best.includes(pl);
+  /* STRUCK THROUGH MEANS BUSTED, AND A WINNER IS NEVER BUSTED.
+     When EVERY guess is over the total, the rule is "closest outright
+     wins" — so the closest overshoot really is the winner, and marking
+     it green while also striking the number out says two opposite
+     things in one cell. Caught by screenshotting the real app rather
+     than the tests: a fixture where somebody guessed under never
+     reaches this branch, so "a struck cell is never also green" passed
+     while being false. `best` wins the tie. */
+  const over=r.guess>T.actual&&!best;
+  const cls=['tbc',best?'won':'',over?'over':''].filter(Boolean).join(' ');
+  const lab=!best?'' : `<i>${r.guess===T.actual?'Exact':'Closest'}</i>`;
+  return box(cls,'<b>'+r.guess+'</b>'+lab);
+}
 let lockedSet=new Set(), finalSet=new Set();
 /* Which weeks this person has said they are finished with. Per device
    and per week — "Lock in" is a completeness acknowledgement, not a save
@@ -2136,7 +2471,18 @@ function consensusBar(g){
       ${upset?'<i class="upset">Pool got it wrong</i>':''}
     </div>
     <div class="cbar">${seg(c.pa,g.a,'l')}${seg(c.ph,g.h,'r')}</div>
-    ${(c.pa<22||c.ph<22)?`<div class="cons-sub mono">${g.a} ${c.pa}% · ${g.h} ${c.ph}% · ${c.n} picks</div>`:''}
+    ${/* THE SUB-LINE IS ON EVERY CARD NOW, so the pool block is the same
+          shape on all sixteen instead of growing a fourth line on the
+          lopsided ones — which is what made every other game look
+          different for no reason anybody could name.
+          It still earns its place: the count is always worth saying, and
+          it picks up any percentage the bar could not print, since a
+          segment narrower than 22% drops its own label. So an 8% side is
+          never silently unlabelled, which was the flaw in my first pass
+          at this — the narrow number vanished from both places. */''}
+    <div class="cons-sub mono">${
+      [c.pa<22?`${g.a} ${c.pa}%`:'', c.ph<22?`${g.h} ${c.ph}%`:'',
+       `${c.n} pick${c.n===1?'':'s'}`].filter(Boolean).join(' · ')}</div>
   </div>`;
 }
 
@@ -2201,14 +2547,29 @@ function renderSlate(){
         <div class="n mono">${k} · <span class="tzab">${tzAbbr()}</span> · ${grp.length} game${grp.length===1?'':'s'}</div></div>`
         +(tag?`<div class="slatenote">${tag}</div>`:'');}
     const p=myPick(g.id),L=isLive(g),sc=scoreOf(g);
-    const aCls=p?(p.winner===g.a?'won':'lost'):'',hCls=p?(p.winner===g.h?'won':'lost'):'';
+    /* ONCE A GAME IS FINAL THE COLOUR BELONGS TO THE TEAM THAT WON,
+       not to the team you backed.
+       Until kickoff and while the game is being played, the lit side is
+       your pick — that is the card telling you what you did. The moment
+       it is final that question is settled and the interesting one is
+       who actually won, so the colour moves across and your losing pick
+       greys out with the rest of that side. What you took is still
+       written in the lock band underneath, in words, which is the right
+       place for it once it is history.
+       Three states, not two: `null` means nobody is lit — no pick yet
+       before kickoff, and a genuine tie after it, where lighting either
+       side would be a lie. */
+    const R=isFinal(g)?result(g):null;
+    const litA=isFinal(g)?(R?R===g.a:null):(p?p.winner===g.a:null);
+    const litH=isFinal(g)?(R?R===g.h:null):(p?p.winner===g.h:null);
+    const aCls=litA===null?'':(litA?'won':'lost'),hCls=litH===null?'':(litH?'won':'lost');
     /* White on the team's own primary fails WCAG on four of the 32 clubs
        — Cincinnati is 3.37:1, then Miami, Carolina and the Chargers — so
        on those the selected team's own name was the hardest thing on the
        card to read. Pick the text colour from the background's luminance
        instead of assuming white always wins. */
-    const aBg=p&&p.winner===g.a?`style="background:${TEAM(g.a)[2]};color:${onColor(TEAM(g.a)[2])}"`:'';
-    const hBg=p&&p.winner===g.h?`style="background:${TEAM(g.h)[2]};color:${onColor(TEAM(g.h)[2])}"`:'';
+    const aBg=litA?`style="background:${TEAM(g.a)[2]};color:${onColor(TEAM(g.a)[2])}"`:'';
+    const hBg=litH?`style="background:${TEAM(g.h)[2]};color:${onColor(TEAM(g.h)[2])}"`:'';
     /* The stake gets its own row under the matchup. It used to float over
        the card corner, where it collided with the countdown and clipped
        the home team's name. */
@@ -2229,12 +2590,22 @@ function renderSlate(){
              aria-label="Rank ${p.weight}, pays ${pay(p.weight,N)} points. Change it.">
              <span class="sb-l"><b class="sb-ok">&#10003; Submitted</b> &middot; change until kickoff</span>
              <span class="sb-r"><span class="sb-num set">${p.weight}</span>
-             <span class="sb-pts">${pay(p.weight,N)} pts</span></span></button>`
+             <span class="sb-pts">${ptsLbl(pay(p.weight,N))}</span></span></button>`
         : `<button type="button" class="stakebar empty" data-stake="${g.id}"
              aria-label="Stake a confidence rank on this pick">
              <span class="sb-l">Tap to stake points</span>
              <span class="sb-r"><span class="sb-num blank">?</span></span></button>`;
-    const band=L?`<div class="lockband"><span>${isFinal(g)
+    /* THE FILL — Q2, not a perimeter. This comment said "THE PERIMETER
+       RIBBON", which is N3: the rejected variant, shown beside Q2 on the
+       same sheet and not chosen. The words were left behind when the CSS
+       was corrected, and a stale comment naming the wrong option is
+       exactly how the wrong option got built the first time.
+       The strip FILLS: green if your pick came in, red if it did not,
+       and nothing at all while the game is still being played or if it
+       ended level, because neither of those has decided anything yet.
+       No pick counts as red: it scored zero. */
+    const bandCls=!isFinal(g)||!R ? '' : (p&&p.winner===R ? 'won' : 'lost');
+    const band=L?`<div class="lockband${bandCls?' '+bandCls:''}"><span>${isFinal(g)
       // A genuine tie is written with no winner, so say "tie" rather than
       // printing the word "null" at people.
       ?`Final · ${result(g)||'tie'} ${sc?Math.max(sc[0],sc[1])+'-'+Math.min(sc[0],sc[1]):''}`
@@ -2256,16 +2627,46 @@ function renderSlate(){
           if(isFinal(g)){
             if(!R)          return `<span>You took ${p.winner}${rank} · no score (tie)</span>`;
             return p.winner===R
-              ? `<span class="won-pts">You took ${p.winner}${rank}${w?` · +${pts} pts`:' · +1 pt'}</span>`
+              ? `<span class="won-pts">You took ${p.winner}${rank} · +${ptsLbl(w?pts:1)}</span>`
               : `<span class="miss">You took ${p.winner}${rank} · 0 pts</span>`;
           }
-          return `<span>You took ${p.winner}${rank}${w?` · ${pts} pts if it holds`:''}</span>`;
+          return `<span>You took ${p.winner}${rank}${w?` · ${ptsLbl(pts)} if it holds`:''}</span>`;
         })()
        :`<span class="miss">No pick · 0 pts</span>`}</div>`:'';
+    /* P4, AND WHERE THE DOT LIVES WHEN P4 FIRES.
+       The left slot is only a clock when there is a clock to put in it.
+       When ESPN has sent nothing yet, `cd live lefted` was still being
+       applied to the fallback — so the kickoff time rendered in live
+       green with a pulsing dot in front of it, which says "this is the
+       running clock" about a static time. Worse, the right-hand chip
+       carries `nodot` precisely BECAUSE the clock owns the dot, so
+       stripping the left slot's styling without moving the dot back
+       would leave a live game with no pulse anywhere on the row.
+       So: one decision, made once, read twice. */
+    const lc=(L&&!isFinal(g))?liveClock(g):null;
     h+=`<div class="card${L?' locked':''}" data-game="${g.id}">
-      <div class="meta"><span class="mono">${fT(g.show)}</span><span class="net">${g.net}</span>
+      <div class="meta">${
+        /* P1 + P5 — THE CLOCK TAKES THE LEFT SLOT, IN PROGRESS THE RIGHT.
+           Both slots are `.cd.live`, so the green, the weight and the
+           size are identical on each side; `lefted` only drops the auto
+           margin and `nodot` only hides the dot, so there is exactly
+           one dot on the row and it travels with the clock.
+           The text is ESPN's own `shortDetail` and NOT a word of our
+           own in front of it: P1 reads "3rd · 5:42", and P5 is the same
+           slot showing ESPN's "Halftime" when it sends that instead.
+           A hand-rolled formatter gets halftime (no clock), end of
+           quarter (no time left) and overtime (not "Q5") wrong, which
+           is exactly why the string is passed through.
+           P4 is the empty case: when ESPN has sent nothing yet, the
+           slot falls back to the KICKOFF TIME so the row never sits
+           blank. */
+        lc
+          ? `<span class="cd live lefted">${esc(lc)}</span>`
+          : `<span class="mono">${fT(g.show)}</span>`
+        }<span class="net">${g.net}</span>
         <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
-        <span class="cd ${cdClass(g.kick-Date.now(),isFinal(g))}" data-cd="${g.id}">${
+        <span class="cd ${cdClass(g.kick-Date.now(),isFinal(g))}${
+          lc?' nodot':''}" data-cd="${g.id}">${
           L?(isFinal(g)?'Final':'In progress'):'Locks in '+fmt(g.kick-Date.now())}</span></div>
       <div class="match">${side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null)}
         <div class="gutter"><span>@</span></div>
@@ -2373,13 +2774,77 @@ function renderGrid(){
     : finals      ? `Your week finished on <b>${mine.got}</b>.`
     : '';
 
-  if(!started){
-    $('#gridBody').innerHTML=`<div class="empty"><h4>Nothing to show yet</h4>
-      <p>Picks stay sealed until kickoff. The first game of Week ${state.week} opens the grid, and it fills in one column at a time from there.</p>
-      ${rosterBlock()}</div>`;
-    return;}
+  /* NO LONGER BAILS OUT TO A LIST OF NAMES.
 
-  const rows=PLAYERS.map(p=>({p,...weekPoints(p,state.week)})).sort((a,b)=>b.pts-a.pts);
+     Before the first kickoff this replaced the whole table with
+     "Nothing to show yet" and a block of name chips. That was a
+     different screen from the one it was about to become, so every
+     Thursday the Grid appeared to change shape rather than fill in,
+     and a player could not see their OWN picks on it — which the
+     table shows them, since a row is revealed to its own owner from
+     the start.
+
+     The table itself is the better empty state: every player, every
+     game as a column, and the sealed dots that are already explained
+     by the legend underneath. Nothing leaks — a cell is only shown
+     when its game has kicked off or the row is yours, and the reveal
+     query means the client does not hold anybody else's unrevealed
+     pick to leak in the first place. */
+  const nothingYet=!started;
+  const TB=tbState(state.week);
+  /* weekPoints HERE, weekSum ON STANDINGS — ON PURPOSE, AND WRITE IT DOWN.
+     These are two different numbers and they can legitimately disagree,
+     so the next person to notice deserves to find the reason here rather
+     than assume one of the two screens is broken.
+
+     This table's Pts column sits at the end of a row of per-game cells,
+     and it has to be the sum of THOSE cells or the row visibly does not
+     add up. Every cell is computed client-side from the revealed picks
+     and the game documents, so the total has to be too: weekPoints().
+
+     Standings answers a different question — where does this player
+     stand — and weekSum() therefore prefers the SERVER's banked record
+     whenever that record is current, because the record was scored
+     under the mode that week actually used while weekPoints() applies
+     the pool's CURRENT mode. See weekSum for the two staleness tests
+     that decide which one wins.
+
+     Where they can differ, then: a settled week whose scoring mode was
+     changed afterwards, and a load in which the revealed picks did not
+     arrive (this table shows empty cells and a zero, which is at least
+     self-consistent; Standings shows the banked figure rather than a
+     screen of zeroes). Neither is a bug. Do NOT "fix" this by pointing
+     both at one function — that trades an explainable difference for a
+     Pts column that contradicts the cells beside it. */
+  const rows=PLAYERS.map(p=>({p,...weekPoints(p,state.week)}))
+    /* Sorted by points once there are points. Before that, by name:
+       ranking twenty-eight people who are all on nought is inventing
+       an order, and the top of it reads as a leader. Standings makes
+       the same choice on its own cold start.
+       POINTS, THEN NAME. It was `b.pts - a.pts` alone, which left a
+       points tie in whatever order PLAYERS happened to be in and made
+       the order shuffle between renders; the fix for that was briefly
+       the TIEBREAKER as a second key, which was worse, because the
+       tiebreaker orders the SEASON standings in score_week.py and never
+       a week — so it imposed an order the scorer does not produce and
+       implied the guess had decided something. Name is not a tiebreak
+       and claims nothing; it is only stable, which an arbitrary order
+       is not. Who won the week is decided by points alone, shared when
+       level — see the honours block in renderBoard. */
+    .sort(nothingYet
+      ? (a,b)=>String(NAME(a.p)||'').localeCompare(String(NAME(b.p))||'')
+      : (a,b)=>(b.pts-a.pts)||String(NAME(a.p)||'').localeCompare(String(NAME(b.p))||''));
+  /* NO "WINNER" LABEL, and that is a correction of my own mistake.
+     I had the column say WINNER when the top two were level on points,
+     on the theory that the tiebreaker then decided the week. It does
+     not. score_week.py sorts `(-r["total"], tiebreak)` where `total` is
+     the SEASON total, so the guess only ever breaks a tie in the season
+     ORDERING — and the weekly award is explicitly shared: "Ties share a
+     place", winners = every row at the best week score.
+     So the tiebreaker never wins anybody a week, and a cell claiming it
+     did would have been the app inventing a rule the scorer does not
+     have. The column says CLOSEST, or EXACT when dead on, and nothing
+     else. */
   /* Same live movement as Standings. This table ranks the WEEK; the
      Standings table ranks the SEASON, so the two leaders can differ. */
   const prevG=gridRank[state.week]||{};
@@ -2389,6 +2854,25 @@ function renderGrid(){
     const st=isFinal(g)?['final','Final']:isLive(g)?['live','Live']:['open','—'];
     head+=`<th class="gm"><div class="aw">${g.a}</div><div class="sep"></div>
       <div class="hm">${g.h}</div><div class="st ${st[0]}">${st[1]}</div></th>`;});
+  /* THE TIEBREAKER COLUMN, in the same shape as a game column.
+     It has to be 50px like the others and its .hm must inherit the
+     games' size: .sep's line is (column width - 18), so any other width
+     gives a divider that visibly disagrees with its neighbours, and
+     thead th is vertical-align:bottom, so a taller bottom row lifts the
+     divider and the label above it out of line. Both were wrong in the
+     first pass and both are geometry, not taste. */
+  head+=`<th class="tbcol"><div class="aw">Tie</div><div class="sep"></div>
+    <div class="hm mono">${TB.sealed?'&middot;&middot;&middot;':(TB.actual!=null?TB.actual:'&ndash;')}</div>
+    ${/* THREE STATES, THE SAME THREE THE GAME COLUMNS USE. This was a
+         two-way switch — final, or else `live` — so before the Monday
+         game had kicked off the header read "Open" in live green, the
+         one colour in this table that means a game is being played right
+         now. It also left `.st.open` as dead CSS, which is how the
+         mistake hid: the rule existed and nothing ever emitted the
+         class. Sealed is not live; it is not yet. */''}
+    ${(()=>{const s=TB.final?['final','Total']
+        :TB.sealed?['open','Open']:['live','Live'];
+      return `<div class="st ${s[0]}">${s[1]}</div>`;})()}</th>`;
   head+=`<th class="tot">Pts</th></tr>`;
 
   let body='';
@@ -2400,8 +2884,8 @@ function renderGrid(){
   const anyPts=rows.some(r=>r.pts>0);
   rows.forEach((r,i)=>{
     body+=`<tr class="${r.p===ME?'me ':''}${i===0&&anyPts?'lead':''}"><td class="pl"><div class="plname">
-      <div class="plrank mono">${i+1}</div><div class="plmeta"><b>${NAME(r.p)}</b>
-      <span class="mono">${r.hits} correct</span></div></div></td>`;
+      <div class="plrank mono">${nothingYet?'&middot;':i+1}</div><div class="plmeta"><b>${NAME(r.p)}</b>
+      <span class="mono">${nothingYet?'no games scored yet':r.hits+' correct'}</span></div></div></td>`;
     gs.forEach(g=>{
       const shown=isLive(g)||r.p===ME;
       const p=pickOf(r.p,g.id);
@@ -2418,8 +2902,12 @@ function renderGrid(){
                                         :`<i>#${p.weight||'-'}</i>`;
           inner=`<b>${p.winner}</b>${tag}`;}}
       body+=`<td><div class="cell ${cls}">${inner}</div></td>`;});
-    body+=`<td class="tot"><div class="totnum mono">${r.pts}</div>
-      <div class="totsub mono">${r.hits}/${finals}</div></td></tr>`;});
+    body+=tbGridCell(TB,r.p);
+    /* A DASH, NOT A ZERO, before anything is scored. A column of
+       noughts reads as a score somebody posted; a dash reads as "not
+       yet". Same reasoning as the Standings cold start. */
+    body+=`<td class="tot"><div class="totnum mono">${nothingYet?'&ndash;':r.pts}</div>
+      <div class="totsub mono">${nothingYet?'':r.hits+'/'+finals}</div></td></tr>`;});
 
   /* Consensus row. Reveals per game as each one kicks off, same rule
      as everything else. */
@@ -2433,6 +2921,15 @@ function renderGrid(){
     let cls='pend';
     if(isFinal(g))cls=maj===result(g)?'hit':'miss';
     body+=`<td><div class="cell ${cls}"><b>${maj}</b><i>${pct}%</i></div></td>`;});
+  /* The pool's tiebreaker cell is the average guess — the one number
+     that belongs on a "how did everybody answer" row. Hidden while the
+     guesses are sealed, like every other cell on this row. */
+  body+=(()=>{
+    if(TB.sealed||!TB.rows.length)
+      return `<td class="tbtd"><div class="cell tbc hidden"><b>&bull;&bull;&bull;</b></div></td>`;
+    const avg=Math.round(TB.rows.reduce((a,r)=>a+r.guess,0)/TB.rows.length);
+    return `<td class="tbtd"><div class="cell tbc pool"><b>${avg}</b></div></td>`;
+  })();
   body+=`<td class="tot"></td></tr>`;
 
   gridRank[state.week]=Object.fromEntries(rows.map((r,i)=>[r.p,i+1]));
@@ -2451,7 +2948,8 @@ function renderGrid(){
       <span><i class="lg-hit"></i>Correct</span>
       <span><i class="lg-miss"></i>Wrong</span>
       <span><i class="lg-pend"></i>In progress</span>
-      <span><i class="lg-hid"></i>Sealed until kickoff</span></div>`;
+      <span><i class="lg-hid"></i>Sealed until kickoff</span>
+      <span><i class="lg-tb"></i>Closest tiebreaker</span></div>`;
   if(keepX||keepY){
     const gsNew=$('#gridBody .gridscroll');
     if(gsNew){ gsNew.scrollLeft=keepX; gsNew.scrollTop=keepY; }
@@ -2473,35 +2971,42 @@ function sizeGrid(){
 /* Rotating the phone changes the topbar's height. */
 addEventListener('resize',sizeGrid);
 
+/* ONE LINE, NOT TWENTY-EIGHT ROWS.
+   This was a panel listing every player's guess, which at 28 players
+   stood about 950px tall — and because it is a fixed-height flex
+   sibling of the scrolling table while the table carries
+   min-height:200px, the table got pinned at its 200px floor and showed
+   three rows however big the screen or the pool. The guesses now live
+   in the Grid's own Tie column, where they cost 50px sideways in a
+   table that already scrolls sideways, and this is reduced to the one
+   sentence that column cannot say for itself.
+   It names EVERY player at the closest distance. The version that
+   named one of them was wrong whenever two tied, which is not rare on
+   a single two-digit number across twenty-eight guesses. */
 function tbPanel(){
-  const g=tbGame(state.week);
-  if(!isLive(g))return `<div class="tbpanel"><h4>Tiebreaker</h4>
-    <div class="actual">Sealed until ${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]} kicks off.</div></div>`;
+  const T=tbState(state.week), g=T.g;
+  const match=`${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]}`;
+  if(T.sealed)return `<div class="tbstrip"><span class="k">Tiebreaker</span>
+    <span class="v">Sealed until ${match} kicks off</span></div>`;
+  if(!T.final||T.actual==null)return `<div class="tbstrip"><span class="k">Tiebreaker</span>
+    <span class="v">${match} &middot; in progress, guesses now revealed</span></div>`;
 
-  const F=isFinal(g), actual=F?tbActual(g):null;
-  const rows=PLAYERS.map(p=>({p,
-    guess:p===ME?(state.tb[state.week]??null):botGuess(p,state.week)}))
-    .filter(r=>r.guess!=null);
-
-  /* Closest without going over. If every guess is over, closest wins. */
-  let winner=null;
-  if(F&&rows.length){
-    const under=rows.filter(r=>r.guess<=actual);
-    const pool=under.length?under:rows;
-    winner=pool.reduce((a,b)=>Math.abs(b.guess-actual)<Math.abs(a.guess-actual)?b:a).p;
-  }
-  rows.sort((a,b)=>F?(Math.abs(a.guess-actual)-Math.abs(b.guess-actual)):b.guess-a.guess);
-
-  return `<div class="tbpanel"><h4>Tiebreaker</h4>
-    <div class="actual">${TEAM(g.a)[1]} @ ${TEAM(g.h)[1]}, ${
-      F?`combined <b>${actual}</b>`:'in progress, guesses now revealed'}</div>
-    ${rows.map(r=>{
-      const over=F&&r.guess>actual;
-      const cls=[r.p===ME?'me':'',r.p===winner?'win':'',over?'over':''].filter(Boolean).join(' ');
-      return `<div class="tbrow ${cls}"><span class="nm">${NAME(r.p)}</span>
-        <span class="gs">${r.guess}</span>
-        <span class="df">${F?(over?'over':`${actual-r.guess} under`):''}</span></div>`;}).join('')}
-  </div>`;
+  /* NAME() already runs esc(); a second pass turned O'Neill into
+     O&#39;Neill on screen. Every other call site here passes NAME()
+     through bare — this was the one that double-wrapped it. */
+  const names=T.best.map(p=>NAME(p));
+  const who=names.length===0 ? ''
+    : names.length===1 ? names[0]
+    : names.length===2 ? names.join(' and ')
+    : names.slice(0,-1).join(', ')+' and '+names[names.length-1];
+  const bg=T.best.length?(T.rows.find(r=>r.p===T.best[0])||{}).guess:null;
+  /* If the closest guess is OVER the total, everybody overshot — say so,
+     or a winning number larger than the combined score reads as a bug. */
+  const allOver=bg!=null&&bg>T.actual;
+  return `<div class="tbstrip"><span class="k">Tiebreaker</span>
+    <span class="v">${match} combined <b class="mono">${T.actual}</b></span>
+    ${who?`<span class="w">${who}${names.length>1?' both':''} closest at
+      <b class="mono">${bg}</b>${allOver?' &mdash; everybody went over':''}</span>`:''}</div>`;
 }
 
 function renderTray(){
@@ -2785,7 +3290,42 @@ function weekSum(pl,w){
        number being read from somewhere it isn't. */
     const loaded=Number(w)===Number(state.week);
     const settled=(WEEKS[w]||[]).length>0&&WEEKS[w].every(isFinal);
-    if(rec&&(settled||!loaded))return {pts:rec.pts||0, hits:rec.hits||0};
+    const banked={pts:rec&&rec.pts||0, hits:rec&&rec.hits||0};
+
+    /* A week not on screen: the server, always. loadWeek() keeps one
+       week of everyone's picks, so weekPoints() would find none and
+       report the week as zero for every player. */
+    if(rec&&!loaded)return banked;
+
+    /* SETTLED IS NOT THE SAME FACT AS SCORED, and treating them as one
+       put two different numbers for the same week on two tabs.
+
+       The moment Monday night football went final the week became
+       settled — 16 of 16 — and this handed over to the banked record.
+       But the last scoring run had been Monday afternoon, BEFORE that
+       game. So the Grid, which computes live, showed Steven Kern on 120
+       with 13 correct, while both Standings tabs showed 119 and 12: the
+       stored figure, short by exactly each player's stake on the Monday
+       night game. Ron Ron 113 against 108, Coker 109 against 103. The
+       app was right by its own rules and wrong on the screen, and it
+       would have stayed that way for five hours until the Tuesday run.
+
+       The test for staleness is `hits`. For the week ON SCREEN the
+       client holds every revealed pick and every game document, so it
+       can only ever see MORE correct picks than an older record counted,
+       never fewer. So if the client is ahead, the record predates a
+       result and the client wins; otherwise the record is current and it
+       wins — which matters, because the record is scored under the mode
+       that week actually used, while weekPoints() uses the pool's
+       current mode.
+
+       Degrades the right way too: if the revealed picks failed to load,
+       the client's hits are 0, the record is "ahead", and the banked
+       figure is shown rather than a screen full of zeroes. */
+    if(rec&&settled){
+      const live=weekPoints(pl,w);
+      return live.hits>banked.hits ? live : banked;
+    }
   }
   return weekPoints(pl,w);
 }
@@ -2899,7 +3439,54 @@ function renderBoard(){
     // client-side figure reported every past week as zero.
     for(const w in WEEKS){const r=weekSum(p,w);pts+=r.pts;hits+=r.hits;
       gp+=WEEKS[w].filter(isFinal).length;}
-    return{p,pts,hits,gp};}).sort((a,b)=>b.pts-a.pts);
+    /* Name is the second key ONLY to make the order deterministic. Two
+       players level on points are level, and nothing here pretends
+       otherwise — but Array#sort left to itself reordered them between
+       renders, which made the movement arrows flicker up and down on a
+       Sunday while nobody's points had changed. It is not a tiebreak:
+       see the note where tbSortKey/tbCmp used to live. */
+    return{p,pts,hits,gp};}).sort((a,b)=>(b.pts-a.pts)||
+      String(NAMES[a.p]||a.p||'').localeCompare(String(NAMES[b.p]||b.p||'')));
+  /* A WEEK IS "DONE" ONLY WHEN EVERY GAME IN IT IS FINAL — not when
+     some are. Everything below that says who won the week is gated on
+     this, because at 2pm on a Sunday the top row is whoever happens to
+     be ahead with nine games still to play, and crowning and
+     un-crowning them all afternoon is worse than saying nothing. */
+  const wkGs=WEEKS[wk]||[];
+  const weekDone=wkGs.length>0&&wkGs.every(isFinal);
+  /* WEEK HONOURS ARE SHARED, AND THEY GO BY POINTS VALUE — never by row
+     position. score_week.py is explicit:
+
+       best    = max(r["wpts"] for r in results)
+       if best > 0:
+         winners = [r for r in results if r["wpts"] == best]
+         # Runner-up is the next distinct score down, not the next row.
+         lower   = [r["wpts"] for r in results if r["wpts"] < best]
+         seconds = [...] if second_pts > 0 else []
+
+     and the comment above it reads "Ties share a place".
+
+     What was here before sealed rows 0 and 1. On a two-way tie for the
+     week that crowned one of the two co-winners and handed the OTHER co-
+     winner the runner-up seal — a claim Tuesday's scoring run then
+     contradicted on the same screen. It also crowned somebody in a week
+     where every score was 0.
+
+     The tiebreaker guess does NOT enter this. apply_tiebreak orders the
+     SEASON total; see the note where tbSortKey/tbCmp used to live. */
+  const honours=(()=>{
+    if(view!=='week'||!weekDone||!rows.length)return null;
+    const best=Math.max(...rows.map(r=>r.pts));
+    if(!(best>0))return null;
+    const lower=rows.filter(r=>r.pts<best).map(r=>r.pts);
+    const sndPts=lower.length?Math.max(...lower):0;
+    return {
+      win:new Set(rows.filter(r=>r.pts===best).map(r=>r.p)),
+      snd:sndPts>0?new Set(rows.filter(r=>r.pts===sndPts).map(r=>r.p)):new Set()
+    };
+  })();
+  const isWin=p=>!!honours&&honours.win.has(p);
+  const isSnd=p=>!!honours&&honours.snd.has(p);
   const histKey=view==='week'?'week:'+wk:'season';
   const prev=(lastRank[histKey]||={});
 
@@ -2985,24 +3572,62 @@ function renderBoard(){
        be answering a question nobody asked of it. */
     const tw=view==='season'?perfectWeeks(r.p):0; if(tw)any=true;
     const ww=view==='season'?weekWins(r.p):0, w2=view==='season'?weekSeconds(r.p):0;
+    /* SEALS ON THIS WEEK TOO, once the week is over.
+       They used to be season-only, on the reasoning that repeating a
+       season honour inside one week's table answers a question nobody
+       asked of it. That was right about the SEASON seal and wrong about
+       this one: there the seal carries a COUNT of weeks won, here it
+       marks who won THIS week. Different claim, not a duplicate — and
+       the week table was the one place that never said who won it,
+       since a rank number reads the same on Sunday as on Tuesday.
+       No count beside it here, deliberately: a "1" would read as a
+       tally and reintroduce exactly the ambiguity above. */
+    const won=isWin(r.p), snd=isSnd(r.p);
+    const wSeal=won?badgeSVG([{kind:'1st',n:1}])
+      : snd?badgeSVG([{kind:'2nd',n:1}]) : '';
     const badge=view==='season'?badgeSVG([
-      tw&&{kind:'trophy',n:tw}, ww&&{kind:'1st',n:ww}, w2&&{kind:'2nd',n:w2}]):'';
+      tw&&{kind:'trophy',n:tw}, ww&&{kind:'1st',n:ww}, w2&&{kind:'2nd',n:w2}]):wSeal;
     const sub=view==='week'
-      ? `${r.hits} of ${r.gp} correct`
+      ? (won ? `Won week ${wk} · ${r.hits} of ${r.gp} correct`
+        :snd ? `Runner-up · ${r.hits} of ${r.gp} correct`
+        : `${r.hits} of ${r.gp} correct`)
       : [ww?`${ww} first`:'', w2?`${w2} second`:'',
          `${r.hits} of ${r.gp} correct`].filter(Boolean).join(' · ');
     /* Rows re-sort as results land, so show which way somebody just moved.
        `prev` is this view's own history — see the lastRank declaration. */
     const was=prev[r.p], mv=was===undefined?'':(was>i+1?'up':was<i+1?'down':'');
-    return `<div class="row${r.p===ME?' me':''}${i===0?' lead':''}${mv?' '+mv:''}">
+    /* The runner-up row gets the leader's treatment one step quieter,
+       so the top two read as a pair rather than one crowned row and one
+       ordinary row wearing a sticker. Only on a finished week. */
+    const second=snd;
+    /* THE BANNER. Row one has always had one; row two never did, and
+       .row.lead is the ONLY row with position:relative — so an
+       absolutely-positioned tag on row two would have anchored itself
+       to the whole board instead of its row. .row.hastag fixes that.
+
+       On a FINISHED week the banner follows the honour, not the row
+       number, for the same reason the seal does: when two people tie for
+       the week they both won it, and giving the ribbon to whichever of
+       them sorted first would crown one co-winner over the other. Every
+       co-winner therefore gets the gold row and the gold ribbon; two
+       gold rows on equal points reads as the tie it is. While a week is
+       still live, or on Season, it stays the single top row. */
+    const crowned=view==='week'&&weekDone;
+    const gold=crowned?won:i===0;
+    const tag=crowned
+      ? (won ? `<span class="leadtag">Week ${wk} winner</span>`
+        :snd ? `<span class="leadtag silver">Runner up</span>` : '')
+      : i===0 ? `<span class="leadtag">${
+          view==='week'?`Week ${wk} leader`:'Season leader'}</span>` : '';
+    return `<div class="row${r.p===ME?' me':''}${gold?' lead':''}${
+        second?' second hastag':''}${mv?' '+mv:''}">
       <div class="rank mono">${i+1}${mv?`<i class="arrow">${
         mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
       <div class="who">
         <div class="nrow"><b>${NAME(r.p)}</b>${badge}</div>
         <span class="mono">${sub}</span></div>
       <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>
-      ${i===0?`<span class="leadtag">${view==='week'
-        ?`Week ${wk} leader`:'Season leader'}</span>`:''}</div>`;}).join('')
+      ${tag}</div>`;}).join('')
     /* The week-by-week winners list used to sit here. It is gone: every
        week's winner already wears a 1ST seal beside their name in this
        table, with a count, and a runner-up wears a 2ND — so the list was
@@ -3027,11 +3652,21 @@ function renderBoard(){
     else{
       const r=rows[mi], was=prev[r.p];
       const mv=was===undefined?'':(was>mi+1?'up':was<mi+1?'down':'');
-      const gap=mi===0?'' : ` · ${rows[mi-1].pts-r.pts} behind ${NAME(rows[mi-1].p)}`;
-      const lead=view==='week'?` · week ${wk} leader`:' · season leader';
+      /* "0 behind Jim" was what a points tie printed here. Level is
+         level — say so. */
+      const dif=mi===0?0:rows[mi-1].pts-r.pts;
+      const gap=mi===0?''
+        : dif===0 ? ` · level with ${NAME(rows[mi-1].p)}`
+        : ` · ${dif} behind ${NAME(rows[mi-1].p)}`;
+      /* Same rule as the table: on a finished week this follows the
+         honour, so a co-winner who sorted second still reads as having
+         won it. */
+      const lead=view==='week'&&weekDone
+        ? (isWin(ME)?` · won week ${wk}`:'')
+        : (mi===0?(view==='week'?` · week ${wk} leader`:' · season leader'):'');
       meBar.innerHTML=`<div class="rank mono">${mi+1}${mv?`<i class="arrow">${
           mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
-        <div class="who"><b>You${mi===0?lead:''}</b>
+        <div class="who"><b>You${lead}</b>
           <span>${view==='week'?`Week ${wk} · `:''}${mi+1} of ${rows.length}${gap}</span></div>
         <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>`;
       meBar.classList.remove('hide');
@@ -3136,16 +3771,18 @@ const archiveVisible=()=>{const A=ARCHIVE_OF();return !!A && (
 let IS_OWNER = DEMO;
 
 function renderArchive(){
+  /* A SETTINGS SECTION NOW, NOT A TAB.
+     What this replaces: the tab button was shown or hidden here, and
+     because a tab can be switched off underneath somebody standing on
+     it, this also had to notice that and click them back to Picks. A
+     section inside Settings cannot strand anyone — hiding it leaves the
+     player on Settings, looking at the rest of Settings — so that whole
+     redirect is gone with the tab it existed for. The visibility rule
+     itself is untouched: archiveVisible() still decides, and 'off'
+     never reaches the client at all. */
   const on=archiveVisible();
-  const t=$('#tabArchive'); if(t)t.classList.toggle('hide',!on);
-  if(!on){
-    // Somebody could be sitting on the tab when it is switched off.
-    if(state.tab==='archive'){
-      const pick=document.querySelector('[data-tab="picks"]');
-      if(pick)pick.click();
-    }
-    return;
-  }
+  const box=$('#archOpt'); if(box)box.classList.toggle('hide',!on);
+  if(!on)return;
   const el=$('#archBody'); const A=ARCHIVE_OF(); if(!el||!A)return;
   /* ESCAPED, like every other surface that prints a member's name.
      The Grid, Standings and the tiebreak panel were all fixed; this
@@ -3231,10 +3868,55 @@ function tick(){
      everybody. "WSH @ TB · 2d 23h" fits, and the abbreviation is what
      the cards and the Grid already use, so nothing new has to be
      learned. */
-  $('#countdown').innerHTML='<span class="txt">'+esc(next
-    ? `${next.a} @ ${next.h} · ${fmt(next.kick-Date.now())}`
-    : (Object.values(WEEKS).flat().some(g=>!isLive(g))?`Week ${state.week} · all locked`:'Season closed'))
-    +'</span>';
+  /* THREE STATES, AND THE OLD FALLBACK COULD NOT TELL TWO OF THEM APART.
+     It said `Week N · all locked` whenever the SEASON still had an
+     unstarted game anywhere — so a week with three games still being
+     played and a week that finished on Monday night both read the same,
+     and neither of them reads as "locked" to a player. Worse, a week
+     that was completely over kept a pulsing gold dot beside it all
+     week, which is the app's one signal for "something is happening
+     right now".
+     Scoped to the week on screen, and split properly:
+       a game still to come -> gold countdown to it (unchanged, and it
+         already covers the gap between games on a Sunday, since `next`
+         is simply the earliest game that has not kicked off)
+       all kicked off, some not final -> green live count
+       every game final -> grey, ticked, still */
+  /* "LIVE" NEEDS A CEILING, BECAUSE isLive() IS A CLOCK AND NOTHING ELSE.
+     isLive(g) is `Date.now() >= g.kick`, and `final` is a SERVER write.
+     Any game that never gets that write — a postponed Sunday game still
+     carrying its original kickoff, a scoring run that failed, an ESPN
+     outage across a Monday night — stays "live" by this test forever.
+     Unclamped, the header sat on a pulsing green "1 game live" for the
+     rest of the week, which is the app's one signal that something is
+     happening right now, spent on a game that finished on Sunday.
+     LIVE_MAX is the same six-hour window the ESPN poll already uses to
+     decide a game is no longer worth polling, so the clock and the poll
+     now agree about when a game stops being live. Past it the game is
+     unfinished, not live, and the header says so instead of either
+     pulsing green or claiming the week is Final. */
+  const wkGames=WEEKS[state.week]||[];
+  const unfin=wkGames.filter(g=>isLive(g)&&!isFinal(g));
+  const playing=unfin.filter(g=>Date.now()-g.kick<LIVE_MAX).length;
+  let cCls='', cTxt;
+  if(next){
+    cTxt=`${next.a} @ ${next.h} · ${fmt(next.kick-Date.now())}`;
+  }else if(playing){
+    cCls='live';
+    cTxt=`${playing} game${playing===1?'':'s'} live`;
+  }else if(unfin.length){
+    cCls='done';
+    cTxt=`Week ${state.week} · pending`;
+  }else if(wkGames.length){
+    cCls='done';
+    cTxt=`Week ${state.week} · Final`;
+  }else{
+    cCls='done';
+    cTxt='Season closed';
+  }
+  const ckEl=$('#clock');
+  if(ckEl)ckEl.className='clock'+(cCls?' '+cCls:'');
+  $('#countdown').innerHTML='<span class="txt">'+esc(cTxt)+'</span>';
   if(changed)render();
   /* Keep the ESPN poll in step with what is on screen. This is the right
      home for it: tick() already runs every second, already owns the
@@ -3405,7 +4087,7 @@ function openSheet(gid){
   const N=nGames(state.week);
   let h='';for(let i=1;i<=N;i++){const u=used.get(i);
     h+=`<button class="num" data-w="${i}"${u?' disabled':''}>${i}
-      <small>${u?u:`${pay(i,N)} pts`}</small></button>`;}
+      <small>${u?u:ptsLbl(pay(i,N))}</small></button>`;}
   $('#numgrid').innerHTML=h;
   $('#heatLo').textContent=`1 · surest, pays ${NN} points`;
   $('#heatHi').textContent=`${NN} · coin flip, pays 1 point`;
@@ -3476,7 +4158,10 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
     x.classList.remove('on'); x.setAttribute('aria-selected','false'); });
   t.setAttribute('aria-selected','true');
   t.classList.add('on');state.tab=t.dataset.tab;
-  ['picks','grid','standings','archive','help','settings'].forEach(v=>$('#v-'+v).classList.toggle('hide',v!==state.tab));
+  // 'archive' was a sixth view here. It is a section inside #v-settings
+  // now, so listing it would look up a #v-archive that no longer exists
+  // and throw on every tab switch.
+  ['picks','grid','standings','help','settings'].forEach(v=>$('#v-'+v).classList.toggle('hide',v!==state.tab));
   $('#bar').style.display=state.tab==='picks'?'flex':'none';
   /* A hidden element has no scrollHeight, so the height renderGrid tried
      to set while the tab was closed was computed from zero and thrown
@@ -4734,6 +5419,13 @@ async function pullEspn(){
         if(!Number.isFinite(na)||!Number.isFinite(nh))continue;
         const k=`${a}_${h}`, was=ESPN_LIVE[k];
         if(!was||was[0]!==na||was[1]!==nh){ESPN_LIVE[k]=[na,nh];changed=true;}
+        /* The clock moves far more often than the score, and it is the
+           reason to repaint between touchdowns — a card reading "3rd
+           5:42" for twenty minutes looks broken even when the score is
+           genuinely unchanged. Guarded with its own comparison so an
+           unchanged string still costs nothing. */
+        const det=c.status&&c.status.type&&c.status.type.shortDetail;
+        if(det&&ESPN_CLOCK[k]!==det){ESPN_CLOCK[k]=det;changed=true;}
       }catch(_){}
     }
     /* Only repaint when a number actually moved, and only if the week on
@@ -5387,10 +6079,34 @@ const obScreens=()=>[
              preview that contradicts the thing it previews teaches people
              to expect the wrong day. Wording below now mirrors compose()
              exactly, Thursday opener included. -->
-        ${nt('Tue','Week 4 is open','16 games to pick. First kickoff Thu, 8:20 PM your time.')}
-        ${nt('Wed','Week 4, 6 left',"You still need 6 picks before Thu, 8:20 PM.")}
-        ${nt('Sun','3 unpicked','2 hours until kickoff. After that they score zero.')}
-        ${nt('Sun','Last call, 3 games','Kickoff in 30 minutes. Unpicked games score zero.')}
+        <!-- REWRITTEN A SECOND TIME, to follow compose() through its own
+             rewrite. The alerts used to be titled at week level and
+             bodied at SLOT level — "Week 1 is open / 1 game to pick" for
+             Sunday night football, sent to somebody with fourteen games
+             unpicked. Every number true, the sentence false. compose()
+             now names its own deadline in the title and carries the real
+             week total in the body, and these four mirror that exactly.
+
+             This block and compose() have to be edited together. Case 24
+             compares the two files for precisely that reason, and it is
+             what caught this preview still promising the old wording
+             after the sender had moved on. -->
+        <!-- ROWS 1 AND 2 WERE ARITHMETICALLY IMPOSSIBLE. compose()'s n
+             is the number of picks due AT THAT DEADLINE, not in the week
+             — the week total is weekLeft, which is what the body
+             carries. These two are Thursday-deadline alerts, and a
+             Thursday slot is one game, so "8 picks due Thu, 8:20 PM"
+             and "6 picks due Thu" described a slate that does not
+             exist. The first alert a new member ever sees was teaching
+             them to read the title as a week count, which is exactly
+             the misreading the compose() rewrite above was done to end.
+             Now n=1 against a week total of 16 then 14, which is the
+             real shape of a Thursday opener — and it shows off the
+             singular "1 pick" branch of picks() into the bargain. -->
+        ${nt('Tue','1 pick due Thu, 8:20 PM','16 Week 4 games still need a pick.')}
+        ${nt('Wed','1 pick due Thu, 8:20 PM','Less than a day. 14 Week 4 games still need a pick.')}
+        ${nt('Sun','3 picks due in 2 hours','Unpicked games score zero. 4 Week 4 games still need a pick.')}
+        ${nt('Sun','Last call — 3 picks','Kickoff in 30 minutes. Unpicked games score zero.')}
       </div>
       <p class="ob-p" style="margin-top:14px">That's the entire list. We only ever
         mention games you <b>haven't</b> picked, so get your week in early and you'll

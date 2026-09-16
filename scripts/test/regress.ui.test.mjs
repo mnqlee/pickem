@@ -1,3 +1,8 @@
+/* td:not(.tbtd), not td — the Grid grew a tiebreaker column, and every
+   place below that walks a row's cells POSITIONALLY to line them up with
+   the week's games has to skip it or it reads the tiebreaker guess as a
+   seventeenth game. That is not a hypothetical: it is how these cases
+   first failed. */
 /* Regression tests for bugs that shipped and were fixed.
 
    Every case here is a defect that was live in production, that clicking
@@ -448,14 +453,31 @@ console.log('\n12. The Home Screen prompt must fit the browser it is standing in
     return { ctx, page, errors };
   };
 
+  /* WAIT FOR THE STEPS, DO NOT GUESS AT 400ms. This pair of checks was
+     flaky, and a flaky check in the suite that clears a release is worse
+     than no check: it teaches you to re-run and shrug. Pressing #obGo
+     rebuilds #obBody, and on a loaded machine that can take longer than
+     a fixed pause, so `.ob-steps` was read empty and the assertion failed
+     on the harness rather than on the app. Wait for the list to exist
+     AND to have text in it. */
+  const steps = async page => {
+    const el = page.locator('.ob-steps');
+    await el.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+    for (let i = 0; i < 40; i++) {
+      const t = await el.innerText().catch(() => '');
+      if (t.trim().length > 20) return t;
+      await page.waitForTimeout(100);
+    }
+    return await el.innerText().catch(() => '');
+  };
+
   const saf = await openUA(UA.safari);
   ok('an iPhone lands on the Home Screen prompt before signing in',
      /Home Screen/i.test(await saf.page.locator('#obBody').innerText().catch(() => '')));
   ok('and is always offered a way straight past it',
      await saf.page.locator('#obSkip').isVisible().catch(() => false));
   await saf.page.click('#obGo').catch(() => {});
-  await saf.page.waitForTimeout(400);
-  const safSteps = await saf.page.locator('.ob-steps').innerText().catch(() => '');
+  const safSteps = await steps(saf.page);
   ok('Safari is pointed at the Share button in its own toolbar',
      /bottom of the screen/i.test(safSteps) && !/⋯/.test(safSteps), safSteps.slice(0, 70));
   ok('no errors', saf.errors.length === 0, saf.errors[0] || '');
@@ -463,8 +485,10 @@ console.log('\n12. The Home Screen prompt must fit the browser it is standing in
 
   const edg = await openUA(UA.edge);
   await edg.page.click('#obGo').catch(() => {});
-  await edg.page.waitForTimeout(400);
-  const edgSteps = await edg.page.locator('.ob-steps').innerText().catch(() => '');
+  const edgSteps = await steps(edg.page);
+  ok('both browsers actually produced instructions to compare',
+     safSteps.trim().length > 20 && edgSteps.trim().length > 20,
+     JSON.stringify([safSteps.length, edgSteps.length]));
   ok('Edge on iOS is told about its own menu first, then Share',
      /⋯/.test(edgSteps) && /Share/i.test(edgSteps), edgSteps.slice(0, 70));
   ok('the two browsers are not handed identical instructions',
@@ -496,7 +520,7 @@ console.log('\n13. A score landing must move the Grid and the Standings, live');
   await page.waitForTimeout(600);
 
   const snap = () => page.evaluate(() => ({
-    cells: [...document.querySelectorAll('#gridBody tbody tr:first-child .cell')]
+    cells: [...document.querySelectorAll('#gridBody tbody tr:first-child td:not(.tbtd) .cell')]
              .map(c => c.className),
     board: [...document.querySelectorAll('#board .row .pts b')].map(e => e.textContent.trim()),
   }));
@@ -695,6 +719,20 @@ console.log('\n16. The two Standings tables must not borrow each other\'s histor
     arrows: document.querySelectorAll('#board .row .arrow').length,
     lead: (document.querySelector('#board .leadtag') || {}).textContent || '',
     seals: document.querySelectorAll('#board .row svg').length,
+    /* A SEASON seal prints a count next to the badge; a WEEK seal never
+       does. badgeSVG only emits that <text> when n > 1, so counting the
+       numerals inside the badge svgs is how the two are told apart. */
+    sealCounts: [...document.querySelectorAll('#board .row svg')]
+      .reduce((n, g) => n + [...g.querySelectorAll('text')]
+        .filter(t => /^\d+$/.test(t.textContent.trim())).length, 0),
+    second: document.querySelectorAll('#board .row.second').length,
+    silver: document.querySelectorAll('#board .leadtag.silver').length,
+    gold: [...document.querySelectorAll('#board .leadtag')]
+      .filter(e => !e.classList.contains('silver')).length,
+    /* Per-row points, so the seal count can be graded against the RULE
+       rather than against a number somebody typed in. */
+    pts: [...document.querySelectorAll('#board .row .pts b')]
+      .map(e => Number(e.textContent)).filter(Number.isFinite),
     wbw: !!document.querySelector('.wbw'),
     me: (document.getElementById('meBar') || {}).innerText || '',
   }));
@@ -709,8 +747,12 @@ console.log('\n16. The two Standings tables must not borrow each other\'s histor
      other suites' fixtures do not, and they assert the season table
      loads there instead — between them the two behaviours are pinned. */
   const landed = await read();
+  /* "leader" while it is being played, "winner" once every game is
+     final — this fixture's week is complete, so it is the latter. Both
+     spellings are accepted here because this case is about WHICH TABLE
+     loaded, not about the word; the word has its own case below. */
   ok('a week with results opens on This week, not Season',
-     /week \d+ leader/i.test(landed.lead), landed.lead);
+     /week \d+ (leader|winner)/i.test(landed.lead), landed.lead);
 
   await page.click('[data-stand="season"]').catch(() => {});
   await page.waitForTimeout(600);
@@ -724,15 +766,85 @@ console.log('\n16. The two Standings tables must not borrow each other\'s histor
   await page.waitForTimeout(600);
   const week = await read();
   ok('This week lists everyone too', week.rows === 50, String(week.rows));
-  ok('names the WEEK leader, not the season one',
-     /week \d+ leader/i.test(week.lead), week.lead);
+  ok('names the WEEK, not the season',
+     /week \d+ (leader|winner)/i.test(week.lead) && !/season/i.test(week.lead),
+     week.lead);
+  /* The banner has to say which of the two it means. A finished week
+     saying "leader" invites the question the seal already answered. */
+  ok('and says "winner" now the week is over, not "leader"',
+     /week \d+ winner/i.test(week.lead), week.lead);
+  /* THE RUNNER-UP IS A SCORE, NOT A ROW — "Ties share a place". This
+     asserted `week.second === 1`, which is only right when nobody is
+     level; score_week.py's runner-up is every row at the next DISTINCT
+     score down, and this fixture's generator happens to put the whole
+     top of the table on the same total, so "1" was wrong here the
+     moment the seals started following points instead of position. */
+  const shareCount = (arr, v) => arr.filter(x => x === v).length;
+  const wBest = week.pts.length ? Math.max(...week.pts) : 0;
+  const wLower = week.pts.filter(p => p < wBest);
+  const wSnd = wLower.length ? Math.max(...wLower) : 0;
+  const nWin = wBest > 0 ? shareCount(week.pts, wBest) : 0;
+  const nSnd = wSnd > 0 ? shareCount(week.pts, wSnd) : 0;
+  ok('the fixture actually reaches the shared-honour case',
+     nWin > 1, `${nWin} on the best score of ${wBest}`);
+  ok('every row at the runner-up score is banded, and only those',
+     week.second === nSnd, `${week.second} banded, ${nSnd} on ${wSnd}`);
+  ok('and every co-winner gets the gold banner, not just the first row',
+     week.gold === nWin, `${week.gold} gold, ${nWin} winners`);
+  ok('with a silver banner on each runner-up',
+     week.silver === nSnd, `${week.silver} silver, ${nSnd} runners-up`);
+
+  /* AND EVERY BANNER HAS TO BE ON ITS OWN ROW.
+     `.leadtag` is position:absolute and `.row.lead` is the only row that
+     declares position:relative — so a banner on any other row anchors
+     to whatever IS positioned above it and lands somewhere near the top
+     of the board, detached from the player it is describing.
+     `.row.hastag` exists for exactly that and nothing else.
+
+     Counting the banners does not catch this: the right number of tags
+     render, in the wrong places. Mutation-tested — batch 6 drops the
+     `second hastag` classes and this is the assertion that goes red. */
+  const anchored = await page.evaluate(() => {
+    const out = [];
+    for (const row of document.querySelectorAll('#board .row')) {
+      const tag = row.querySelector('.leadtag');
+      if (!tag) continue;
+      const r = row.getBoundingClientRect(), t = tag.getBoundingClientRect();
+      out.push({
+        kind: tag.classList.contains('silver') ? 'silver' : 'gold',
+        // the tag sits at top:-7px right:11px of its row
+        dTop: Math.round(t.top - r.top),
+        inside: t.right <= r.right + 2 && t.left >= r.left,
+      });
+    }
+    return out;
+  });
+  ok('there are banners to place', anchored.length === nWin + nSnd,
+     `${anchored.length} tags for ${nWin + nSnd} honours`);
+  ok('every banner is anchored to its own row, not floating on the board',
+     anchored.length > 0 && anchored.every(a => Math.abs(a.dTop + 7) <= 3 && a.inside),
+     JSON.stringify(anchored.filter(a => Math.abs(a.dTop + 7) > 3 || !a.inside)
+       .slice(0, 4)));
   ok('ranks them on a different order',
      JSON.stringify(week.order) !== JSON.stringify(season.order));
   ok('on smaller numbers than the season total',
      Number(week.top) < Number(season.top), `${week.top} vs ${season.top}`);
-  /* Seals are season honours. Repeating them inside one week's table
-     answers a question that table is not asking. */
-  ok('and drops the season seals', week.seals === 0, String(week.seals));
+  /* THE DISTINCTION THIS CASE DEFENDS.
+     The week table does carry seals — 1ST for whoever won THAT week and
+     2ND for the runners-up — but it must never carry the SEASON seals,
+     which are a different claim: those count how many weeks a player
+     has won and print that count beside the badge. So: one seal per
+     honour, and not one of them with a count. Two earlier versions of
+     this assertion were both wrong by a different number — zero seals,
+     then exactly two — which is what happens when a rule is graded
+     against a literal instead of against itself. */
+  ok('carries one week seal per honour and not one more',
+     week.seals === nWin + nSnd,
+     `${week.seals} seals for ${nWin} winners + ${nSnd} runners-up`);
+  ok('and none of them carries a season count',
+     week.sealCounts === 0, String(week.sealCounts));
+  ok('while the season table still counts its own',
+     season.seals > 0, String(season.seals));
   ok('the pinned bar follows the view',
      /week/i.test(week.me) && !/week/i.test(season.me),
      JSON.stringify([season.me.slice(0, 40), week.me.slice(0, 40)]));
@@ -1404,16 +1516,55 @@ console.log('\n24. The alert preview must not contradict the alerts it previews'
   ok('it names a Thursday opener, like the real schedule',
      /Thu,/.test(preview));
 
-  /* Shape check against the sender: compose() writes "First kickoff ${w}
-     your time." — the preview must use the same sentence, or it is
-     previewing something the app does not send. */
-  ok('compose() still phrases it the way the preview does',
-     /First kickoff \$\{w\} your time\./.test(live));
-  ok('and the preview matches that phrasing',
-     /First kickoff [^.]+ your time\./.test(preview), preview.slice(0, 200));
+  /* SHAPE CHECK AGAINST THE SENDER, and it earned its keep: compose()
+     was rewritten (week-level titles over slot-level bodies was telling
+     a man with fourteen unpicked games that he had one pick to make)
+     and this case failed immediately, because the onboarding screen was
+     still promising the old sentences. The preview is captioned "that's
+     the entire list" — it has to be the entire list.
+
+     Checked as a PAIR each time, so drift in either file fails. */
+  ok('compose() titles a reminder with its own deadline, not the week',
+     /due \$\{w\}`/.test(live) && !/Week \$\{wk\} is open/.test(live),
+     'compose() no longer matches the expected title shape');
+  ok('and the preview titles them the same way',
+     /\d+ picks? due Thu, 8:20 PM/.test(preview), preview.slice(0, 200));
+
+  ok('compose() carries the week total in the body',
+     /Week \$\{wk\} games still need a pick\./.test(live));
+  ok('and the preview shows that sentence too',
+     /Week 4 games still need a pick\./.test(preview), preview.slice(0, 260));
+
   ok('the last-call wording matches too',
      /Kickoff in \$\{mins\} minutes\. Unpicked games score zero\./.test(live) &&
      /Kickoff in 30 minutes\. Unpicked games score zero\./.test(preview));
+  ok('and last call is titled as last call in both',
+     /Last call \u2014 \$\{picks\(n\)\}/.test(live) &&
+     /Last call \u2014 3 picks/.test(preview), preview.slice(0, 260));
+
+  /* THE NUMBERS IN THE PREVIEW HAVE TO BE POSSIBLE, and two of them
+     were not. compose()'s `n` is the count due AT THAT DEADLINE and
+     `weekLeft` is the week total, and the tail sentence only prints at
+     all when weekLeft > n. The Thursday rows read "8 picks due Thu,
+     8:20 PM" and "6 picks due Thu" \u2014 but a Thursday slot is one game,
+     so those titles described a slate that cannot exist, and they did
+     it in the first alert copy a new member ever reads: the exact
+     misreading (title as a week count) that the compose() rewrite above
+     was done to end. Two rules, both straight out of compose():
+       a Thursday deadline is one game, so n is 1;
+       n < weekLeft, or the tail sentence would not be printed. */
+  const prows = preview.match(/\$\{nt\([^)]*\)\}/g) || [];
+  ok('there are four preview rows to check', prows.length === 4, String(prows.length));
+  for (const row of prows) {
+    const n  = (row.match(/'(\d+) picks? due/) || [])[1];
+    const wl = (row.match(/(\d+) Week \d+ games still need a pick/) || [])[1];
+    if (n && /due Thu,/.test(row))
+      ok('a Thursday deadline is one game, so the title says one pick',
+         n === '1', row);
+    if (n && wl)
+      ok('the deadline count is smaller than the week total it prints',
+         Number(n) < Number(wl), row);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1870,13 +2021,37 @@ console.log('\n31. An empty pool screen must still show that the pool exists');
   await page.waitForTimeout(400);
   const g = await page.evaluate(() => {
     const el = document.getElementById('v-grid');
+    const rows = [...el.querySelectorAll('#gridBody table.pool tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'));
+    const others = rows.filter(tr => !tr.classList.contains('me'));
     return { chips: el.querySelectorAll('.rchip').length,
-             mine:  el.querySelectorAll('.rchip.me').length,
+             rows:  rows.length,
+             mine:  rows.filter(tr => tr.classList.contains('me')).length,
+             otherCellClasses: others.flatMap(tr =>
+               [...tr.querySelectorAll('td:not(.tbtd) .cell')].map(c => c.className.trim())),
              text:  el.innerText.replace(/\s+/g, ' ') };
   });
-  ok('grid: the roster is named, not just counted', g.chips === 8, String(g.chips));
-  ok('grid: it says how many are in', /8 in the pool/i.test(g.text));
-  ok('grid: exactly one chip is marked as you', g.mine === 1, String(g.mine));
+  /* THE GRID NOW ANSWERS THIS WITH THE TABLE ITSELF, not a chip list.
+     The principle this case defends is unchanged and is the reason the
+     assertions moved rather than went away: WHO IS IN the pool was
+     never the secret, only what they picked. A named row per player
+     says who is in more completely than a chip did, and it is the same
+     screen the Grid becomes on Thursday instead of a different one.
+
+     The second half of the principle is asserted harder than before.
+     "Readiness must not leak" used to be a note about a tick nobody had
+     built; now that every player has a row with sixteen cells in it,
+     the cells are where it WOULD leak — so this checks that every cell
+     on somebody else's row is identical, which makes a picked game and
+     an unpicked one indistinguishable. */
+  ok('grid: every member has a named row', g.rows === 8, String(g.rows));
+  ok('grid: exactly one row is yours', g.mine === 1, String(g.mine));
+  ok('grid: no chip list is used any more', g.chips === 0, String(g.chips));
+  ok('grid: nobody else\'s cells reveal whether they have picked',
+     g.otherCellClasses.length > 0 &&
+     new Set(g.otherCellClasses).size === 1 &&
+     /hidden/.test(g.otherCellClasses[0]),
+     JSON.stringify([...new Set(g.otherCellClasses)]));
 
   /* Standings gets the fuller treatment: the field laid out as the rows it
      is about to become, so the tab does not spring into existence on
@@ -2158,6 +2333,10 @@ console.log('\n34. Grid and Standings must grade real picks correctly');
      stored pick. No app function is consulted for anything computed. */
   const raw = await page.evaluate(() => {
     const wk = window.__state ? window.__state.week : null;
+    /* th.gm is the GAME columns only; the tiebreaker header is th.tbcol
+       precisely so this count stays honest. When it was a th.gm too this
+       read 17, payOracle used n=17, and every payout came out a point
+       high — 15 points across 15 hits, which is what this case caught. */
     const games = [...document.querySelectorAll('#gridBody thead th.gm')].length;
     return { games, wk };
   });
@@ -2169,7 +2348,7 @@ console.log('\n34. Grid and Standings must grade real picks correctly');
       name: tr.querySelector('.plmeta b')?.textContent || '',
       pts:  +(tr.querySelector('.tot .totnum')?.textContent || 'x'),
       hits: +((tr.querySelector('.tot .totsub')?.textContent || '').split('/')[0]),
-      cells: [...tr.querySelectorAll('td .cell')].map(c => ({
+      cells: [...tr.querySelectorAll('td:not(.tbtd) .cell')].map(c => ({
         cls: [...c.classList].filter(k => k !== 'cell')[0] || '',
         txt: c.textContent.trim() })),
     }));
@@ -2877,7 +3056,11 @@ console.log('\n45. A finished game must stop pulsing like a live one');
   const read = () => page.evaluate(() => {
     const out = [];
     document.querySelectorAll('#slate .card').forEach(card => {
-      const cd = card.querySelector('.meta .cd');
+      /* .cd[data-cd] is the RIGHT-hand slot — the one tick() writes the
+         countdown into. Since P1 the live clock on the LEFT is a .cd
+         too, so a bare '.meta .cd' returns the clock and a case reading
+         it for "In progress" silently gets "5:38 AM" instead. */
+      const cd = card.querySelector('.meta .cd[data-cd]');
       if (!cd) return;
       out.push({ label: cd.textContent.trim(),
                  cls: cd.className,
@@ -2903,7 +3086,7 @@ console.log('\n45. A finished game must stop pulsing like a live one');
                              weeks: 1, gamesPerWeek: 3 });
   await live2.page.waitForTimeout(500);
   const liveCards = await live2.page.evaluate(() =>
-    [...document.querySelectorAll('#slate .card .meta .cd')]
+    [...document.querySelectorAll('#slate .card .meta .cd[data-cd]')]
       .map(cd => ({ label: cd.textContent.trim(), cls: cd.className })));
   const inProg = liveCards.filter(c => /in progress/i.test(c.label));
   ok('a game actually in progress is still classed live',
@@ -2952,7 +3135,7 @@ console.log('\n46. A live score must appear without waiting on any scheduler');
     [...document.querySelectorAll('#slate .card')].map(c => ({
       teams: [...c.querySelectorAll('.side .team')].map(t => t.textContent.trim()),
       scr:   [...c.querySelectorAll('.side .scr')].map(t => t.textContent.trim()),
-      cd:    (c.querySelector('.meta .cd') || {}).textContent || '',
+      cd:    (c.querySelector('.meta .cd[data-cd]') || {}).textContent || '',
       band:  (c.querySelector('.lockband') || {}).textContent || '' })));
 
   {
@@ -3279,6 +3462,181 @@ console.log('\n47. Season and This Week must not disagree about the same week');
   }
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\n48. A finished week must not read differently on the Grid and in Standings');
+{
+  /* THE BUG, reported the Tuesday after week 1 closed.
+
+     Monday night football went final at about 12:30, and for the five
+     hours until the Tuesday scoring run the two screens disagreed:
+
+       GRID (live)                 STANDINGS (banked)
+       Steven Kern  120  13/16     Steven Kern  119  12 of 16
+       Ron Ron      113  13/16     Ron Ron      108  12 of 16
+       Coker        109  12/16     Coker        103  11 of 16
+
+     One game missing from every row, and the point gaps — 1, 5, 6 —
+     were exactly each player's stake on the Monday night game.
+
+     THE CAUSE: weekSum treated `settled` (every game final) as though
+     it meant `scored` (the server has since run). The instant the last
+     game finalised, the week became settled and the code handed over to
+     the banked record — a record written the previous afternoon, before
+     that game existed as a result.
+
+     THE TEST FOR STALENESS IS `hits`. For the week on screen the client
+     holds every revealed pick and every game document, so it can only
+     ever see more correct picks than an older record counted, never
+     fewer. Client ahead means the record predates a result.
+
+     These cases pin the user-visible invariant — the two screens agree —
+     and both directions of the choice, because preferring the client
+     unconditionally would break a different thing: the record is scored
+     under the mode that week actually used, while weekPoints() uses the
+     pool's current mode. */
+  const six = () => new Date(Date.now() - 6 * 864e5).toISOString();
+
+  const gridPts = pg => pg.evaluate(() =>
+    [...document.querySelectorAll('#gridBody table.pool tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'))
+      .map(tr => ({
+        name: (tr.querySelector('.plmeta b') || {}).textContent || '',
+        pts:  (tr.querySelector('.tot .totnum') || {}).textContent.trim() || '',
+        sub:  (tr.querySelector('.tot .totsub') || {}).textContent.trim() || '' })));
+  const standPts = pg => pg.evaluate(() =>
+    [...document.querySelectorAll('#board .row')].map(r => ({
+      name: (r.querySelector('.who b') || {}).textContent || '',
+      pts:  (r.querySelector('.pts b') || {}).textContent || '' })));
+
+  /* ---- the banked record is BEHIND: the client must win ---- */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: six(), weeks: 1, gamesPerWeek: 4,
+      recPts: 0, recHits: 0 });          // a record written before the last game
+
+    await page.click('[data-tab="grid"]').catch(() => {});
+    await page.waitForTimeout(500);
+    const grid = await gridPts(page);
+    ok('the week is fully final and the Grid scored it',
+       grid.length > 2 && grid.some(r => Number(r.pts) > 0),
+       JSON.stringify(grid.slice(0, 3)));
+
+    await page.click('[data-tab="standings"]').catch(() => {});
+    await page.click('#standTabs [data-stand="week"]').catch(() => {});
+    await page.waitForTimeout(400);
+    const wk = await standPts(page);
+    const gBy = Object.fromEntries(grid.map(r => [r.name, r.pts]));
+    const off = wk.filter(r => gBy[r.name] !== undefined && gBy[r.name] !== r.pts);
+    /* THE ASSERTION THAT KILLS THE BUG. */
+    ok('This Week matches the Grid point for point',
+       off.length === 0,
+       JSON.stringify(off.map(r => [r.name, gBy[r.name], r.pts])).slice(0, 300));
+    ok('and it is not showing the stale zero',
+       wk.some(r => Number(r.pts) > 0), JSON.stringify(wk.slice(0, 3)));
+
+    await page.click('#standTabs [data-stand="season"]').catch(() => {});
+    await page.waitForTimeout(400);
+    const se = await standPts(page);
+    const offS = se.filter(r => gBy[r.name] !== undefined && gBy[r.name] !== r.pts);
+    ok('Season matches the Grid too', offS.length === 0,
+       JSON.stringify(offS.map(r => [r.name, gBy[r.name], r.pts])).slice(0, 300));
+
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+
+  /* ---- the banked record is CURRENT: it must win ----
+     Not symmetry for its own sake. The record carries the scoring mode
+     that week was settled under; the client recomputes with today's.
+     Preferring the client whenever it merely disagrees would silently
+     rescore old weeks after a mode change. */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: six(), weeks: 1, gamesPerWeek: 4,
+      recPts: 777, recHits: 99 });       // impossible to beat from 4 games
+
+    await page.click('[data-tab="standings"]').catch(() => {});
+    await page.click('#standTabs [data-stand="week"]').catch(() => {});
+    await page.waitForTimeout(500);
+    const wk = await standPts(page);
+    ok('a record that is not behind is still trusted',
+       wk.length > 2 && wk.every(r => r.pts === '777'),
+       JSON.stringify(wk.slice(0, 3)));
+    ok('no page errors', errors.length === 0, errors[0] || '');
+    await ctx.close();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n49. The Grid before kickoff must be the grid, not a list of names');
+{
+  /* THE COMPLAINT: opening week 2 showed "Nothing to show yet" over a
+     block of name chips. Two problems with that. It is a different
+     screen from the one it becomes on Thursday, so the Grid appears to
+     change shape rather than fill in — and a player could not see their
+     OWN picks on it, even though a row is revealed to its owner from
+     the start.
+
+     So the table renders from the beginning, with sealed dots the
+     legend already explains. Nothing can leak: a cell shows only when
+     its game has kicked off or the row is yours, and the reveal query
+     means the client does not hold anybody else's unrevealed pick. */
+  const { ctx, page, errors } = await open({ weeks: 2, gamesPerWeek: 4 });
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(600);
+
+  const g = await page.evaluate(() => {
+    const body = document.querySelector('#gridBody');
+    const rows = [...document.querySelectorAll('#gridBody table.pool tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'));
+    const mine = rows.find(tr => tr.classList.contains('me'));
+    const other = rows.find(tr => !tr.classList.contains('me'));
+    const cells = tr => [...tr.querySelectorAll('td:not(.tbtd) .cell')].map(c => c.className);
+    return {
+      chips: !!body.querySelector('.roster'),
+      emptyHead: /Nothing to show yet/.test(body.textContent),
+      rowCount: rows.length,
+      players: rows.map(tr => (tr.querySelector('.plmeta b') || {}).textContent || ''),
+      ranks: rows.map(tr => (tr.querySelector('.plrank') || {}).textContent.trim()),
+      totals: rows.map(tr => (tr.querySelector('.tot .totnum') || {}).textContent.trim()),
+      subs: rows.map(tr => (tr.querySelector('.tot .totsub') || {}).textContent.trim()),
+      mineCells: mine ? cells(mine) : null,
+      otherCells: other ? cells(other) : null,
+      legend: !!body.querySelector('.legend')
+    };
+  });
+
+  ok('the table renders instead of the chip list',
+     g.rowCount > 2 && !g.chips && !g.emptyHead,
+     JSON.stringify({ rows: g.rowCount, chips: g.chips, empty: g.emptyHead }));
+  ok('every player has a row', g.rowCount === g.players.length && g.rowCount >= 8,
+     String(g.rowCount));
+  ok('and they are in name order, not an invented ranking',
+     JSON.stringify(g.players) === JSON.stringify([...g.players].sort((a, b) => a.localeCompare(b))),
+     JSON.stringify(g.players.slice(0, 5)));
+  /* A dash, not a nought. A column of zeroes reads as a score somebody
+     posted; that was the reasoning on the Standings cold start and it
+     applies identically here. */
+  ok('the points column shows a dash rather than a nought',
+     g.totals.every(t => t === '–') && g.subs.every(s => s === ''),
+     JSON.stringify(g.totals.slice(0, 4)));
+  ok('no rank numbers before anything is scored',
+     g.ranks.every(r => r === '·'), JSON.stringify(g.ranks.slice(0, 4)));
+
+  /* THE POINT OF THE CHANGE: you can see your own sheet, nobody
+     else's. */
+  ok('your own row shows your picks',
+     !!g.mineCells && g.mineCells.some(c => /\bpend\b|\bnone\b/.test(c)),
+     JSON.stringify(g.mineCells));
+  ok("and everybody else's row stays sealed",
+     !!g.otherCells && g.otherCells.every(c => /hidden/.test(c)),
+     JSON.stringify(g.otherCells));
+  ok('the legend explaining the dots is still there', g.legend);
+
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
 /* NOT COVERED HERE, deliberately, and worth knowing about.
 
    weekSum() now prefers the server's figure for any week that is not the
@@ -3303,6 +3661,1120 @@ console.log('\n47. Season and This Week must not disagree about the same week');
    away from it. Scoring runs three times a week, so that window is
    real but short. Fixing it properly means caching revealed picks per
    week rather than per load. */
+
+
+/* ------------------------------------------------------------------ */
+console.log('\n50. A finished week must not still be pulsing "all locked"');
+{
+  /* THE BUG: the header clock's fallback text tested the WHOLE SEASON
+     for an unstarted game — `Object.values(WEEKS).flat().some(g=>!isLive(g))`
+     — so it could not tell "every game has kicked off and three are
+     still being played" from "this week finished on Monday night". Both
+     read `Week 1 · all locked`, a phrase that means nothing to a player,
+     and both kept the pulsing gold dot: the app's one signal for
+     something happening RIGHT NOW, left running against a week that was
+     over. Week 1 sat like that for six days. */
+  const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
+  const { ctx, page, errors } = await open(
+    { startISO: past, weeks: 3, gamesPerWeek: 4, playerCount: 6 });
+
+  const clock = () => page.evaluate(() => {
+    const c = document.getElementById('clock');
+    const dot = c && c.querySelector('.dot');
+    const tick = c && c.querySelector('.tick');
+    const seen = e => !!e && getComputedStyle(e).display !== 'none';
+    return { cls: c ? c.className : '',
+             txt: (document.getElementById('countdown') || {}).textContent || '',
+             dot: seen(dot), tick: seen(tick),
+             colour: c ? getComputedStyle(c).color : '' };
+  });
+
+  /* The app opens on the CURRENT week, which here is an upcoming one —
+     so week 1 has to be selected explicitly. My first version of this
+     case did not, graded the countdown state against the finished-week
+     assertions, and failed for the wrong reason. */
+  await page.click('.wk[data-wk="1"]');
+  await page.waitForTimeout(800);
+  const done = await clock();
+  ok('a finished week says Final, not "all locked"',
+     /week 1\s*·\s*final/i.test(done.txt) && !/locked/i.test(done.txt), done.txt);
+  ok('and stops pulsing: no dot at all',        done.dot === false, JSON.stringify(done));
+  ok('showing a tick in the dot\'s place',      done.tick === true, JSON.stringify(done));
+  ok('and drops the gold',                      /done/.test(done.cls), done.cls);
+
+  /* Now a week that has NOT started: the countdown, untouched. This is
+     the half of the behaviour that was already right, and the reason
+     the fix had to be surgical — `next` already picks the earliest
+     game in the week that has not kicked off, which is why the gold
+     countdown correctly survives the gaps BETWEEN games on a Sunday. */
+  await page.click('.wk[data-wk="3"]');
+  await page.waitForTimeout(800);
+  const soon = await clock();
+  ok('an upcoming week still counts down to its next kickoff',
+     /@/.test(soon.txt) && /\d/.test(soon.txt), soon.txt);
+  ok('in gold, with the dot pulsing',
+     soon.dot === true && soon.tick === false && soon.cls.trim() === 'clock',
+     JSON.stringify(soon));
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n51. The Grid must not collapse to three rows after Monday night');
+{
+  /* THE BUG, and it is geometry rather than logic. #v-grid is a
+     fixed-height flex column: the scrolling table, then the tiebreaker
+     block, then the legend. The table carried min-height:200px; the
+     tiebreaker block carried no height limit at all and listed every
+     player's guess. At 28 players that block stood ~950px, so the
+     table was squeezed to its 200px floor and showed THREE ROWS — the
+     same three whether the pool had five people or fifty, and whatever
+     the screen size. The guesses moved into a column of the table, and
+     the block became one line. */
+  const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
+  const { ctx, page, errors } = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 28 });
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(700);
+
+  const m = await page.evaluate(() => {
+    const scroll = document.querySelector('#gridBody .gridscroll');
+    const strip  = document.querySelector('#gridBody .tbstrip');
+    const rows   = [...document.querySelectorAll('#gridBody tbody tr')];
+    const rowH   = rows.length ? rows[0].getBoundingClientRect().height : 0;
+    return {
+      scrollH: scroll ? Math.round(scroll.getBoundingClientRect().height) : 0,
+      stripH:  strip  ? Math.round(strip.getBoundingClientRect().height)  : 0,
+      rows: rows.length, rowH: Math.round(rowH),
+      oldPanel: !!document.querySelector('#gridBody .tbpanel'),
+      guessRows: document.querySelectorAll('#gridBody .tbrow').length,
+    };
+  });
+  ok('the 28-row tiebreaker panel is gone',
+     m.oldPanel === false && m.guessRows === 0, JSON.stringify(m));
+  ok('replaced by one strip, not a wall',
+     m.stripH > 0 && m.stripH < 110, String(m.stripH));
+  /* The real assertion: the table gets the screen. Four rows was the
+     old ceiling, so anything at or under that is the bug back. */
+  const visible = m.rowH ? Math.floor(m.scrollH / m.rowH) : 0;
+  ok('and the table is no longer pinned at its 200px floor',
+     m.scrollH > 260, String(m.scrollH));
+  ok('so more than four player rows fit on screen',
+     visible >= 8, `${visible} rows of ${m.rows} (${m.scrollH}px / ${m.rowH}px)`);
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n52. The tiebreaker column must grade by the rule it prints');
+{
+  /* Two things this pins.
+
+     ONE: closest-without-going-over is a SET, not a person. The first
+     implementation used reduce(), which returns whichever row it meets
+     first — so two players on the same closest guess got two different
+     colours for identical answers, and the summary line named one of
+     them. On a single two-digit number across 28 guesses that is not an
+     edge case.
+
+     TWO: the column may only say WINNER when the guess actually decided
+     something. score_week.py sorts by (-total, tiebreak), so a guess
+     changes an outcome only when the top two are level on points.
+     Otherwise the closest guess won nothing and must say CLOSEST. */
+  const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
+  // Roster index 0 is Lee. Two players share 46; the actual total decides.
+  const { ctx, page, errors } = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 6,
+      tbTotals: [46, 46, 99, 40, 41, 42] });
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(700);
+
+  const t = await page.evaluate(() => {
+    const head = document.querySelector('#gridBody thead th.tbcol');
+    const cells = [...document.querySelectorAll('#gridBody tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'))
+      .map(tr => {
+        const c = tr.querySelector('td.tbtd .cell');
+        return { name: (tr.querySelector('.plmeta b') || {}).textContent || '',
+                 cls: c ? c.className : '', txt: c ? c.textContent.trim() : '' };
+      });
+    return {
+      hasHead: !!head,
+      isGameCol: !!document.querySelector('#gridBody thead th.gm.tbcol'),
+      gameCols: document.querySelectorAll('#gridBody thead th.gm').length,
+      actual: head ? (head.querySelector('.hm') || {}).textContent.trim() : '',
+      // Geometry: the divider under TIE must be the same line as a game's.
+      sep: (() => {
+        const a = document.querySelector('#gridBody thead th.gm .sep');
+        const b = head && head.querySelector('.sep');
+        if (!a || !b) return null;
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        return { w: Math.round(ra.width) - Math.round(rb.width),
+                 y: Math.round(ra.top) - Math.round(rb.top) };
+      })(),
+      cells, strip: (document.querySelector('.tbstrip') || {}).textContent || '',
+    };
+  });
+
+  ok('the column exists', t.hasHead, JSON.stringify(t).slice(0, 120));
+  /* It shares the games' geometry but not their identity — counting
+     th.gm is how the slate size gets read, and a 17th "game" made every
+     payout a point high once already. */
+  ok('but it is NOT counted as a game column',
+     t.isGameCol === false && t.gameCols === 16, `gm=${t.gameCols}`);
+  ok('its divider is the same width as a game\'s',
+     t.sep && t.sep.w === 0, JSON.stringify(t.sep));
+  ok('and sits on the same line',
+     t.sep && t.sep.y === 0, JSON.stringify(t.sep));
+
+  const actual = Number(t.actual);
+  ok('the header shows the combined total', Number.isFinite(actual), t.actual);
+
+  const green  = t.cells.filter(c => /\bwon\b/.test(c.cls));
+  const struck = t.cells.filter(c => /\bover\b/.test(c.cls));
+  const guessOf = c => Number((c.txt.match(/^\d+/) || [])[0]);
+
+  // Whatever the fixture's total turns out to be, the RULE must hold.
+  const unders = t.cells.filter(c => guessOf(c) <= actual);
+  const pool = unders.length ? unders : t.cells;
+  const best = Math.min(...pool.map(c => Math.abs(guessOf(c) - actual)));
+  const expect = pool.filter(c => Math.abs(guessOf(c) - actual) === best);
+
+  ok('every guess at the closest distance is green, not just the first',
+     green.length === expect.length &&
+     expect.every(e => green.some(g => g.name === e.name)),
+     `green=${JSON.stringify(green.map(g => g.name + ':' + g.txt))} expected=${
+       JSON.stringify(expect.map(e => e.name + ':' + e.txt))}`);
+  ok('and the count is right even when two players tie on it',
+     expect.length < 2 || green.length >= 2,
+     `${expect.length} tied, ${green.length} green`);
+  ok('anything over the total is struck through',
+     struck.length === t.cells.filter(c => guessOf(c) > actual).length,
+     `${struck.length} struck of ${t.cells.filter(c => guessOf(c) > actual).length} over`);
+  ok('a struck cell is never also green',
+     struck.every(c => !/\bwon\b/.test(c.cls)), JSON.stringify(struck));
+
+  /* THE WORD "WINNER" MUST NEVER APPEAR IN THIS COLUMN, and this case
+     used to assert the opposite — that it appears exactly when the top
+     two rows are level on points. That was built on a misreading of
+     score_week.py: apply_tiebreak sorts (-r["total"], key) where
+     `total` is the SEASON total, so the guess only ever reorders the
+     season standings, never a week; and the weekly award is explicitly
+     shared ("Ties share a place", winners = every row at the best week
+     score). So the tiebreaker cannot win anybody a week, and a cell
+     saying it did was the app inventing a rule the scorer does not have.
+     A test asserting a false rule is worse than no test: this one PASSED
+     the whole time the app was wrong.
+     This fixture is the hard branch — the deterministic picks put the
+     whole top of the table on the same week total, which is exactly
+     where the old code printed WINNER — so it is asserted explicitly,
+     and the case fails if the generator ever stops producing it. */
+  const pts = await page.evaluate(() => [...document.querySelectorAll('#gridBody .tot .totnum')]
+    .map(e => Number(e.textContent)).filter(Number.isFinite));
+  ok('the fixture still puts the top of the table level on points',
+     pts.length > 1 && pts[0] === pts[1], JSON.stringify(pts.slice(0, 3)));
+  const winners = t.cells.filter(c => /winner/i.test(c.txt));
+  ok('and even so, no cell claims to have won the week',
+     winners.length === 0, JSON.stringify(winners.map(c => c.name + ':' + c.txt)));
+  ok('every green cell says CLOSEST or EXACT and nothing else',
+     green.length > 0 && green.every(c => /closest|exact/i.test(c.txt)),
+     JSON.stringify(green.map(c => c.txt)));
+
+  /* And the line underneath must agree with the column — they used to
+     compute it separately, and one of them was wrong. */
+  ok('the summary names every player the column turned green',
+     expect.every(e => t.strip.includes(e.name)),
+     `${t.strip} | expected ${JSON.stringify(expect.map(e => e.name))}`);
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+
+  /* THE OTHER BRANCH, AND IT TAKES TWO PASSES TO BUILD.
+
+     The point of this fixture is: the top scorer ALSO holds the closest
+     guess, and the top two are NOT level on points. Only then does
+     "WINNER" versus "CLOSEST" actually distinguish correct code from
+     code that says WINNER whenever a week is final — and my first
+     version of this case did not arrange it, so mutation testing showed
+     the assertion passing with the bug put back. A test that cannot
+     fail is worse than no test.
+
+     So: load once to learn who finishes top and what the combined total
+     is, then reload with that player given a guess one under it and
+     everybody else pushed over. The generator is deterministic, so the
+     second pass reproduces the same order. */
+  const learn = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 8, playerCount: 8, promo: true });
+  await learn.page.click('[data-tab="grid"]').catch(() => {});
+  await learn.page.waitForTimeout(700);
+  const seen = await learn.page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#gridBody tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'));
+    const head = document.querySelector('#gridBody thead th.tbcol .hm');
+    return {
+      names: rows.map(tr => (tr.querySelector('.plmeta b') || {}).textContent.trim()),
+      pts: rows.map(tr => Number((tr.querySelector('.tot .totnum') || {}).textContent)),
+      actual: Number(head ? head.textContent.trim() : NaN),
+    };
+  });
+  await learn.ctx.close();
+  ok('the learning pass separates the top two on points',
+     seen.pts.length > 1 && seen.pts[0] !== seen.pts[1],
+     JSON.stringify(seen.pts.slice(0, 4)));
+  ok('and reports a combined total to aim at',
+     Number.isFinite(seen.actual), String(seen.actual));
+
+  /* Roster order in the harness is ['Lee', ...NAMES], so the index a
+     name sits at is the index tbTotals addresses. */
+  const ROSTER = ['Lee','Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus','Jo','Tay'];
+  const topIdx = ROSTER.indexOf(seen.names[0]);
+  ok('the top scorer is findable in the roster', topIdx >= 0,
+     `${seen.names[0]} in ${JSON.stringify(ROSTER.slice(0, 8))}`);
+  const totals = ROSTER.slice(0, 8).map((_, i) =>
+    i === topIdx ? seen.actual - 1 : seen.actual + 20);
+
+  const b2 = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 8, playerCount: 8,
+      promo: true, tbTotals: totals });
+  await b2.page.click('[data-tab="grid"]').catch(() => {});
+  await b2.page.waitForTimeout(700);
+  const d = await b2.page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#gridBody tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'));
+    return {
+      pts: rows.map(tr => Number((tr.querySelector('.tot .totnum') || {}).textContent)),
+      cells: rows.map(tr => {
+        const c = tr.querySelector('td.tbtd .cell');
+        return { name: (tr.querySelector('.plmeta b') || {}).textContent.trim(),
+                 cls: c ? c.className : '', txt: c ? c.textContent.trim() : '' }; }),
+    };
+  });
+  ok('the second fixture still separates the top two on points',
+     d.pts.length > 1 && d.pts[0] !== d.pts[1], JSON.stringify(d.pts.slice(0, 4)));
+  /* THE ARRANGEMENT THAT MAKES THIS BITE: the row at the top of the
+     table is also the one holding the closest guess. */
+  ok('and the top scorer is the one holding the closest guess',
+     d.cells.length > 0 && /\bwon\b/.test(d.cells[0].cls),
+     JSON.stringify(d.cells.slice(0, 2)));
+  ok('so nothing in the column claims to be the WINNER',
+     !d.cells.some(c => /winner/i.test(c.txt)),
+     JSON.stringify(d.cells.map(c => c.txt)));
+  ok('and the closest guess says CLOSEST',
+     /closest|exact/i.test(d.cells[0].txt), JSON.stringify(d.cells[0]));
+  ok('no page errors in the second fixture', b2.errors.length === 0, b2.errors[0]);
+  await b2.ctx.close();
+
+  /* THE BRANCH BOTH FIXTURES ABOVE MISS: everybody overshoots.
+     The rule is closest-without-going-over, and when nobody is under it
+     falls back to closest outright — so the nearest OVERSHOOT wins. The
+     first build drew that cell green AND struck through, saying "this
+     won" and "this busted" in the same 50 pixels. Neither fixture above
+     reaches it, because both have somebody under, so the assertion "a
+     struck cell is never also green" passed while being false. Found by
+     screenshotting the real app; pinned here. */
+  const over = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 8,
+      tbTotals: [300, 301, 302, 303, 304, 305, 306, 307] });
+  await over.page.click('[data-tab="grid"]').catch(() => {});
+  await over.page.waitForTimeout(700);
+  const o = await over.page.evaluate(() => {
+    const head = document.querySelector('#gridBody thead th.tbcol .hm');
+    const rows = [...document.querySelectorAll('#gridBody tbody tr')]
+      .filter(tr => !tr.classList.contains('poolrow'));
+    return {
+      actual: Number(head ? head.textContent.trim() : NaN),
+      cells: rows.map(tr => {
+        const c = tr.querySelector('td.tbtd .cell');
+        return { cls: c ? c.className : '', txt: c ? c.textContent.trim() : '' }; }),
+      strip: (document.querySelector('.tbstrip') || {}).textContent || '',
+    };
+  });
+  ok('every guess really is over the total',
+     o.cells.every(c => Number((c.txt.match(/^\d+/) || [])[0]) > o.actual),
+     `actual ${o.actual} vs ${JSON.stringify(o.cells.map(c => c.txt))}`);
+  const win = o.cells.filter(c => /\bwon\b/.test(c.cls));
+  ok('the closest overshoot still wins it', win.length >= 1,
+     JSON.stringify(o.cells.map(c => c.cls)));
+  ok('and is NOT struck through as busted',
+     win.every(c => !/\bover\b/.test(c.cls)), JSON.stringify(win));
+  ok('while the rest of the overshoots are struck',
+     o.cells.filter(c => !/\bwon\b/.test(c.cls)).every(c => /\bover\b/.test(c.cls)),
+     JSON.stringify(o.cells.map(c => c.cls)));
+  ok('and the line says everybody went over, so the number makes sense',
+     /everybody went over/i.test(o.strip), o.strip);
+  ok('no page errors in the all-over fixture', over.errors.length === 0, over.errors[0]);
+  await over.ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n53. A live card must say where the game is, and a final one who won');
+{
+  /* TWO FIXTURES, because one cannot be both. The harness marks a game
+     final once kickoff + 200 minutes has passed — the same rule the app
+     uses — so a card that is live and NOT final only exists inside that
+     window. My first attempt used a three-day-old fixture, seeded ESPN
+     into a game that was already final, and graded the live assertions
+     against a finished card. */
+
+  // (a) kicked off an hour ago: live, not final.
+  const justOn = new Date(Date.now() - 60*60*1000).toISOString();
+  /* espnDetail seeds the scoreboard SERVER-side, before the app boots.
+     Setting window.__espn from the test instead grades the second poll,
+     sixty seconds later, and there is no visibilitychange hook to force
+     one — which is why the first version of this saw the bare "Live"
+     fallback and read it as a failure. */
+  const A = await open({ startISO: justOn, weeks: 2, gamesPerWeek: 16,
+                         playerCount: 6, espnDetail: '3rd 5:42' });
+  await A.page.waitForTimeout(1200);
+
+  /* Feed ESPN a game in the third quarter. shortDetail is ESPN's own
+     phrasing and the card must print it verbatim: a hand-rolled
+     "Q3 5:42" gets halftime, end of quarter and overtime wrong, which
+     is exactly why this is not parsed. */
+  const seeded = await A.page.evaluate(() => {
+    const el = [...document.querySelectorAll('.card')]
+      /* .meta .cd[data-cd] — the RIGHT slot. Since P1 the left slot is a
+         .cd too, so a bare '.meta .cd' matches the clock first and this
+         find never succeeded. */
+      .find(c => /in progress/i.test((c.querySelector('.meta .cd[data-cd]') || {}).textContent || ''));
+    return el ? { id: el.getAttribute('data-game') } : null;
+  });
+  ok('a live, unfinished game is on screen', !!seeded, JSON.stringify(seeded));
+  ok('and the app actually asked ESPN for it',
+     (await A.page.evaluate(() => window.__espnCalls.length)) > 0);
+
+  const card = await A.page.evaluate(id => {
+    const el = document.querySelector(`.card[data-game="${id}"]`);
+    if (!el) return null;
+    /* P1: BOTH halves are .cd.live. The left one carries .lefted, the
+       right one .nodot and the data-cd hook tick() writes to. Address
+       them that way — a bare '.meta .cd' matches the clock, which is
+       how this case first read null for the left slot and the clock's
+       own text for the right one. */
+    const lv = el.querySelector('.meta .cd.lefted');
+    const cd = el.querySelector('.meta .cd[data-cd]');
+    const sty = e => e ? getComputedStyle(e) : null;
+    return {
+      lv: lv ? lv.textContent.trim() : null,
+      cd: cd ? cd.textContent.trim() : null,
+      /* One dot on the row, and it travels with the clock.
+         Probed on DISPLAY, not on `content`: .nodot hides the dot with
+         display:none, and display:none does not clear the computed
+         `content` of a pseudo-element — so a content-based check reports
+         a dot that is not being drawn. P2 ("a dot on both") was shown
+         and ruled out, so exactly one is the requirement. */
+      lvDot: lv ? getComputedStyle(lv, '::before').display !== 'none' : false,
+      cdDot: cd ? getComputedStyle(cd, '::before').display !== 'none' : false,
+      /* "Same green, weight and size throughout" was the whole heading
+         of the P sheet, so assert it rather than trusting that two
+         classes happen to agree. */
+      lvStyle: lv ? [sty(lv).color, sty(lv).fontSize, sty(lv).fontWeight].join('|') : null,
+      cdStyle: cd ? [sty(cd).color, sty(cd).fontSize, sty(cd).fontWeight].join('|') : null,
+      // S2: the network and line sit between the two, centred.
+      order: [...el.querySelectorAll('.meta > *')].map(e => e.className || e.tagName),
+    };
+  }, seeded ? seeded.id : '');
+
+  /* ESPN's own string, with no word of ours in front of it. P1 reads
+     "3rd · 5:42" — my first build prepended "Live", which appears in
+     none of the five P variants. */
+  ok("the live card shows ESPN's own clock, top left",
+     card && /3rd\s*·\s*5:42/i.test(card.lv || ''), JSON.stringify(card));
+  ok('and does not invent a word in front of it',
+     card && !/live/i.test(card.lv || ''), JSON.stringify(card && card.lv));
+  ok('both halves share the same green, size and weight',
+     card && card.lvStyle && card.lvStyle === card.cdStyle,
+     JSON.stringify([card && card.lvStyle, card && card.cdStyle]));
+  ok('with IN PROGRESS on the right',
+     card && /in progress/i.test(card.cd || ''), JSON.stringify(card));
+  ok('exactly one dot on the row, and it is on the clock',
+     card && card.lvDot === true && card.cdDot === false, JSON.stringify(card));
+  ok('with the clock first and IN PROGRESS last',
+     card && /lefted/.test(card.order[0] || '') &&
+             /nodot/.test(card.order[card.order.length-1] || ''),
+     JSON.stringify(card && card.order));
+  ok('no page errors on the live fixture', A.errors.length === 0, A.errors[0]);
+  await A.ctx.close();
+
+  // (b) a finished week: finals to inspect, and sixteen pool bars.
+  const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
+  const B = await open({ startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 8 });
+  await B.page.waitForTimeout(600);
+  /* WEEK 1 SPECIFICALLY. The generator's pick winner is (i+mi)%2 and the
+     game winner is (w+i)%2, so in an even week they coincide and Lee
+     happens to have called every game right — which is precisely the
+     fixture that CANNOT show whether colour follows the winner or the
+     pick, because the two agree. Week 1 is the week where they differ. */
+  await B.page.click('.wk[data-wk="1"]');
+  await B.page.waitForTimeout(800);
+
+  /* The pool sub-line is on EVERY card now. It used to appear only when
+     a segment was too narrow for its own label, which made every other
+     game a different shape for no reason a player could name. */
+  const subs = await B.page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.card')]
+      .filter(c => c.querySelector('.cons'));
+    return { withCons: cards.length,
+             withSub: cards.filter(c => c.querySelector('.cons-sub')).length,
+             // and the narrow-segment percentage is still never lost
+             narrow: cards.filter(c => {
+               const segs = [...c.querySelectorAll('.cseg')];
+               return segs.some(sg => !sg.textContent.trim());
+             }).map(c => (c.querySelector('.cons-sub') || {}).textContent || '') };
+  });
+  ok('every card with a pool bar has a sub-line under it',
+     subs.withCons > 1 && subs.withSub === subs.withCons, JSON.stringify(subs));
+  ok('and a segment too narrow to label still has its percentage below',
+     subs.narrow.every(t => /%/.test(t)), JSON.stringify(subs.narrow));
+
+  /* Colour follows the WINNER once final, not the pick. And the losing
+     side keeps its badge colour — that badge is the only thing on the
+     side identifying the team, and it used to be greyscaled away. */
+  const fin = await B.page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('.card')) {
+      const cd = el.querySelector('.meta .cd[data-cd]');
+      if (!cd || !/final/i.test(cd.textContent)) continue;
+      const band = el.querySelector('.lockband');
+      const bt = band ? band.textContent : '';
+      const m = bt.match(/Final · ([A-Z]{2,3})/);
+      if (!m) continue;
+      const sides = [...el.querySelectorAll('.side')].map(sd => ({
+        code: (sd.querySelector('.mark span') || {}).textContent || '',
+        cls: sd.className,
+        markFilter: getComputedStyle(sd.querySelector('.mark')).filter,
+      }));
+      out.push({ winner: m[1], sides, took: (/You took ([A-Z]{2,3})/.exec(bt) || [])[1] || '' });
+      if (out.length === 4) break;
+    }
+    return out;
+  });
+  ok('there are final cards to inspect', fin.length > 0, String(fin.length));
+  ok('the lit side is the team that WON, whoever you took',
+     fin.every(c => c.sides.some(sd => sd.code === c.winner && /\bwon\b/.test(sd.cls))),
+     JSON.stringify(fin.map(c => ({ w: c.winner, took: c.took,
+       lit: c.sides.filter(sd => /\bwon\b/.test(sd.cls)).map(sd => sd.code) }))));
+  ok('and the other side is the one greyed',
+     fin.every(c => c.sides.some(sd => sd.code !== c.winner && /\blost\b/.test(sd.cls))),
+     JSON.stringify(fin.map(c => c.sides.map(sd => sd.code + ':' + sd.cls))));
+  /* THE POINT OF THE CHANGE: at least one of these cards is one where
+     the player backed the loser. If colour still followed the pick,
+     that card would light the wrong side. */
+  ok('including at least one card where you took the losing team',
+     fin.some(c => c.took && c.took !== c.winner),
+     JSON.stringify(fin.map(c => [c.took, c.winner])));
+  ok('but the losing badge keeps its team colour',
+     fin.every(c => c.sides.every(sd => !/grayscale/.test(sd.markFilter))),
+     JSON.stringify(fin.map(c => c.sides.map(sd => sd.markFilter))));
+  /* The desaturation that used to drain every colour on a locked card,
+     and was why the badge disagreed with the pool bar below it. */
+  const sat = await B.page.evaluate(() => {
+    const m = document.querySelector('.card.locked .match');
+    return m ? getComputedStyle(m).filter : 'none';
+  });
+  ok('a locked card is no longer desaturated wholesale', sat === 'none', sat);
+  ok('no page errors on the finished fixture', B.errors.length === 0, B.errors[0]);
+  await B.ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n53c. The card\'s bottom strip must fill green or red (Q2)');
+{
+  /* Q2: the whole strip FILLS, and every letter on it goes white.
+     Pinned as a shape, not just a colour, because I built the wrong
+     variant first — an inset perimeter ring, which was N3, shown
+     alongside Q2 and not chosen. A test that only asked "is there
+     something green here" would have passed on both.
+     So this checks the FILL is the palette's own --hit / --stamp, that
+     every span inside goes white (the losing line is a .miss span with
+     its own colour — miss that and it stays red on the red fill, the
+     "red on red" Q2 exists to replace), and that nothing fills at all
+     while a game is still being played or if it ended level. */
+  const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
+  const A = await open({ startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 8 });
+  await A.page.waitForTimeout(600);
+  /* BOTH WEEKS, because one is not enough. The generator's pick winner
+     is (i+mi)%2 and the game winner is (w+i)%2, so in week 1 Lee calls
+     every game WRONG and in week 2 he calls every one RIGHT. Reading
+     only week 1 left the "fills green" assertion filtering an empty
+     list, and .every() on nothing is true — so it passed while N3 was
+     built instead of Q2. Mutation testing is what surfaced that; the
+     non-emptiness checks below are what stop it recurring. */
+  const collect = () => A.page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('.card')) {
+      const band = el.querySelector('.lockband');
+      if (!band) continue;
+      const t = band.textContent;
+      const m = t.match(/Final · ([A-Z]{2,3})/);
+      out.push({
+        final: /final/i.test(t),
+        winner: m ? m[1] : null,
+        took: (/You took ([A-Z]{2,3})/.exec(t) || [])[1] || null,
+        cls: band.className,
+        fill: getComputedStyle(band).backgroundColor,
+        ring: getComputedStyle(band).boxShadow,
+        // every span on the strip, not just the first
+        spanColours: [...band.querySelectorAll('span')]
+          .map(e => getComputedStyle(e).color),
+      });
+    }
+    return out;
+  });
+  await A.page.click('.wk[data-wk="1"]');
+  await A.page.waitForTimeout(800);
+  const w1 = await collect();
+  await A.page.click('.wk[data-wk="2"]');
+  await A.page.waitForTimeout(800);
+  const w2 = await collect();
+  const finals = [...w1, ...w2].filter(b => b.final && b.winner && b.took);
+  const rightCalls = finals.filter(b => b.took === b.winner);
+  const wrongCalls = finals.filter(b => b.took !== b.winner);
+  ok('there are decided cards to inspect', finals.length > 0, String(finals.length));
+  /* Both branches must actually be present, or the two assertions after
+     these are filtering empty lists and cannot fail. */
+  ok('including games you called RIGHT', rightCalls.length > 0, String(rightCalls.length));
+  ok('and games you called WRONG', wrongCalls.length > 0, String(wrongCalls.length));
+  const HIT = 'rgb(47, 110, 38)';     // --hit   #2F6E26
+  const STAMP = 'rgb(200, 52, 42)';   // --stamp #C8342A
+  const WHITE = 'rgb(255, 255, 255)';
+  ok('a card you called right fills with the palette green',
+     rightCalls.length > 0 &&
+     rightCalls.every(b => /\bwon\b/.test(b.cls) && b.fill === HIT),
+     JSON.stringify(rightCalls.slice(0, 3).map(b => [b.took, b.winner, b.fill])));
+  ok('and one you called wrong fills with the palette red',
+     wrongCalls.length > 0 &&
+     wrongCalls.every(b => /\blost\b/.test(b.cls) && b.fill === STAMP),
+     JSON.stringify(wrongCalls.slice(0, 3).map(b => [b.took, b.winner, b.fill])));
+  /* THE SHAPE, not just the colour. An inset ring on the old black
+     strip would satisfy "there is green on this card" while being the
+     variant that was not chosen. */
+  ok('it is a FILL, not a ring round a dark strip',
+     finals.every(b => (!b.ring || b.ring === 'none') &&
+                       b.fill !== 'rgb(31, 29, 27)'),
+     JSON.stringify(finals.slice(0, 2).map(b => [b.fill, b.ring])));
+  ok('and EVERY letter on the strip is white, including the losing line',
+     finals.every(b => b.spanColours.length > 0 &&
+                       b.spanColours.every(c => c === WHITE)),
+     JSON.stringify(finals.slice(0, 3).map(b => b.spanColours)));
+  ok('no page errors', A.errors.length === 0, A.errors[0]);
+  await A.ctx.close();
+
+  /* A game still being played has decided nothing, so no ring. */
+  const justOn = new Date(Date.now() - 60*60*1000).toISOString();
+  const B = await open({ startISO: justOn, weeks: 2, gamesPerWeek: 16, playerCount: 8 });
+  await B.page.waitForTimeout(700);
+  const live = await B.page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('.card')) {
+      const band = el.querySelector('.lockband');
+      if (!band || /final/i.test(band.textContent)) continue;
+      out.push({ cls: band.className, fill: getComputedStyle(band).backgroundColor });
+    }
+    return out;
+  });
+  ok('a live game has a lock band', live.length > 0, String(live.length));
+  ok('but it is not coloured while the game is still being played',
+     live.every(b => !/\bwon\b|\blost\b/.test(b.cls)), JSON.stringify(live));
+  ok('and the strip is still the neutral dark one',
+     live.every(b => b.fill === 'rgb(31, 29, 27)'), JSON.stringify(live));
+  ok('no page errors on the live fixture', B.errors.length === 0, B.errors[0]);
+  await B.ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n53b. "FINAL" on a card must be readable');
+{
+  /* THE BUG: `.meta .cd.done{color:var(--chalk)}`. --chalk is
+     rgba(250,247,241,.62) — a near-white built for the dark shell — and
+     the card's meta row is --paper-2, a near-white too. Measured 1.09:1,
+     so the word FINAL was all but invisible on every finished card, and
+     by Sunday night that is most of the slate. Nothing errored and no
+     test looked at colour, so it survived. Measured here rather than
+     eyeballed, because "looks a bit faint" is how it got shipped. */
+  const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
+  const { ctx, page, errors } = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 6 });
+  await page.waitForTimeout(600);
+  const c = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('.card .meta .cd')]
+      .find(e => /final/i.test(e.textContent));
+    if (!el) return null;
+    const px = v => (v.match(/[\d.]+/g) || []).map(Number);
+    const lin = x => { x /= 255; return x <= 0.03928 ? x/12.92
+      : Math.pow((x + 0.055)/1.055, 2.4); };
+    const lum = ([r,g,b]) => 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+    /* getComputedStyle resolves the alpha for us, but not the blend, so
+       walk up for the first non-transparent background and composite. */
+    let node = el, bg = null;
+    while (node && !bg) {
+      const v = px(getComputedStyle(node).backgroundColor);
+      if (v.length >= 3 && (v.length < 4 || v[3] > 0)) bg = v.slice(0, 3);
+      node = node.parentElement;
+    }
+    const f = px(getComputedStyle(el).color);
+    const a = f.length > 3 ? f[3] : 1;
+    const fg = [0,1,2].map(i => f[i]*a + bg[i]*(1-a));
+    const l1 = lum(fg), l2 = lum(bg);
+    return { ratio: (Math.max(l1,l2) + 0.05) / (Math.min(l1,l2) + 0.05),
+             colour: getComputedStyle(el).color };
+  });
+  ok('a final card is on screen', !!c, JSON.stringify(c));
+  ok('and its FINAL label clears 4.5:1 against the card',
+     c && c.ratio >= 4.5, c && `${c.ratio.toFixed(2)}:1 (${c.colour})`);
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n54. One point is "1 pt"');
+{
+  /* Four places printed "1 PTS" — the stake bar, the rank picker and
+     both halves of the lock band — because the lowest rank pays exactly
+     one point and every one of them hardcoded the plural. */
+  const { ctx, page, errors } = await open({ weeks: 2, gamesPerWeek: 16, playerCount: 6 });
+  await page.waitForTimeout(400);
+  const bad = await page.evaluate(() => {
+    const txt = document.body.innerText;
+    return (txt.match(/\b1 pts\b/gi) || []).length;
+  });
+  ok('nothing on the Picks tab says "1 pts"', bad === 0, String(bad));
+  // The rank picker is where it was most visible: rank 16 pays one point.
+  await page.evaluate(() => {
+    const b = document.querySelector('[data-stake]'); if (b) b.click(); });
+  await page.waitForTimeout(500);
+  const tray = await page.evaluate(() => {
+    const t = document.body.innerText;
+    return { one: /\b1 pt\b/.test(t), plural: (t.match(/\b1 pts\b/gi) || []).length };
+  });
+  ok('the rank that pays one point says "1 pt"', tray.one === true, JSON.stringify(tray));
+  ok('and never "1 pts"', tray.plural === 0, JSON.stringify(tray));
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n55. The leader\'s pinned cells must not be see-through');
+{
+  /* THE BUG: `tbody tr.lead td{background:rgba(232,184,75,.09)}` also
+     matched td.pl and td.tot, and a translucent colour beats the opaque
+     var(--shell) those sticky columns are declared with. So on exactly
+     one row — the leader's, and only while scrolled sideways — the
+     pinned name column became a window and team codes slid through the
+     name. Every other row was fine, and standing still it looks
+     correct, which is why it survived. */
+  const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
+  const { ctx, page, errors } = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 10 });
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(700);
+  const bg = await page.evaluate(() => {
+    const lead = document.querySelector('#gridBody tbody tr.lead');
+    if (!lead) return null;
+    const alpha = el => {
+      const c = getComputedStyle(el).backgroundColor;
+      const m = c.match(/rgba?\(([^)]+)\)/);
+      if (!m) return 1;
+      const p = m[1].split(',').map(s => parseFloat(s));
+      return p.length > 3 ? p[3] : 1;
+    };
+    return { pl: alpha(lead.querySelector('td.pl')),
+             tot: alpha(lead.querySelector('td.tot')),
+             plain: alpha(lead.querySelector('td:not(.pl):not(.tot)')) };
+  });
+  ok('the leader row exists', !!bg, JSON.stringify(bg));
+  ok('its sticky name cell is fully opaque', bg && bg.pl === 1, JSON.stringify(bg));
+  ok('and so is its sticky points cell',     bg && bg.tot === 1, JSON.stringify(bg));
+  ok('while the scrolling cells keep the gold tint',
+     bg && bg.plain < 1, JSON.stringify(bg));
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n56. Week seals wait for the last whistle');
+{
+  /* The guard on the whole This-week honours feature. At 2pm on a
+     Sunday the top row is whoever is ahead with nine games left, so a
+     seal there would be awarded and withdrawn all afternoon. Nothing
+     appears until every game in the week is final. */
+  const mid = new Date(Date.now() - 3*24*3600*1000 - 2*3600*1000).toISOString();
+  const { ctx, page, errors } = await open(
+    { startISO: mid, weeks: 2, gamesPerWeek: 16, playerCount: 8 });
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(600);
+  await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(600);
+  const live = await page.evaluate(() => ({
+    finals: document.querySelectorAll('#gridBody thead th.gm .st.final').length,
+    seals: document.querySelectorAll('#board .row svg').length,
+    lead: (document.querySelector('#board .leadtag') || {}).textContent || '',
+    silver: document.querySelectorAll('#board .leadtag.silver').length,
+    second: document.querySelectorAll('#board .row.second').length,
+  }));
+  ok('this week is part-played, not finished',
+     /leader/i.test(live.lead), live.lead);
+  ok('so no seals yet', live.seals === 0, String(live.seals));
+  ok('no runner-up banner either',
+     live.silver === 0 && live.second === 0, JSON.stringify(live));
+  ok('and the banner says "leader", not "winner"',
+     !/winner/i.test(live.lead), live.lead);
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n57. The archive is a Settings section, not a sixth tab');
+{
+  /* WHY IT MOVED. It was a tab that appeared when a pool document
+     carried an archive and vanished when the flag was flipped, on a row
+     that already scrolls at 320px — so the five tabs people use every
+     Sunday shifted sideways for a closed pool nobody opens twice.
+
+     WHAT HAD TO SURVIVE THE MOVE, and each of these is asserted below:
+       the three visibility states, unchanged ('public' / 'owner' /
+         'off'), decided by the same archiveVisible();
+       the esc() on member names — archive_pool.py copies
+         members/{uid}.name verbatim and any member can write their own
+         name, so this renderer prints attacker-controlled text;
+       the tab row's width, which is now FIXED at five;
+       and nothing may look up a #v-archive that no longer exists — the
+         view list drives every tab switch, so a stale entry there
+         throws on the first press rather than at boot. */
+  const ARCH = {
+    id: 'preseason-2026', label: 'Preseason 2026', state: 'public',
+    note: 'Three weeks, five players. Kept as a reference.',
+    standings: [
+      { name: '<img src=x onerror="window.__xss=1">', pts: 214, hits: 31, of: 42,
+        wins: 2, seconds: 0, perfect: 0 },
+      { name: 'Monse', pts: 198, hits: 29, of: 42, wins: 1, seconds: 2, perfect: 0 }],
+    weeks: [{ wk: 3, winner: 'Mateo', pts: 78 }, { wk: 2, winner: 'Monse', pts: 71 }],
+  };
+  const look = async page => {
+    await page.click('[data-tab="settings"]').catch(() => {});
+    await page.waitForTimeout(500);
+    return page.evaluate(() => {
+      const box = document.getElementById('archOpt');
+      const opts = [...document.querySelectorAll('#v-settings .opt')];
+      return {
+        tabs: document.querySelectorAll('.tabs .tab').length,
+        archTab: document.querySelectorAll('[data-tab="archive"]').length,
+        archView: !!document.getElementById('v-archive'),
+        box: !!box,
+        shown: !!box && !box.classList.contains('hide'),
+        /* ON SCREEN, not merely un-classed. The content is written into
+           #archBody whether or not the section is shown, and
+           textContent and getComputedStyle both read straight through
+           display:none — so every content check below passes on a
+           section nobody can see. Measured height is what a player
+           actually gets. */
+        tall: !!box && Math.round(box.getBoundingClientRect().height),
+        first: !!box && opts[0] === box,
+        label: (document.querySelector('#archBody .arch-head h2') || {}).textContent || '',
+        rows: document.querySelectorAll('#archBody .row').length,
+        xss: !!window.__xss,
+        raw: (document.querySelector('#archBody .who b') || {}).textContent || '',
+        imgs: document.querySelectorAll('#archBody img').length,
+        // the closing note must not be an invisible box on .opt's own
+        // background, which is what var(--shell-2) on both would give
+        footBg: (() => { const f = document.querySelector('#archBody .arch-foot');
+          if (!f) return ''; const a = getComputedStyle(f).backgroundColor;
+          const b = getComputedStyle(f.closest('.opt')).backgroundColor;
+          return a === b ? 'same' : 'different'; })(),
+      };
+    });
+  };
+
+  const pub = await open({ playerCount: 6, weeks: 2, archive: ARCH });
+  const p = await look(pub.page);
+  ok('there is no Archive tab any more', p.archTab === 0);
+  ok('and no #v-archive view to switch to', p.archView === false);
+  ok('the tab row is a fixed five', p.tabs === 5, String(p.tabs));
+  ok('the archive is a Settings section', p.box === true);
+  ok('shown when the pool says public', p.shown === true);
+  ok('and it takes up real space on the screen', p.tall > 200, String(p.tall));
+  ok('and it is the FIRST section, above Scoring', p.first === true, String(p.first));
+  ok('it renders the archived pool', /Preseason 2026/.test(p.label), p.label);
+  ok('with its final standings', p.rows === 2, String(p.rows));
+  ok('the closing note is not invisible on the section background',
+     p.footBg === 'different', p.footBg);
+  /* THE ESCAPE, CHECKED THREE WAYS: the payload did not execute, no
+     element was created from it, and the name is on screen as text. */
+  ok('a member name is escaped, not executed', p.xss === false);
+  ok('and it created no element', p.imgs === 0, String(p.imgs));
+  ok('while still printing the name as text', /onerror/.test(p.raw), p.raw);
+  ok('no page errors', pub.errors.length === 0, pub.errors[0]);
+
+  /* EVERY TAB STILL WORKS. The view list that drives tab switching
+     named 'archive'; left in place it looks up a null and throws on the
+     press, which is a failure that boot cannot show. */
+  for (const t of ['picks', 'grid', 'standings', 'help', 'settings']) {
+    await pub.page.click(`[data-tab="${t}"]`).catch(() => {});
+    await pub.page.waitForTimeout(220);
+  }
+  ok('and pressing every tab in turn throws nothing',
+     pub.errors.length === 0, pub.errors[0]);
+  await pub.ctx.close();
+
+  // 'owner' with a non-owner viewer, and 'off', are both invisible —
+  // and invisible must mean the section, not the whole Settings screen.
+  for (const st of ['owner', 'off']) {
+    const h = await open({ playerCount: 6, weeks: 2, archive: { ...ARCH, state: st } });
+    const r = await look(h.page);
+    ok(`hidden when the pool says ${st}`,
+       r.shown === false && r.tall === 0, JSON.stringify([r.shown, r.tall]));
+    ok(`and Settings itself still renders with a ${st} archive`,
+       (await h.page.locator('#v-settings .opt').count()) >= 4);
+    ok(`no page errors with a ${st} archive`, h.errors.length === 0, h.errors[0]);
+    await h.ctx.close();
+  }
+
+  // No archive at all is the normal case for a running pool.
+  const none = await open({ playerCount: 6, weeks: 2 });
+  const n = await look(none.page);
+  ok('hidden when there is no archive',
+     n.shown === false && n.tall === 0, JSON.stringify([n.shown, n.tall]));
+  ok('and the tab row is still five', n.tabs === 5, String(n.tabs));
+  ok('no page errors without an archive', none.errors.length === 0, none.errors[0]);
+  await none.ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n58. Four states that only exist when something has gone wrong');
+{
+  /* Every one of these was found by an adversarial read of the diff, not
+     by using the app, and every one of them only appears in a situation
+     the happy path never reaches. They are grouped because they share
+     that shape: each is a case where the app kept SAYING "this is
+     happening right now" after it had stopped being true. */
+
+  /* 58a. ESPN GOES FINAL BEFORE WE DO, AND THAT GAP IS MINUTES LONG.
+     pullEspn only skips state==='pre', so a game in 'post' passes
+     straight through and shortDetail becomes "Final". Our own isFinal()
+     is a SERVER write that lands when the scoring run gets there. In
+     between, the card printed the word "Final" in the live-clock slot:
+     green, with a pulsing dot, beside "In progress" on the right. */
+  {
+    const mnf = new Date(Date.now() - (4 * 864e5 + 5 * 3600e3)).toISOString();
+    const { ctx, page, errors } = await open(
+      { playerCount: 10, weeks: 2, gamesPerWeek: 16, startISO: mnf,
+        espnDetail: 'Final' });
+    await page.waitForTimeout(1700);
+    const s = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('#slate .card')];
+      // the live card is the one whose right-hand chip says In progress
+      const live = cards.find(c => /in progress/i.test(
+        ([...c.querySelectorAll('.meta .cd')].pop() || {}).textContent || ''));
+      if (!live) return { none: true };
+      const lefted = live.querySelector('.meta .cd.live.lefted');
+      const first = live.querySelector('.meta > :first-child');
+      return {
+        none: false,
+        clock: lefted ? lefted.textContent.trim() : null,
+        firstTxt: first ? first.textContent.trim() : '',
+        firstCls: first ? first.className : '',
+        dots: [...live.querySelectorAll('.meta .cd.live')]
+          .filter(e => !e.classList.contains('nodot')).length,
+      };
+    });
+    ok('a live game is on screen with ESPN reporting Final', s.none === false);
+    ok('ESPN\'s "Final" never renders as a running clock',
+       s.clock === null, JSON.stringify(s.clock));
+    ok('and the left slot falls back to the kickoff time instead',
+       /^\d/.test(s.firstTxt) && /mono/.test(s.firstCls) &&
+       !/\blive\b/.test(s.firstCls), JSON.stringify([s.firstTxt, s.firstCls]));
+    /* THE HALF THAT IS EASY TO LOSE. The right-hand chip carries `nodot`
+       precisely BECAUSE the clock owns the dot, so stripping the left
+       slot's live styling without moving the dot back leaves a live game
+       with no pulse anywhere on the row. */
+    ok('with the dot moved to the right-hand chip, so the row still pulses',
+       s.dots === 1, String(s.dots));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* 58b. "LIVE" NEEDS A CEILING. isLive() is a clock; `final` is a
+     server write. A postponed game keeping its original kickoff, or one
+     failed scoring run, left the header pulsing green on "1 game live"
+     for the rest of the week — the app's one signal that something is
+     happening right now, spent on a game that finished on Sunday.
+     P.stuck holds the last game of each week on `scheduled` however
+     long ago it kicked off, which the clock-derived generator cannot
+     otherwise produce. */
+  {
+    const old = new Date(Date.now() - 5 * 864e5).toISOString();
+    const { ctx, page, errors } = await open(
+      { playerCount: 10, weeks: 2, gamesPerWeek: 16, startISO: old, stuck: 1 });
+    await page.waitForTimeout(1500);
+    /* ON WEEK 1 DELIBERATELY. The app has already moved on to week 2,
+       and it is right to: the same six-hour clamp that this test is
+       about also stops one stuck game pinning the whole pool on a dead
+       week in December. So the app's own choice is correct and the
+       header it shows for week 2 is a countdown. The bug lives on the
+       week the stuck game is IN, which a player reaches by tapping its
+       number — and used to find pulsing green there all week. */
+    await page.click('.wk[data-wk="1"]').catch(() => {});
+    await page.waitForTimeout(900);
+    const s = await page.evaluate(() => ({
+      header: (document.querySelector('#countdown') || {}).textContent.trim(),
+      cls: (document.querySelector('#clock') || {}).className || '',
+      // the stuck game kicked off days ago and is not final
+      stale: [...document.querySelectorAll('#slate .card')].filter(c =>
+        /in progress/i.test(c.textContent)).length,
+    }));
+    ok('the fixture has a game stuck unfinished', s.stale > 0, String(s.stale));
+    ok('a stale unfinished game is not still "live" hours later',
+       !/\blive\b/.test(s.header) && !/\blive\b/.test(s.cls),
+       JSON.stringify([s.header, s.cls]));
+    ok('and the header says the week is pending instead',
+       /pending/i.test(s.header), JSON.stringify(s.header));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* 58c. THE TIE COLUMN'S THIRD STATE. Its header was a two-way switch
+     — final, or else `live` — so before the tiebreak game had kicked
+     off it read "Open" in live green, the one colour in that table that
+     means a game is being played right now. It also left `.st.open` as
+     dead CSS, which is how the mistake hid: the rule existed and
+     nothing ever emitted the class. */
+  {
+    const soon = new Date(Date.now() + 2 * 864e5).toISOString();
+    const { ctx, page, errors } = await open(
+      { playerCount: 10, weeks: 2, gamesPerWeek: 16, startISO: soon });
+    await page.click('[data-tab="grid"]').catch(() => {});
+    await page.waitForTimeout(700);
+    const s = await page.evaluate(() => {
+      const th = document.querySelector('#gridBody thead th.tbcol');
+      const st = th ? th.querySelector('.st') : null;
+      const games = [...document.querySelectorAll('#gridBody thead th.gm .st')];
+      return {
+        txt: st ? st.textContent.trim() : '',
+        cls: st ? st.className : '',
+        // the game columns' own sealed state, for comparison: the Tie
+        // column has to behave like one of them, not like its own thing
+        gameStates: [...new Set(games.map(e => e.className))],
+      };
+    });
+    ok('the tiebreaker column has a state label', s.txt.length > 0, JSON.stringify(s));
+    ok('a sealed tiebreaker is not painted as live',
+       !/\blive\b/.test(s.cls), JSON.stringify([s.txt, s.cls]));
+    ok('it uses the same open state the game columns use',
+       /\bopen\b/.test(s.cls) &&
+       s.gameStates.some(c => /\bopen\b/.test(c)), JSON.stringify(s));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* 58d. YOUR OWN ROW, WHEN YOU CAME SECOND. .row.me sets its own flat
+     background and .row.second's gradient replaced it outright, so the
+     one row a player scrolls to find — theirs — lost the "me" tint and
+     kept only a red edge. .row.me.lead has always blended the two; this
+     is the same blend for silver.
+
+     Asserted on the CSS rather than by arranging for ME to finish
+     second, because who finishes where is the generator's business and a
+     fixture built to put one player in one place is a fixture that
+     stops testing this the moment the generator changes. Two probe rows,
+     same stylesheet, compared. */
+  {
+    const { ctx, page, errors } = await open({ playerCount: 8, weeks: 2 });
+    const s = await page.evaluate(() => {
+      const mk = cls => {
+        const d = document.createElement('div');
+        d.className = cls;
+        d.style.position = 'absolute';
+        d.style.left = '-9999px';
+        document.body.appendChild(d);
+        const c = getComputedStyle(d);
+        const v = { bg: c.backgroundColor, img: c.backgroundImage,
+                    edge: c.borderLeftColor };
+        d.remove();
+        return v;
+      };
+      return { plain: mk('row'), second: mk('row second'),
+               me: mk('row me'), meSecond: mk('row me second'),
+               lead: mk('row lead'), meLead: mk('row me lead') };
+    });
+    ok('a runner-up row is tinted silver',
+       s.second.img !== 'none' && s.second.img !== s.plain.img, JSON.stringify(s.second));
+    ok('your own row is tinted too', s.me.bg !== s.plain.bg, JSON.stringify(s.me));
+    ok('your own row keeps its highlight when you come runner-up',
+       s.meSecond.img !== s.second.img, JSON.stringify([s.second.img, s.meSecond.img]));
+    ok('which is what the gold row already did',
+       s.meLead.img !== s.lead.img, JSON.stringify([s.lead.img, s.meLead.img]));
+    ok('and the red left edge still marks it as yours',
+       s.meSecond.edge === s.me.edge, JSON.stringify([s.me.edge, s.meSecond.edge]));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n59. A finished week in which nobody scored crowns nobody');
+{
+  /* `score_week.py` gates the entire weekly-award block on one line:
+
+       best = max(r["wpts"] for r in results)
+       if best > 0:
+
+     Without it, a week that is over and in which every score is zero
+     still hands out a 1ST seal and a gold "Week n winner" banner — and
+     because the honours go by POINTS VALUE now, it hands them to
+     EVERYBODY, since everybody is on the best score of nought.
+
+     WHY THIS NEEDS ITS OWN FIXTURE. Case 56 covers "no seals before the
+     last whistle", and that is a different gate: there `weekDone` is
+     false, so the honours are never computed at all and removing the
+     `best > 0` line changes nothing. The only way to reach this line is
+     a week that IS finished with nothing scored in it — every player on
+     zero — which takes three plan keys at once: no revealed picks, none
+     of my own, and a banked server record of zero so `weekSum` does not
+     quietly hand back the stub's fabricated 60-115 points instead.
+
+     Reachable in a real pool? A whole pool scoring nothing across
+     sixteen games is vanishingly unlikely. A week with one game that got
+     postponed and re-scored, in a two-person pool, is not. And the
+     scorer has the guard, so the app has to agree with the scorer. */
+  const done = new Date(Date.now() - 9 * 864e5).toISOString();
+  const { ctx, page, errors } = await open(
+    { playerCount: 8, weeks: 2, gamesPerWeek: 16, startISO: done,
+      noRevealed: true, noPicks: true, recPts: 0, recHits: 0 });
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(500);
+  await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(400);
+  // Week 1 is the one that is entirely final in this fixture.
+  await page.click('.wk[data-wk="1"]').catch(() => {});
+  await page.waitForTimeout(900);
+  const s = await page.evaluate(() => ({
+    rows: document.querySelectorAll('#board .row').length,
+    pts: [...document.querySelectorAll('#board .row .pts b')]
+      .map(e => e.textContent.trim()),
+    seals: document.querySelectorAll('#board .row svg').length,
+    tags: document.querySelectorAll('#board .leadtag').length,
+    silver: document.querySelectorAll('#board .leadtag.silver').length,
+    lead: document.querySelectorAll('#board .row.lead').length,
+    second: document.querySelectorAll('#board .row.second').length,
+    winnerWord: /winner/i.test(document.getElementById('board').textContent),
+    // the header has to agree: the week IS final, it just has no winner
+    header: (document.querySelector('#countdown') || {}).textContent.trim(),
+  }));
+  ok('the whole pool is on the board', s.rows === 8, String(s.rows));
+  /* THE FIXTURE HAS TO ACTUALLY BE THE ZERO CASE, or everything below is
+     vacuous — and getting here took three plan keys, any one of which
+     could stop working without this check noticing. */
+  ok('and every one of them scored nothing',
+     s.pts.length === 8 && s.pts.every(p => p === '0'), JSON.stringify(s.pts));
+  ok('the week is over, and the header says so',
+     /Final/i.test(s.header), JSON.stringify(s.header));
+  ok('nobody is sealed', s.seals === 0, String(s.seals));
+  ok('nobody is crowned', s.tags === 0, String(s.tags));
+  ok('no runner-up either', s.silver === 0 && s.second === 0, JSON.stringify(s));
+  ok('and no row wears the gold treatment', s.lead === 0, String(s.lead));
+  ok('the word "winner" appears nowhere on the board', s.winnerWord === false);
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
 
 /* ------------------------------------------------------------------ */
 await browser.close();

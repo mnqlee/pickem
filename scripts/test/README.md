@@ -1,38 +1,74 @@
 # Tests
 
-638 checks. Nothing here touches Firebase, Resend, KV or the live site.
+1197 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
-That number is the ten suite totals below added up, from a full run on
-2026-09-10. If you change a suite, re-run everything and re-add — a count
-carried forward from memory drifts, and quoting a stale one is the same
-class of mistake as a green run that graded a stale file.
+That number is the eighteen suite totals below added up, from a full run
+on 2026-09-16 for v1.34.0. If you change a suite, re-run everything and
+re-add — a count carried forward from memory drifts, and quoting a stale
+one is the same class of mistake as a green run that graded a stale file.
 
     npm i -D playwright && npx playwright install chromium   # once
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
     cp ../../worker/auth.js /tmp/auth.mjs      # NOTE: /tmp — see below
 
-    node auth.core.test.mjs      # 27  sign-in Worker, happy path and edges
-    node auth.stress.test.mjs    # 49  sign-in Worker, adversarial
+    node picks-audit.mjs         #  30 every design choice, still in the build
+    node auth.core.test.mjs      #  27 sign-in Worker, happy path and edges
+    node auth.stress.test.mjs    #  49 sign-in Worker, adversarial
+    node nudge.test.mjs          #  42 reminder scheduling
+    node reminder-copy.test.mjs  #  20 the words in every reminder
+    node live-auth.test.mjs      #  20 the live Worker's auth
 
     node serve.mjs &
-    node signin.ui.test.mjs      # 48  sign-in screens in a real browser
-    node invite.ui.test.mjs      #  5  bare-domain invite links
+    node signin.ui.test.mjs      #  48 sign-in screens in a real browser
+    node invite.ui.test.mjs      #   5 bare-domain invite links
 
     node app-serve.mjs &
-    node polish.ui.test.mjs      # 41  layout, states, degradation, edges
-    node season.ui.test.mjs      # 21  full 18-week season, 25-40 players
-    node scale.ui.test.mjs       # 21  50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 286 bugs that shipped, so they cannot return
-    node sw.push.test.mjs        # 22  service worker push + what it may cache
+    node polish.ui.test.mjs      #  41 layout, states, degradation, edges
+    node season.ui.test.mjs      #  21 full 18-week season, 25-40 players
+    node scale.ui.test.mjs       #  21 50 players, all 18 weeks, 390 and 320px
+    node regress.ui.test.mjs     # 499 bugs that shipped, so they cannot return
+    node stress.ui.test.mjs      # 113 a full pool leaned on: see below
+    node sw.push.test.mjs        #  22 service worker push + what it may cache
     node shots.mjs all           #     screenshots to /tmp/shots
 
-    python season_sim.py         # 118 the REAL scorer, 50 players, 18 weeks
+    python season_sim.py         # 128 the REAL scorer, 50 players, 18 weeks
+    python test_result_copy.py   #  30 what a player reads on Tuesday morning
+    python test_status_env.py    #  32 the four variables the week closer reads
+    python test_loop_window.py   #  49 the Live-scores window's own shell logic
+
+    node mutate-dryrun.mjs       #     do all 38 mutations still apply?
+    node mutate.mjs              #     38 mutations, 27 batches, ~4 hours
 
 `season_sim.py` needs no Firebase and no credentials: `fakestore.py` is an
 in-memory stand-in for the Firestore client, so `score_week.py` runs
 unmodified against a seeded season. It is the only thing that tests the
 code deciding who actually wins — the browser suite never runs the scorer,
 it renders standings the scorer already wrote.
+
+`test_loop_window.py` extracts the `run:` block out of
+`.github/workflows/scores-loop.yml` and executes it with bash, against a
+stubbed `python` and a no-op `sleep`. So the week closer and the early
+exit are graded as the shell actually runs them, and a 350-minute window
+finishes in milliseconds — which also means the loop can only ever end
+by one of its own exit conditions, which is the point. It needs
+`pyyaml`; nothing else, and no network.
+
+`stress.ui.test.mjs` is the release stress suite: a full pool on a full
+slate at four widths, rapid week switching, ESPN down three ways, a
+score storm with a cross-screen agreement check, a long session measured
+for node and heap growth, an offline boot, and the Thursday-night and
+Monday-night paths walked at 320px and 390px. What fails there is never
+slowness alone — a timing budget that passes here and fails on a loaded
+box teaches nothing. See its header for the full rationale, and
+`docs/STRESS-TEST-PLAN.md` for what it covers and what it cannot.
+
+**`mutate-dryrun.mjs` before `mutate.mjs`, always.** A mutation whose
+`find` string has drifted is reported as "matched 0 times" and is
+silently NOT APPLIED — the batch then runs against unmutated code, every
+expected assertion stays green, and the harness reports that the tests
+failed to catch their bug. That is the right complaint for the wrong
+reason, and it costs a full suite run per batch to discover. The dry run
+checks all 38 in a second.
 
 **The auth tests import `/tmp/auth.mjs`, not `./auth.mjs`.** Copying to the
 local directory leaves a stale `/tmp` copy in place, and the suite then

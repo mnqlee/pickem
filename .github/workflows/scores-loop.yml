@@ -22,12 +22,39 @@ name: Live scores (window)
 # window start that arrives twenty minutes late still covers the
 # remaining five and a half hours.
 #
-# WHAT IT DOES NOT DO: it never scores anybody. `--scores-only` returns
-# before score_pools() and notify(), so this writes game documents only
-# — status, winner, awayScore, homeScore. No standings rows, no push
-# notifications, no weekly awards. Those stay in score-week.yml on its
-# four fixed runs. That separation is the safety story: this can loop
-# all day and cannot touch a standings row or send one notification.
+# WHAT IT DOES NOT DO: every pull is `--scores-only`, which returns
+# before score_pools() and notify(), so the loop itself writes game
+# documents only — status, winner, awayScore, homeScore. No standings
+# rows, no push notifications, no weekly awards.
+#
+# THE ONE EXCEPTION, ADDED DELIBERATELY: the week closer at the bottom of
+# the loop. When the status file says every game in the week is final,
+# this runs the full scorer ONCE for that week and then stops touching
+# it. Why it is worth the exception:
+#
+#   Monday Night Football goes final around 23:30 ET. The next scheduled
+#   scoring run is the Tuesday cron. So for about four hours the app
+#   showed a finished week with no winner, no seals and no result
+#   notification, on the one night the whole pool is watching — and this
+#   job was awake, connected to Firestore and holding the very fact
+#   needed to fix it. Seals now land in about five minutes.
+#
+# What keeps the exception safe, and all four matter:
+#   - it is gated on `complete`, which is `games > 0 and final == games`
+#     — the same test score_week.py's own weekly awards use, so the loop
+#     cannot conclude a week is over on a rule the scorer disagrees with;
+#   - postponed and cancelled games are never written final in the first
+#     place (see pull_scores), so an abandoned game keeps its week open
+#     rather than closing it early;
+#   - it runs at most ONCE per week per window, tracked in $CLOSED;
+#   - and it is the same script on the same data as the cron, which
+#     recomputes a week from scratch, so the Tuesday run is still a
+#     correct re-score and not a double-count. The status file's
+#     `complete` is the only new decision in the whole arrangement.
+#
+# It is also allowed to fail without failing the window: if the closer
+# errors, scores were still pulled and the Tuesday cron still scores the
+# week — which is exactly where this started.
 #
 # AND THE SCORES ON THE CARDS DO NOT DEPEND ON IT. Since v1.31.0 each
 # phone reads the ESPN scoreboard itself once a minute while a game it
@@ -83,6 +110,12 @@ on:
         required: false
       week:
         description: 'Week to refresh (blank = auto-detect)'
+        required: false
+      no_close:
+        description: 'Set to 1 to pull scores only and never close a finished week'
+        required: false
+      no_early_exit:
+        description: 'Set to 1 to run the full window even with nothing live'
         required: false
 
 # NO CONCURRENCY GROUP HERE, and that is a considered choice rather than
@@ -150,6 +183,8 @@ jobs:
           IN_WEEK: ${{ inputs.week }}
           IN_MINUTES: ${{ inputs.minutes }}
           IN_EVERY: ${{ inputs.every }}
+          IN_NO_CLOSE: ${{ inputs.no_close }}
+          IN_NO_EARLY_EXIT: ${{ inputs.no_early_exit }}
         run: |
           set -u
 
@@ -172,6 +207,16 @@ jobs:
           [ "$EVERY" -lt 60 ]    && EVERY=60      # be a good citizen to ESPN
           [ "$EVERY" -gt 1800 ]  && EVERY=1800
 
+          # Both switches are OFF by default and exist only so a window
+          # can be run in its old shape from the Actions page when
+          # something is being diagnosed. "1" and nothing else counts.
+          case "${IN_NO_CLOSE:-}" in 1) CLOSE=0 ;; *) CLOSE=1 ;; esac
+          case "${IN_NO_EARLY_EXIT:-}" in 1) EARLY=0 ;; *) EARLY=1 ;; esac
+
+          STATUS=/tmp/week-status.json
+          CLOSED=""                # weeks this run has already scored
+          rm -f "$STATUS"
+
           END=$(( $(date +%s) + MINUTES * 60 ))
           echo "Window: ${MINUTES} min, a pull every ${EVERY}s, season ${SEASON}."
           echo "Closes at $(date -u -d "@${END}" +%H:%M:%SZ 2>/dev/null || echo "${END}")."
@@ -185,7 +230,9 @@ jobs:
             # transient Firestore error, and a `set -e` style script would
             # exit here and leave the remaining five hours uncovered —
             # which is the whole failure this job exists to prevent.
-            if python scripts/score_week.py --season "$SEASON" $WEEK_ARG --scores-only; then
+            rm -f "$STATUS"
+            if python scripts/score_week.py --season "$SEASON" $WEEK_ARG \
+                 --scores-only --status-file "$STATUS"; then
               :
             else
               fails=$(( fails + 1 ))
@@ -193,7 +240,81 @@ jobs:
             fi
             echo "::endgroup::"
 
+            # ---- read the status this pull wrote ------------------------
+            # ABSENT OR UNREADABLE MEANS "CARRY ON AS BEFORE". A missing
+            # status file must never close a week and must never end a
+            # window early — the whole point of both features is to do
+            # LESS waiting, and doing them on no information would be
+            # doing more damage. So every field defaults to the value
+            # that changes nothing: no week, not complete, one game live.
+            ST_WEEK=""; ST_COMPLETE=0; ST_LIVE=1; ST_NEXT=""
+            # scripts/status_env.py prints those four as shell
+            # assignments and prints the safe defaults for anything it
+            # cannot read. It is tested in scripts/test/test_status_env.py
+            # — see its docstring for why it is a file rather than a
+            # heredoc in here.
+            eval "$(python scripts/status_env.py "$STATUS" || true)" || true
+
+            # ---- close a finished week, once ---------------------------
+            # See the header for why this exception to "never scores
+            # anybody" exists and what keeps it safe. `case` on a padded
+            # list so week 1 never matches week 11.
+            if [ "$CLOSE" = "1" ] && [ "$ST_COMPLETE" = "1" ] && [ -n "$ST_WEEK" ]; then
+              case " $CLOSED " in
+                *" $ST_WEEK "*)
+                  : ;;                              # already done this run
+                *)
+                  echo "::group::week ${ST_WEEK} is 16-of-16 final — scoring it now"
+                  # NOT fatal. If this errors the window keeps pulling and
+                  # the Tuesday cron still scores the week.
+                  if python scripts/score_week.py --season "$SEASON" --week "$ST_WEEK"; then
+                    echo "::notice::Week ${ST_WEEK} scored and notified from the live window."
+                    CLOSED="$CLOSED $ST_WEEK"
+                  else
+                    echo "::warning::closing week ${ST_WEEK} failed; the Tuesday run will do it."
+                    # Marked closed anyway: retrying a failing full score
+                    # every EVERY seconds for five hours would send a
+                    # burst of notifications the moment it started
+                    # working, and re-push a results notification to
+                    # fifty phones for each attempt that half-succeeded.
+                    CLOSED="$CLOSED $ST_WEEK"
+                  fi
+                  echo "::endgroup::"
+                  ;;
+              esac
+            fi
+
             REMAIN=$(( END - $(date +%s) ))
+
+            # ---- stop when there is nothing left to watch --------------
+            # A window is 350 minutes because a slate can be. When the
+            # last whistle goes twenty minutes in, the remaining five
+            # hours were seventy more ESPN requests about a week that
+            # cannot change — and the cost of that is not money, it is
+            # that a job which is always running tells you nothing when
+            # you look at it.
+            #
+            # BOTH CONDITIONS ARE REQUIRED, and the second is the one
+            # that stops this being a bug. Nothing live is NOT enough:
+            # the Thursday window opens at 23:00 UTC for a 00:15 kickoff,
+            # so for the first 75 minutes nothing is live and exiting
+            # would mean nothing at all covered Thursday night football.
+            # So: nothing live AND no kickoff anywhere in the season
+            # before this window closes. next_kick_ms spans the season
+            # precisely so the Thursday window can see next week's
+            # opener.
+            if [ "$EARLY" = "1" ] && [ "$ST_LIVE" = "0" ]; then
+              NOTHING_COMING=1
+              if [ -n "$ST_NEXT" ] && [ "$ST_NEXT" -lt "$END" ]; then
+                NOTHING_COMING=0
+              fi
+              if [ "$NOTHING_COMING" = "1" ]; then
+                echo "Nothing live and no kickoff before this window closes."
+                echo "Stopping after ${n} pull(s), ${fails} failed."
+                break
+              fi
+            fi
+
             if [ "$REMAIN" -le "$EVERY" ]; then
               echo "Window closed after ${n} pull(s), ${fails} failed."
               break
@@ -212,4 +333,4 @@ jobs:
 
       - name: Shred the key
         if: always()
-        run: rm -f /tmp/sa.json
+        run: rm -f /tmp/sa.json /tmp/week-status.json /tmp/week-status.json.part

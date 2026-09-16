@@ -9,7 +9,7 @@ recomputes from scratch each time rather than accumulating.
     python scripts/score_week.py --season 2026 --week 4 --no-push
 """
 
-import argparse, os, sys
+import argparse, json, os, sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -343,6 +343,12 @@ def score_pools(db, season, week):
         results = apply_tiebreak(db, pid, week, results, finals)
 
         # Weekly awards, once every game is final. Ties share a place.
+        # winners/seconds are declared out here rather than inside the
+        # branch because the report carries them now: the results
+        # notification names who took the week, and it can only do that
+        # if this scope hands them over. Empty for an unfinished week,
+        # which is exactly when the notification must not claim a winner.
+        winners, seconds, best, second_pts = [], [], 0, 0
         if len(finals) == len(games) and results:
             best = max(r["wpts"] for r in results)
             if best > 0:
@@ -352,7 +358,10 @@ def score_pools(db, season, week):
                 second_pts = max(lower) if lower else 0
                 seconds = ([r for r in results if r["wpts"] == second_pts]
                            if second_pts > 0 else [])
-
+                # (Two locals that built name lists used to sit here. The
+                # report below takes uid+name pairs directly and nothing
+                # ever read them; a dead variable next to a live one that
+                # looks just like it is how the wrong one gets used.)
                 db.collection("pools").document(pid).collection("standings") \
                   .document("_weeks").set({str(week): {
                       "winners": [{"uid": w["uid"], "name": w["name"]} for w in winners],
@@ -407,9 +416,121 @@ def score_pools(db, season, week):
                          if seconds else ""))
         reports.append({"pool": pid, "name": pd.get("name", "Pool"),
                         "week": week, "results": results,
-                        "complete": len(finals) == len(games)})
+                        "complete": len(finals) == len(games),
+                        "winners": [w["name"] for w in winners], "best": best,
+                        "seconds": [w["name"] for w in seconds],
+                        "secondPts": second_pts,
+                        "winnerUids": {w["uid"] for w in winners}})
         print(f"  scored {pd.get('name')}: {len(results)} players, mode={mode}")
     return reports
+
+
+def names_phrase(names, cap=2):
+    """'Steven Kern' | 'Steven Kern and Ron Ron' | '3 players'.
+
+    A shared week is common in a confidence pool and a notification that
+    reads "Steven Kern, Ron Ron, Coker and Vic won it" is unreadable on a
+    lock screen, so past two it counts instead of listing.
+
+    IT HAS TO BE A NOUN PHRASE THAT SURVIVES THE SENTENCE AROUND IT.
+    This returned "3 players tied", which is a clause, and every caller
+    puts a verb straight after it: "3 players tied won it with 120
+    points", "3 players tied second on 113". Both are broken English, on
+    a lock screen, about the one message in this app people screenshot
+    and send to each other. "3 players" reads correctly in every slot —
+    "3 players won it with 120 points" — and the tie is already implied
+    by there being three of them."""
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) <= cap:
+        return " and ".join(names)
+    return f"{len(names)} players"
+
+
+def pts_label(n):
+    """'1 point', '0 points', '104 points'.
+
+    The bodies printed a bare "{wpts} points", so a straight-up week —
+    or any week somebody scored exactly one point in — sent "1 points."
+    This is the same off-by-one-word the cards and the Grid already fixed
+    (1 PTS -> 1 PT). The push had been missed because it is the one
+    surface nobody reads in a browser."""
+    return f"{n} point" if abs(n) == 1 else f"{n} points"
+
+
+def result_copy(rep, r, place, leaders):
+    """Title and body for one player's results notification.
+
+    SEPARATE FUNCTION SO IT CAN BE TESTED. It used to be four lines
+    inline in notify(), which meant the only way to see what a player
+    actually receives was to send real notifications to real phones.
+
+    WHAT CHANGED AND WHY: the old body was "You finished 6th with 104
+    points. Lee leads with 119." — the player's own placing and the
+    SEASON leader, and nothing about who won the week. So the one fact
+    everybody in a pool wants on a Tuesday, and the only one the app was
+    in a position to state authoritatively, was the one it left out.
+
+    The week winner now leads the sentence, because it is the news. Own
+    placing second, because they already suspect it. Season leader last,
+    and only when it is somebody else — telling the leader that they lead
+    twice over is filler.
+
+    TWO THINGS WERE WRONG IN THE LINE THAT NAMES THE SEASON LEADER.
+
+    First, `leaders` is a LIST, and it used to be one dict compared with
+    `r is not leader` — identity. The season order is `sort(-total)` then
+    apply_tiebreak, so results[0] is whichever of the level players came
+    out first; a two-way tie at the top therefore had the app telling one
+    co-leader that the other "leads the season", flatly contradicting the
+    Standings screen that player was looking at. Every player level on the
+    top total is a leader, the sentence says so, and nobody in that set is
+    told about it. (Identity was also wrong on its own terms: it passes
+    only because the caller hands over an element of the very list it is
+    iterating. The moment anything copies a row — a test fixture did
+    exactly this — the leader is told they lead.)
+
+    Second, every number in here went out bare: "won it with 120", "with
+    104", "second on 113". A points total with no unit reads as a score
+    line from the game itself. pts_label() supplies the unit and the
+    singular."""
+    wk = rep["week"]
+    if not rep.get("complete"):
+        return (f"Week {wk} so far",
+                f"{pts_label(r['wpts'])}, {r['whits']} correct. "
+                f"{ordinal(place)} this week.")
+
+    won = r["uid"] in (rep.get("winnerUids") or set())
+    snd = names_phrase(rep.get("seconds") or [])
+    win = names_phrase(rep.get("winners") or [])
+
+    if won:
+        title = f"You won Week {wk}"
+        body = f"{pts_label(r['wpts'])}."
+        if snd:
+            body += f" {snd} second on {pts_label(rep.get('secondPts') or 0)}."
+    elif win:
+        title = f"Week {wk} final"
+        body = (f"{win} won it with {pts_label(rep.get('best') or 0)}. "
+                f"You finished {ordinal(place)} with {pts_label(r['wpts'])}.")
+    else:
+        # Every game final and nobody scored: possible in a tiny pool, and
+        # claiming a winner there would be inventing one.
+        title = f"Week {wk} final"
+        body = f"You finished {ordinal(place)} with {pts_label(r['wpts'])}."
+
+    # A single dict still works, so an old call site cannot silently send
+    # the wrong sentence — it just describes one leader.
+    if isinstance(leaders, dict):
+        leaders = [leaders]
+    leaders = leaders or []
+    if r["uid"] not in {l["uid"] for l in leaders}:
+        who = names_phrase([l["name"] for l in leaders])
+        if who:
+            body += f" {who} {'leads' if len(leaders) == 1 else 'lead'} the season."
+    return title, body
 
 
 def scoring_mode(pool_doc, week):
@@ -481,7 +602,15 @@ def notify(reports):
     for rep in reports:
         if not rep["results"]:
             continue
-        leader = rep["results"][0]
+        # EVERY player level on the top season total is a leader. This was
+        # results[0], one row, which on a tie at the top is whichever of
+        # the level players apply_tiebreak happened to put first — and the
+        # sentence built from it told the other co-leader that somebody
+        # else led, while their own Standings screen showed them level at
+        # the top. The tiebreaker orders the season table; it does not
+        # decide who is leading it.
+        top_total = max(r["total"] for r in rep["results"])
+        leaders = [r for r in rep["results"] if r["total"] == top_total]
 
         # Weekly places, computed from the WEEK's points. Ties share a
         # place, so two players on 96 are both "1st" and the next is 3rd.
@@ -504,15 +633,7 @@ def notify(reports):
             if quiet_now(r.get("tz")):
                 continue
             place = place_of.get(r["uid"], len(rep["results"]))
-            if rep["complete"]:
-                title = f"Week {rep['week']} final"
-                body = (f"You finished {ordinal(place)} with {r['wpts']} points. "
-                        + ("You lead the season." if r is leader
-                           else f"{leader['name']} leads with {leader['total']}."))
-            else:
-                title = f"Week {rep['week']} so far"
-                body = (f"{r['wpts']} points, {r['whits']} correct. "
-                        f"{ordinal(place)} this week.")
+            title, body = result_copy(rep, r, place, leaders)
             for tk in tokens:
                 try:
                     messaging.send(messaging.Message(
@@ -578,6 +699,72 @@ def current_week(db, season):
     return 1
 
 
+def week_status(db, season, week):
+    """What state this week is in, as plain data.
+
+    WHY A MACHINE-READABLE STATUS AT ALL. Two things the Live-scores
+    window could not do without one, both of which cost real time on a
+    real Monday night:
+
+      1. IT COULD NOT NOTICE THAT THE WEEK WAS OVER. Monday Night
+         Football goes final around 23:30 ET and the next scoring run is
+         the Tuesday cron — so for roughly four hours the app showed a
+         finished week with no winner, no seals and no result
+         notification, while every player refreshed it. The window is
+         already awake and already talking to Firestore at that moment;
+         all it lacked was a way to know.
+      2. IT COULD NOT STOP. Every window ran its full 350 minutes even
+         when the last whistle went in the first twenty, pulling ESPN
+         seventy more times for a week that could not change again.
+
+    Deliberately NOT a decision — this reports, the caller decides.
+    `complete` is every game in the week carrying status 'final', which
+    is the same test score_week.py itself uses for the weekly awards
+    (`len(finals) == len(games)`), so the window cannot conclude the week
+    is over on a rule the scorer would disagree with.
+
+    `next_kick` looks across the WHOLE SEASON, not this week, because the
+    window that covers Thursday night covers the first game of the NEXT
+    week: a caller asking "can anything still happen before my window
+    closes" has to be told about that game too or it exits into a live
+    kickoff.
+    """
+    sid, _year, _stype = season_parts(season)
+    col = db.collection("seasons").document(sid).collection("games")
+    games = [d.to_dict() for d in col.where("wk", "==", week).stream()]
+    now = datetime.now(timezone.utc)
+
+    def kick_ms(g):
+        k = g.get("kickoff")
+        try:
+            return int(k.timestamp() * 1000)
+        except Exception:
+            return None
+
+    finals = [g for g in games if g.get("status") == "final"]
+    started = [g for g in games
+               if (kick_ms(g) or 0) and kick_ms(g) <= int(now.timestamp() * 1000)]
+    live = [g for g in started if g.get("status") != "final"]
+
+    # The earliest kickoff anywhere in the season that has not happened
+    # yet. One ordered query, one document.
+    nxt = None
+    for d in col.where("kickoff", ">", now) \
+                .order_by("kickoff").limit(1).stream():
+        nxt = kick_ms(d.to_dict())
+
+    return {
+        "season": sid,
+        "week": week,
+        "games": len(games),
+        "final": len(finals),
+        "live": len(live),
+        "complete": bool(games) and len(finals) == len(games),
+        "next_kick_ms": nxt,
+        "now_ms": int(now.timestamp() * 1000),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--season", required=True,
@@ -587,6 +774,15 @@ def main():
     ap.add_argument("--scores-only", action="store_true",
                     help="Refresh scores and lines, skip scoring and notifications. "
                          "This is what the 5-minute Live loop calls.")
+    ap.add_argument("--status-file",
+                    help="Also write this week's state as JSON to PATH: games, "
+                         "final, live, complete and the season's next kickoff. "
+                         "Written on every run, including --scores-only, and "
+                         "written LAST so a partial file never reads as a "
+                         "complete week. Read by scores-loop.yml, which uses it "
+                         "to close a finished week straight away instead of "
+                         "waiting for the Tuesday cron, and to stop a window "
+                         "that has nothing left to watch.")
     args = ap.parse_args()
 
     key = os.environ.get("FIREBASE_SERVICE_ACCOUNT_FILE", "serviceAccount.json")
@@ -599,12 +795,42 @@ def main():
     pull_scores(db, args.season, week)
     pull_lines(db, args.season, week)
 
+    def write_status():
+        """WRITTEN LAST, AND NEVER ALLOWED TO FAIL THE RUN.
+
+        Last, because the caller treats `complete: true` as permission to
+        score the week; a file written before pull_scores would describe
+        the week as it was five minutes ago.
+
+        And never fatal: this is an optimisation for the Live window. If
+        it throws, the correct outcome is that scores were still pulled
+        and the Tuesday cron still scores the week — which is exactly
+        where this started. A status file that could take down the
+        scores loop would be a worse trade than not having one.
+
+        Written via a temporary file and renamed, so a reader that opens
+        it between the two never sees half a JSON document."""
+        if not args.status_file:
+            return
+        try:
+            st = week_status(db, args.season, week)
+            tmp = args.status_file + ".part"
+            with open(tmp, "w") as f:
+                json.dump(st, f)
+            os.replace(tmp, args.status_file)
+            print(f"  status: {st['final']}/{st['games']} final, "
+                  f"{st['live']} live, complete={st['complete']}")
+        except Exception as e:
+            print(f"  !! could not write status file: {e}")
+
     if args.scores_only:
+        write_status()
         print("Scores only. Done.")
         return
     reports = score_pools(db, args.season, week)
     if reports and not args.no_push:
         notify(reports)
+    write_status()
     print("Done.")
 
 

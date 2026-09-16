@@ -551,6 +551,45 @@ def main():
         ok("nobody is buzzed during quiet hours", len(SENT) == 0, len(SENT))
     finally:
         score_week.quiet_now = real_quiet_now
+    print("\nWeek status — what the Live window reads to decide")
+    # THIS IS THE SIGNAL THAT TURNS FOUR HOURS INTO FIVE MINUTES. The
+    # Live-scores window reads it to know a week has finished, so it can
+    # score the week the moment the last game goes final instead of
+    # leaving the pool looking at a finished week with no winner, no
+    # seals and no notification until the Tuesday cron. So `complete` has
+    # to mean exactly what the weekly awards mean by it, and it has to be
+    # false in every other case — a false positive here scores a week
+    # that is not over.
+    st1 = score_week.week_status(db, SEASON, 1)
+    ok("a finished week reports every game final",
+       st1["games"] == GAMES_PER_WEEK[1] and st1["final"] == st1["games"], st1)
+    ok("and is marked complete", st1["complete"] is True, st1)
+    ok("with nothing still live", st1["live"] == 0, st1)
+    # The same test the awards apply: len(finals) == len(games).
+    ok("complete agrees with the rule the weekly awards use",
+       st1["complete"] == (st1["games"] > 0 and st1["final"] == st1["games"]), st1)
+
+    stp = score_week.week_status(db, SEASON, PARTIAL_WEEK)
+    ok("a part-played week is not complete", stp["complete"] is False, stp)
+    ok("and says how many are still missing",
+       stp["games"] > 0 and stp["final"] < stp["games"], stp)
+
+    # A week with no games at all must not read as a completed week. That
+    # is the one false positive that would publish awards on an empty
+    # week, which is why `bool(games)` is in the expression.
+    ste = score_week.week_status(db, SEASON, 99)
+    ok("a week with no games is not complete", ste["complete"] is False, ste)
+    ok("and reports zero games", ste["games"] == 0, ste)
+
+    # next_kick_ms is what lets a window stop early without exiting into
+    # a kickoff. It spans the SEASON, not the week, because the Thursday
+    # window covers the first game of the NEXT week.
+    ok("the next kickoff is in the future, or absent at the end of a season",
+       st1["next_kick_ms"] is None or st1["next_kick_ms"] > st1["now_ms"], st1)
+    ok("and it is the same answer whichever week is asked about",
+       st1["next_kick_ms"] == stp["next_kick_ms"],
+       (st1["next_kick_ms"], stp["next_kick_ms"]))
+
     ordinals = [score_week.ordinal(i) for i in (1, 2, 3, 4, 11, 12, 13, 21, 22, 50)]
     ok("ordinals are right past 10th",
        ordinals == ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th",

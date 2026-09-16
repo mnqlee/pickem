@@ -34,6 +34,14 @@ window.__espnCalls = [];
    runs off the first week snapshot, which happens during boot, so a test
    that set this afterwards would be grading the second poll, not the
    first. */
+/* P.espnDetail: "give me a scoreboard for whatever is actually live".
+   Seeding window.__espn by hand means knowing which team abbreviations
+   buildGames() chose, which a test would have to duplicate to guess —
+   and setting it AFTER boot is no help, because nothing re-polls for
+   sixty seconds and there is no visibilitychange hook to force one. So
+   the server, which already knows the schedule, builds the events: one
+   per live-and-unfinished game in the plan, carrying this shortDetail.
+   That is how ESPN's own clock string gets on screen inside a test. */
 window.__espn = P.espn;
 const realFetch = window.fetch.bind(window);
 window.fetch = (u, o) => {
@@ -105,7 +113,20 @@ function buildGames(){
       else if (i < GAMES_PER-4) off = 3*24*3600*1000 + 61200000;   // Sun 1pm ET
       else off = 3*24*3600*1000 + 73800000;                        // Sun late
       const kickoff = base + off;
-      const done = kickoff + 200*60000 < Date.now();   // matches the app's isFinal
+      /* P.stuck: how many games at the END of each week never receive a
+         final status, however long ago they kicked off.
+
+         THE REAL THING THIS MODELS, because it is not hypothetical. A
+         game gets postponed and keeps its original kickoff; or one
+         scoring run fails; or ESPN is out across a Monday night. The
+         game document then sits on "scheduled" with a kickoff in the
+         past — and isLive() in the app is Date.now() >= g.kick and
+         nothing else, so that game is "live" forever by the only test
+         the client has. The generator could not produce this at all: it
+         derives finality from the clock, which is exactly the
+         assumption under test. */
+      const stuck = (P.stuck || 0) > 0 && i >= GAMES_PER - P.stuck;
+      const done = !stuck && kickoff + 200*60000 < Date.now();
       out.push({
         id: '2026_W'+w+'_'+away+'_'+home, wk: w, away, home,
         kickoff: ts(kickoff),
@@ -121,6 +142,26 @@ function buildGames(){
   return out;
 }
 const GAMES = buildGames();
+/* Built here rather than in the browser: this is the only place that
+   knows which abbreviations the generated schedule used. */
+function espnAuto(detail){
+  const now = Date.now();
+  return GAMES
+    /* g.kickoff is a Firestore-shaped stub ({toMillis, seconds}), not a
+       string — Date.parse() on it is NaN, every comparison is false, and
+       the filter silently returns nothing. That is exactly how this hook
+       first "worked" while seeding an empty scoreboard. */
+    .filter(g => g.kickoff.toMillis() <= now && g.status !== 'final')
+    .map(g => ({ competitions: [{
+      status: { type: { state: 'in', shortDetail: detail } },
+      competitors: [
+        { homeAway: 'away', team: { abbreviation: g.away }, score: '17' },
+        { homeAway: 'home', team: { abbreviation: g.home }, score: '13' } ] }] }));
+}
+/* Assigned HERE, not up beside the fetch shim, because GAMES does not
+   exist yet at that point — and the whole value of this hook is that it
+   is in place before the app's first poll. */
+if (P.espn == null && P.espnDetail) window.__espn = espnAuto(P.espnDetail);
 const NAMES = ['Monse','Dad','Uncle Ray','Coach K','Sam','Priya','Marcus','Jo','Tay','Ali',
   'Rob','Kim','Nate','Ines','Gus','Val','Otis','Rae','Dex','Mira','Cy','Wren','Bo','Ivy','Zed',
   'Hal','Fern','Ada','Ora','Sol','Tam','Uri','Vex','Wyn','Xan','Yao','Zia','Ari','Bex','Cal'];
@@ -186,8 +227,15 @@ const PSX = window.PS = {
     const done = [...new Set(GAMES.filter(g => g.status === 'final').map(g => g.wk))];
     const rows = MEMBERS.map((m, i) => {
       const weeks = {};
+      /* P.recPts / P.recHits let a test state the BANKED record exactly.
+         Without them the stub's fabricated 60-115 points and 8-15 hits
+         always exceeded anything the small fixtures could compute, so
+         the client-ahead branch of weekSum was unreachable and the
+         Monday-night staleness bug could not be written down as a
+         test. recHits: 0 makes the record deliberately behind. */
       done.forEach(w => { weeks[String(w)] = {
-        pts: 60 + ((i*7 + w*11) % 55), hits: 8 + ((i + w) % 8),
+        pts:  P.recPts  == null ? 60 + ((i*7 + w*11) % 55) : P.recPts,
+        hits: P.recHits == null ? 8 + ((i + w) % 8)        : P.recHits,
         mode: 'confidence', perfect: (i === 1 && w === 2) }; });
       return { uid: m.uid, name: m.name, weeks,
         pts: Object.values(weeks).reduce((a,b)=>a+b.pts,0),
@@ -233,8 +281,15 @@ const PSX = window.PS = {
                       : ((i+mi)%2 ? g.home : g.away)),
                     weight: P.promo ? ((i*7+mi*13+wk)%16)+1 : (i+mi)%16+1 }); }));
     return rows; },
+  /* P.tbTotals lets a case state the guesses exactly, by roster index.
+     The default 44 + i*3 is deliberately all-distinct, which means it can
+     never exercise the case that matters most here: two players on the
+     SAME closest guess. Pass a short array to set the first few and leave
+     the rest on the default. */
   async getTiebreaks(wk){ await call('getTiebreaks');
-    return MEMBERS.map((m,i) => ({ uid:m.uid, name:m.name, total: 44 + i*3, mine: i===0 })); },
+    return MEMBERS.map((m,i) => ({ uid:m.uid, name:m.name,
+      total: (P.tbTotals && P.tbTotals[i] != null) ? P.tbTotals[i] : 44 + i*3,
+      mine: i===0 })); },
   async getArchive(){ await call('getArchive'); return P.archive || []; },
   async savePicks(){ await call('savePicks'); },
   async saveTiebreak(){ await call('saveTiebreak'); },
@@ -268,6 +323,14 @@ const PSX = window.PS = {
      in particular; a test compares it against a kickoff. */
   watchRevealed(wk, cb){
     log.push('watchRevealed');
+    /* P.noRevealed HAS TO MEAN IT HERE TOO. getRevealed honoured the
+       flag and this did not, so a plan asking for a pool with no
+       revealed picks got an empty first load and then a full set pushed
+       in a moment later by the listener — which is worse than ignoring
+       the flag outright, because the screen was briefly right. A test
+       written against it (case 59, a finished week nobody scored in)
+       saw four players on a perfect 136 and could not explain why. */
+    if (P.noRevealed) { window.__pushRevealed = (r) => cb(r || [], wk); return; }
     const bound = Date.now() - PSX.CLOCK_SKEW_MS;
     (window.__revealBounds ||= []).push(bound);
     const due = GAMES.filter(g => g.wk === wk && g.kickoff.toMillis() <= bound);
