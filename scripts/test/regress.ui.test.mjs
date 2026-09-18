@@ -13,8 +13,15 @@
    Run:  node app-serve.mjs &   then   node regress.ui.test.mjs
 */
 import { chromium } from 'playwright';
+import fs from 'node:fs';
 
 const BASE = 'http://127.0.0.1:8098';
+/* THE VERSION UNDER TEST IS READ OUT OF sw.js, never typed here. The
+   whole point of the Settings card is that one file holds the number,
+   so a test carrying its own copy would defeat the thing it checks and
+   would go stale on the next release. */
+const SW_VERSION = (fs.readFileSync(new URL('../../sw.js', import.meta.url).pathname, 'utf8')
+  .match(/const VERSION = '([^']+)'/) || [])[1];
 let pass = 0, fail = 0; const fails = [];
 const ok = (n, c, x = '') => { if (c) { pass++; console.log('  ok   ' + n); }
   else { fail++; fails.push(n + (x ? ' -> ' + x : '')); console.log('  FAIL ' + n + (x ? '  -> ' + x : '')); } };
@@ -1494,76 +1501,89 @@ console.log('\n23. The app must load WHILE the wizard is being read, not after i
 /* ------------------------------------------------------------------ */
 console.log('\n24. The alert preview must not contradict the alerts it previews');
 {
-  /* The onboarding screen that shows "every alert we will ever send you"
-     said "First kickoff Sunday 1:00 PM". Nearly every NFL week opens on
-     Thursday night, week 1 included, so that was wrong almost every week
-     of the season.
+  /* The onboarding screen captioned "that's the entire list" has been
+     wrong twice, in the same way both times: compose() moved on and the
+     preview did not. First it promised "First kickoff Sunday 1:00 PM"
+     when nearly every NFL week opens on a Thursday. Then, after the
+     titles were rewritten, it was still promising "8 picks due Thu,
+     8:20 PM" — a slate that cannot exist, since a Thursday deadline is
+     one game.
 
-     The alerts themselves were never affected — worker/live.js groups by
-     kickoff SLOT and formats the real timestamp in each player's own
-     timezone — but a preview that contradicts the real thing teaches
-     people to expect the wrong day and then to distrust the alert that
-     arrives. Static check on purpose: it compares the two files, so it
-     fails if either the preview or compose() drifts from the other. */
+     The alerts themselves were never wrong. A preview that contradicts
+     them is still expensive: it is the first alert copy a new member
+     reads, and it teaches them to expect a sentence that never arrives.
+
+     Static, and checked as a PAIR every time, so drift in EITHER file
+     fails. */
   const fs = await import('node:fs');
   const app  = fs.readFileSync('/root/work/pickem/index.html', 'utf8');
   const live = fs.readFileSync('/root/work/pickem/worker/live.js', 'utf8');
 
   const preview = (app.match(/\$\{nt\((.|\n)*?\)\}/g) || []).join(' ');
+  const prows = app.match(/\$\{nt\([^)]*\)\}/g) || [];
   ok('the preview exists to check', preview.length > 0);
-  ok('it no longer claims the week opens on Sunday',
-     !/First kickoff Sunday/i.test(preview), preview.slice(0, 120));
-  ok('it names a Thursday opener, like the real schedule',
-     /Thu,/.test(preview));
+  ok('there are four preview rows, one per tier', prows.length === 4, String(prows.length));
 
-  /* SHAPE CHECK AGAINST THE SENDER, and it earned its keep: compose()
-     was rewritten (week-level titles over slot-level bodies was telling
-     a man with fourteen unpicked games that he had one pick to make)
-     and this case failed immediately, because the onboarding screen was
-     still promising the old sentences. The preview is captioned "that's
-     the entire list" — it has to be the entire list.
+  /* ---- the unit: a named bunch, in both files ---- */
+  ok('the sender names bunches rather than kickoff times',
+     /const SLATE_NAMES = \{/.test(live) && /function etSlate\(/.test(live),
+     'SLATE_NAMES or etSlate missing from worker/live.js');
+  ok('and groups by slate, not by kickoff time',
+     /bunches\[etSlate\(g\.kickoff\.getTime\(\)\)\]/.test(live) &&
+     !/slots\[g\.kickoff\.getTime\(\)\]/.test(live),
+     'the send loop is still grouping by kickoff time');
+  ok('the preview names bunches too, and one of them is Thursday night',
+     /Thursday Night Football/.test(preview), preview.slice(0, 160));
+  ok('and it shows a Sunday bunch, not a Sunday kickoff time',
+     /early Sunday games/.test(preview) && !/First kickoff Sunday 1:00 PM'/.test(preview),
+     preview.slice(0, 200));
 
-     Checked as a PAIR each time, so drift in either file fails. */
-  ok('compose() titles a reminder with its own deadline, not the week',
-     /due \$\{w\}`/.test(live) && !/Week \$\{wk\} is open/.test(live),
-     'compose() no longer matches the expected title shape');
-  ok('and the preview titles them the same way',
-     /\d+ picks? due Thu, 8:20 PM/.test(preview), preview.slice(0, 200));
+  /* ---- the sentences, matched between the files ---- */
+  ok('compose() says "No team selected yet" for a one-game bunch',
+     /'No team selected yet\.'/.test(live));
+  ok('and the preview shows that sentence',
+     /No team selected yet\./.test(preview), preview.slice(0, 200));
+  ok('compose() counts a bunch as "N games unpicked"',
+     /game\$\{unpicked === 1 \? '' : 's'\} unpicked\./.test(live),
+     'the count sentence in compose() has changed shape');
+  ok('and the preview shows a count in the same words',
+     /\d+ games unpicked\./.test(preview), preview.slice(0, 260));
+  ok('compose() warns about the zero from the hours tier down',
+     /' Unselected games score 0\.'/.test(live));
+  ok('and the preview carries that warning on its late rows',
+     /Unselected games score 0\./.test(preview), preview.slice(0, 260));
+  ok('"First kickoff" for a bunch, "Kicks off" for a single game, in both',
+     /`Kicks off \$\{when\}` : `First kickoff \$\{when\}`/.test(live) &&
+     /First kickoff in/.test(preview) && /Kicks off in/.test(preview));
 
-  ok('compose() carries the week total in the body',
-     /Week \$\{wk\} games still need a pick\./.test(live));
-  ok('and the preview shows that sentence too',
-     /Week 4 games still need a pick\./.test(preview), preview.slice(0, 260));
+  /* ---- THE SHAPES THAT MUST NOT COME BACK ----
+     Both of these shipped, and each read as a contradiction on the
+     phone: a week-level title over a slot-level body, then a
+     slot-level title over a week-level body. */
+  ok('no "N picks due" title survives in either file',
+     !/picks\(n\)\} due/.test(live) && !/picks? due/.test(preview),
+     preview.slice(0, 200));
+  ok('and no reminder mentions a week total any more',
+     !/Week \$\{wk\} games still need a pick/.test(live) &&
+     !/Week \d+ games still need a pick/.test(preview),
+     preview.slice(0, 200));
+  ok('nor claims a week just opened',
+     !/Week \$\{wk\} is open/.test(live) && !/is open/.test(preview));
 
-  ok('the last-call wording matches too',
-     /Kickoff in \$\{mins\} minutes\. Unpicked games score zero\./.test(live) &&
-     /Kickoff in 30 minutes\. Unpicked games score zero\./.test(preview));
-  ok('and last call is titled as last call in both',
-     /Last call \u2014 \$\{picks\(n\)\}/.test(live) &&
-     /Last call \u2014 3 picks/.test(preview), preview.slice(0, 260));
-
-  /* THE NUMBERS IN THE PREVIEW HAVE TO BE POSSIBLE, and two of them
-     were not. compose()'s `n` is the count due AT THAT DEADLINE and
-     `weekLeft` is the week total, and the tail sentence only prints at
-     all when weekLeft > n. The Thursday rows read "8 picks due Thu,
-     8:20 PM" and "6 picks due Thu" \u2014 but a Thursday slot is one game,
-     so those titles described a slate that cannot exist, and they did
-     it in the first alert copy a new member ever reads: the exact
-     misreading (title as a week count) that the compose() rewrite above
-     was done to end. Two rules, both straight out of compose():
-       a Thursday deadline is one game, so n is 1;
-       n < weekLeft, or the tail sentence would not be printed. */
-  const prows = preview.match(/\$\{nt\([^)]*\)\}/g) || [];
-  ok('there are four preview rows to check', prows.length === 4, String(prows.length));
+  /* ---- THE NUMBERS IN THE PREVIEW HAVE TO BE POSSIBLE ----
+     A Thursday bunch is one game, so it can never print a count, and a
+     row that prints a count must be a bunch of more than one. Two of
+     these rows once described a slate that does not exist. */
   for (const row of prows) {
-    const n  = (row.match(/'(\d+) picks? due/) || [])[1];
-    const wl = (row.match(/(\d+) Week \d+ games still need a pick/) || [])[1];
-    if (n && /due Thu,/.test(row))
-      ok('a Thursday deadline is one game, so the title says one pick',
-         n === '1', row);
-    if (n && wl)
-      ok('the deadline count is smaller than the week total it prints',
-         Number(n) < Number(wl), row);
+    const cnt = (row.match(/(\d+) games unpicked/) || [])[1];
+    if (/Thursday Night|Sunday Night|Monday Night/.test(row))
+      ok('a single-game bunch prints no count',
+         !cnt && /No team selected yet/.test(row), row);
+    if (cnt) {
+      ok('a counted row is a bunch of several, so it says First kickoff',
+         /First kickoff/.test(row), row);
+      ok('and the count is more than one', Number(cnt) > 1, row);
+    }
   }
 }
 
@@ -3069,16 +3089,34 @@ console.log('\n45. A finished game must stop pulsing like a live one');
     return out;
   });
 
+  /* THE BUG IS NOW UNREACHABLE BY CONSTRUCTION, and that is a stronger
+     fix than the class being right — so this case changed shape rather
+     than being deleted.
+
+     A final card no longer has a `.cd[data-cd]` chip at all: its whole
+     meta row is replaced by the centred FINAL head, which has no `.cd`,
+     no `::before` and nothing to animate. So the thing to assert is
+     that the chip is ABSENT from a finished card and PRESENT on a live
+     one — if a final card ever grows one again, the pulse can come back
+     with it, and this notices. */
   const cards = await read();
-  const fin = cards.filter(c => /final/i.test(c.label));
-  ok('the week has finished games to check', fin.length > 0, JSON.stringify(cards));
-  ok('a finished game is not classed live',
-     fin.every(c => !/\blive\b/.test(c.cls)), JSON.stringify(fin));
+  ok('a finished card has no countdown chip to mis-class',
+     cards.length === 0, JSON.stringify(cards));
+  const heads = await page.evaluate(() => [...document.querySelectorAll('#slate .card')]
+    .map(c => {
+      const fin = c.querySelector('.meta.fmeta .fin');
+      return fin ? { txt: fin.textContent.trim(),
+                     dot: getComputedStyle(fin, '::before').content } : null;
+    }));
+  ok('the week has finished games to check', heads.filter(Boolean).length > 0,
+     JSON.stringify(heads));
+  ok('each one is headed Final', heads.filter(Boolean).every(h => /^Final/.test(h.txt)),
+     JSON.stringify(heads.filter(Boolean).map(h => h.txt)));
   /* The assertion that kills the bug: no ::before means no dot, and no
      dot means nothing to animate. */
   ok('and carries no pulsing dot',
-     fin.every(c => c.dot === 'none' || c.dot === '' || c.dot === 'normal'),
-     JSON.stringify(fin.map(c => c.dot)));
+     heads.filter(Boolean).every(h => h.dot === 'none' || h.dot === '' || h.dot === 'normal'),
+     JSON.stringify(heads.filter(Boolean).map(h => h.dot)));
 
   /* The pulse must SURVIVE for a game that really is live, or this fix
      has just deleted the feature instead of scoping it. */
@@ -3136,7 +3174,15 @@ console.log('\n46. A live score must appear without waiting on any scheduler');
       teams: [...c.querySelectorAll('.side .team')].map(t => t.textContent.trim()),
       scr:   [...c.querySelectorAll('.side .scr')].map(t => t.textContent.trim()),
       cd:    (c.querySelector('.meta .cd[data-cd]') || {}).textContent || '',
-      band:  (c.querySelector('.lockband') || {}).textContent || '' })));
+      /* TWO PLACES NOW, BECAUSE THE CARD HAS TWO STATES. While a game
+         is being played its bottom strip is the lock band; once it is
+         final that strip is gone and the score lives in the centred
+         head. A reader that only knew about the band came back empty
+         the moment the server wrote `final`, which is exactly the
+         transition this case is about. */
+      band:  (c.querySelector('.lockband') || {}).textContent || '',
+      head:  (c.querySelector('.meta.fmeta .fin') || {}).textContent || '',
+      bar:   (c.querySelector('.resbar') || {}).textContent || '' })));
 
   {
     const { ctx, page, errors } = await open({
@@ -3211,7 +3257,16 @@ console.log('\n46. A live score must appear without waiting on any scheduler');
     const after = await cards(page);
     ok("the server's final score replaces the phone's, not the other way round",
        after[0].scr.join('-') === '20-23', JSON.stringify(after[0]));
-    ok('and the band agrees with it', /23-20/.test(after[0].band), after[0].band);
+    /* The card's own summary of the game has to agree with the two
+       numbers on the team rows. That summary is the head now, not the
+       band — and it names the winner as well as the score, so check
+       both: the server said the HOME team won 23-20. */
+    ok('and the head agrees with it',
+       /23-20/.test(after[0].head), JSON.stringify([after[0].head, after[0].band]));
+    ok('and the head names the team the server said won',
+       /Final\s*·\s*[A-Z]{2,3}\s*23-20/.test(after[0].head.trim()), after[0].head);
+    ok('while the live lock band has gone with the live state',
+       after[0].band === '', JSON.stringify(after[0].band));
 
     ok('no page errors', errors.length === 0, errors[0] || '');
     await ctx.close();
@@ -4123,21 +4178,45 @@ console.log('\n53. A live card must say where the game is, and a final one who w
   });
   ok('every card with a pool bar has a sub-line under it',
      subs.withCons > 1 && subs.withSub === subs.withCons, JSON.stringify(subs));
+  /* VACUOUS UNTIL NOW, and worth recording. This filtered the cards
+     holding an unlabelled segment and asserted every one of them showed
+     a percentage below — but the default generator splits every game
+     (i+mi)%2, so no segment is ever narrow, `subs.narrow` was always
+     empty, and .every() on nothing is true. It has been green for
+     months without once seeing the case it names.
+     P.lopsided makes one member the lone dissenter, so the fixture
+     really does produce narrow segments, and the non-emptiness check
+     below is what stops this going hollow again. */
+  const LOP = await open({ startISO: past, weeks: 2, gamesPerWeek: 16,
+                           playerCount: 13, lopsided: true });
+  await LOP.page.waitForTimeout(800);
+  const nar = await LOP.page.evaluate(() =>
+    [...document.querySelectorAll('.card')]
+      .filter(c => [...c.querySelectorAll('.cseg')].some(sg => !sg.textContent.trim()))
+      .map(c => (c.querySelector('.cons-sub') || {}).textContent || ''));
+  ok('the fixture really does produce narrow segments', nar.length > 0, String(nar.length));
   ok('and a segment too narrow to label still has its percentage below',
-     subs.narrow.every(t => /%/.test(t)), JSON.stringify(subs.narrow));
+     nar.length > 0 && nar.every(t => /%/.test(t)), JSON.stringify(nar.slice(0, 4)));
+  ok('no page errors on the lopsided fixture', LOP.errors.length === 0, LOP.errors[0]);
+  await LOP.ctx.close();
 
   /* Colour follows the WINNER once final, not the pick. And the losing
      side keeps its badge colour — that badge is the only thing on the
      side identifying the team, and it used to be greyscaled away. */
+  /* HOW A FINAL CARD IS RECOGNISED NOW. It used to be "the .cd[data-cd]
+     chip says Final", and the winner came out of the lock band's text.
+     Neither exists on a final card any more: the meta row is replaced
+     by the centred `.meta.fmeta .fin` head, which is where FINAL and
+     the winning code live, and the lock band is live-only. Who you took
+     comes from the result bar. */
   const fin = await B.page.evaluate(() => {
     const out = [];
     for (const el of document.querySelectorAll('.card')) {
-      const cd = el.querySelector('.meta .cd[data-cd]');
-      if (!cd || !/final/i.test(cd.textContent)) continue;
-      const band = el.querySelector('.lockband');
-      const bt = band ? band.textContent : '';
-      const m = bt.match(/Final · ([A-Z]{2,3})/);
-      if (!m) continue;
+      const head = el.querySelector('.meta.fmeta .fin');
+      if (!head) continue;
+      const m = head.textContent.match(/Final\s*·\s*([A-Z]{2,3})/);
+      if (!m) continue;                       // a tie names no winner
+      const bt = (el.querySelector('.resbar') || {}).textContent || '';
       const sides = [...el.querySelectorAll('.side')].map(sd => ({
         code: (sd.querySelector('.mark span') || {}).textContent || '',
         cls: sd.className,
@@ -4177,45 +4256,80 @@ console.log('\n53. A live card must say where the game is, and a final one who w
 }
 
 /* ------------------------------------------------------------------ */
-console.log('\n53c. The card\'s bottom strip must fill green or red (Q2)');
+console.log('\n53c. A final card reports the result as a WIN / LOSS pill (W3)');
 {
-  /* Q2: the whole strip FILLS, and every letter on it goes white.
-     Pinned as a shape, not just a colour, because I built the wrong
-     variant first — an inset perimeter ring, which was N3, shown
-     alongside Q2 and not chosen. A test that only asked "is there
-     something green here" would have passed on both.
-     So this checks the FILL is the palette's own --hit / --stamp, that
-     every span inside goes white (the losing line is a .miss span with
-     its own colour — miss that and it stays red on the red fill, the
-     "red on red" Q2 exists to replace), and that nothing fills at all
-     while a game is still being played or if it ended level. */
+  /* WHAT REPLACED Q2, AND WHY THE SHAPE IS STILL THE THING CHECKED.
+
+     Q2 filled the whole bottom strip with --hit or --stamp and turned
+     every letter white. It was chosen from a rendered sheet, it was
+     built, and it shipped. It is gone because the result it reported
+     now has a better home: the W3 pill — the word WIN or LOSS in a
+     slanted outline at the rank circle's own size — in a result bar
+     that also carries the points and what you took.
+
+     The reason this case is still shaped around "prove the variant" is
+     the reason it was written that way the first time: I built the
+     WRONG variant of the strip once (N3, an inset ring, shown beside
+     Q2 and not chosen) and a test asking "is there something green
+     here" passed on it. So the checks below are specific enough to
+     fail if W1, W2 or W4 had been built instead of W3, and to fail if
+     a coloured lock band came back.
+
+     FIVE STATES, each with its own fixture or branch:
+       staked win   -> +n pts, WIN, everything in --hit
+       staked loss  -> 0 pts, LOSS, everything in the paper-side red
+       unstaked win -> +1 pt and the word Unstaked
+       no pick      -> 0 pts and a dash
+       ended level  -> no score and TIE, in neutral ink, neither colour */
+  const HIT  = 'rgb(47, 110, 38)';    // --hit  #2F6E26
+  const SINK = 'rgb(190, 47, 38)';    // the measured paper-side red
+  const DARK = 'rgb(31, 29, 27)';     // the lock band's own #1F1D1B
+
   const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
   const A = await open({ startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 8 });
   await A.page.waitForTimeout(600);
   /* BOTH WEEKS, because one is not enough. The generator's pick winner
      is (i+mi)%2 and the game winner is (w+i)%2, so in week 1 Lee calls
-     every game WRONG and in week 2 he calls every one RIGHT. Reading
-     only week 1 left the "fills green" assertion filtering an empty
-     list, and .every() on nothing is true — so it passed while N3 was
-     built instead of Q2. Mutation testing is what surfaced that; the
-     non-emptiness checks below are what stop it recurring. */
+     every game WRONG and in week 2 every one RIGHT. Reading only one
+     week left an assertion filtering an empty list, and .every() on
+     nothing is true — which is how N3 passed as Q2. The non-emptiness
+     checks below are what stop that recurring. */
   const collect = () => A.page.evaluate(() => {
     const out = [];
     for (const el of document.querySelectorAll('.card')) {
-      const band = el.querySelector('.lockband');
-      if (!band) continue;
-      const t = band.textContent;
-      const m = t.match(/Final · ([A-Z]{2,3})/);
+      const bar = el.querySelector('.resbar');
+      if (!bar) continue;
+      const head = el.querySelector('.meta.fmeta .fin');
+      const left = bar.querySelector('.sb-l.res');
+      const pts  = bar.querySelector('.sb-pts');
+      const word = bar.querySelector('.sb-word');
+      const cs = el => el ? getComputedStyle(el) : null;
+      const w = cs(word);
       out.push({
-        final: /final/i.test(t),
-        winner: m ? m[1] : null,
-        took: (/You took ([A-Z]{2,3})/.exec(t) || [])[1] || null,
-        cls: band.className,
-        fill: getComputedStyle(band).backgroundColor,
-        ring: getComputedStyle(band).boxShadow,
-        // every span on the strip, not just the first
-        spanColours: [...band.querySelectorAll('span')]
-          .map(e => getComputedStyle(e).color),
+        head: head ? head.textContent.trim() : null,
+        winner: head ? (head.textContent.match(/Final\s*·\s*([A-Z]{2,3})/) || [])[1] || null : null,
+        took: left ? (/You took ([A-Z]{2,3})/.exec(left.textContent) || [])[1] || null : null,
+        unstaked: left ? /Unstaked/.test(left.textContent) : false,
+        noPick: left ? /^No pick$/.test(left.textContent.trim()) : false,
+        leftTxt: left ? left.textContent.trim() : '',
+        leftInk: cs(left) ? cs(left).color : '',
+        ptsTxt: pts ? pts.textContent.trim() : '',
+        ptsInk: cs(pts) ? cs(pts).color : '',
+        wordTxt: word ? word.textContent.trim() : '',
+        wordInk: w ? w.color : '',
+        wordBorder: w ? w.borderTopColor : '',
+        wordFill: w ? w.backgroundColor : '',
+        /* offsetHeight, NOT the bounding rect: the pill is rotated -7deg
+           and a rotated box's RECT height grows with its width, so WIN
+           measured 33 and LOSS 32 for two elements that are both
+           exactly 26px + 2px of border tall. The layout height is the
+           one that can be compared with the rank circle's. */
+        wordH: word ? word.offsetHeight : 0,
+        wordSlant: w ? w.transform : '',
+        // the bar must not be a coloured strip
+        barFill: cs(bar) ? cs(bar).backgroundColor : '',
+        // and the lock band must be absent entirely
+        band: !!el.querySelector('.lockband'),
       });
     }
     return out;
@@ -4226,103 +4340,449 @@ console.log('\n53c. The card\'s bottom strip must fill green or red (Q2)');
   await A.page.click('.wk[data-wk="2"]');
   await A.page.waitForTimeout(800);
   const w2 = await collect();
-  const finals = [...w1, ...w2].filter(b => b.final && b.winner && b.took);
-  const rightCalls = finals.filter(b => b.took === b.winner);
-  const wrongCalls = finals.filter(b => b.took !== b.winner);
-  ok('there are decided cards to inspect', finals.length > 0, String(finals.length));
-  /* Both branches must actually be present, or the two assertions after
-     these are filtering empty lists and cannot fail. */
-  ok('including games you called RIGHT', rightCalls.length > 0, String(rightCalls.length));
-  ok('and games you called WRONG', wrongCalls.length > 0, String(wrongCalls.length));
-  const HIT = 'rgb(47, 110, 38)';     // --hit   #2F6E26
-  const STAMP = 'rgb(200, 52, 42)';   // --stamp #C8342A
-  const WHITE = 'rgb(255, 255, 255)';
-  ok('a card you called right fills with the palette green',
-     rightCalls.length > 0 &&
-     rightCalls.every(b => /\bwon\b/.test(b.cls) && b.fill === HIT),
-     JSON.stringify(rightCalls.slice(0, 3).map(b => [b.took, b.winner, b.fill])));
-  ok('and one you called wrong fills with the palette red',
-     wrongCalls.length > 0 &&
-     wrongCalls.every(b => /\blost\b/.test(b.cls) && b.fill === STAMP),
-     JSON.stringify(wrongCalls.slice(0, 3).map(b => [b.took, b.winner, b.fill])));
-  /* THE SHAPE, not just the colour. An inset ring on the old black
-     strip would satisfy "there is green on this card" while being the
-     variant that was not chosen. */
-  ok('it is a FILL, not a ring round a dark strip',
-     finals.every(b => (!b.ring || b.ring === 'none') &&
-                       b.fill !== 'rgb(31, 29, 27)'),
-     JSON.stringify(finals.slice(0, 2).map(b => [b.fill, b.ring])));
-  ok('and EVERY letter on the strip is white, including the losing line',
-     finals.every(b => b.spanColours.length > 0 &&
-                       b.spanColours.every(c => c === WHITE)),
-     JSON.stringify(finals.slice(0, 3).map(b => b.spanColours)));
+  const all = [...w1, ...w2];
+  const decided = all.filter(b => b.winner && b.took);
+  const right = decided.filter(b => b.took === b.winner);
+  const wrong = decided.filter(b => b.took !== b.winner);
+
+  ok('there are decided cards to inspect', decided.length > 0, String(decided.length));
+  ok('including games you called RIGHT', right.length > 0, String(right.length));
+  ok('and games you called WRONG', wrong.length > 0, String(wrong.length));
+
+  ok('a card you called right says WIN',
+     right.every(b => b.wordTxt === 'WIN'),
+     JSON.stringify(right.slice(0, 3).map(b => b.wordTxt)));
+  ok('and one you called wrong says LOSS',
+     wrong.every(b => b.wordTxt === 'LOSS'),
+     JSON.stringify(wrong.slice(0, 3).map(b => b.wordTxt)));
+
+  /* W3, NOT W1/W2/W4 — the specifics that tell the four apart. It is a
+     WORD, so a single letter fails; it is an OUTLINE, so a filled pill
+     fails; it is SLANTED, so the unslanted W4 fails; and it is at the
+     rank circle's 26px, so anything else is a different control. */
+  ok('the pill is a word, not a letter',
+     decided.every(b => b.wordTxt.length > 1),
+     JSON.stringify(decided.slice(0, 3).map(b => b.wordTxt)));
+  ok('it is an outline, not a filled pill',
+     decided.every(b => b.wordFill === 'rgba(0, 0, 0, 0)' || b.wordFill === 'transparent'),
+     JSON.stringify(decided.slice(0, 2).map(b => b.wordFill)));
+  ok('it is slanted, like the rank circle',
+     decided.every(b => /matrix/.test(b.wordSlant) && b.wordSlant !== 'none'),
+     JSON.stringify(decided.slice(0, 2).map(b => b.wordSlant)));
+  /* AGAINST THE RANK CIRCLE ITSELF, not a number I typed. The whole
+     point of the pill is that it is the same stamp as the rank circle
+     in the stake bar, so the assertion has to be "the same as that
+     thing" — a literal drifts the moment either changes, and the first
+     version of this check used one and failed at 33px against a
+     25-to-31 window I had guessed. Both boxes are the rotated bounding
+     box of a 26px element with a 2px border, so they agree exactly. */
+  /* THE CIRCLE NEEDS ITS OWN FIXTURE. Every game in this one has been
+     played, so there is no stake bar anywhere on screen and nothing to
+     compare against — the first version of this check read null and
+     failed for that reason rather than for a real one. A week that has
+     not kicked off has the bar, and it is the same stylesheet. */
+  const U = await open({ startISO: new Date(Date.now() + 3*864e5).toISOString(),
+                         weeks: 1, gamesPerWeek: 4, playerCount: 8 });
+  await U.page.waitForTimeout(700);
+  const circleH = await U.page.evaluate(() => {
+    const n = document.querySelector('#slate .stakebar .sb-num');
+    return n ? n.offsetHeight : null;
+  });
+  await U.ctx.close();
+  ok('the rank circle is on screen to compare against', circleH !== null, String(circleH));
+  ok('and the pill is exactly the rank circle\'s height',
+     circleH !== null && decided.every(b => b.wordH === circleH),
+     JSON.stringify([circleH, ...new Set(decided.map(b => b.wordH))]));
+
+  /* THE COLOUR RULE: green all through on a win, the paper-side red all
+     through on a loss — the word, its outline, the points and the line
+     about what you took. */
+  ok('a win is green all through',
+     right.every(b => b.wordInk === HIT && b.wordBorder === HIT &&
+                      b.ptsInk === HIT && b.leftInk === HIT),
+     JSON.stringify(right.slice(0, 2).map(b => [b.wordInk, b.ptsInk, b.leftInk])));
+  ok('a loss is the paper-side red all through',
+     wrong.every(b => b.wordInk === SINK && b.wordBorder === SINK &&
+                      b.ptsInk === SINK && b.leftInk === SINK),
+     JSON.stringify(wrong.slice(0, 2).map(b => [b.wordInk, b.ptsInk, b.leftInk])));
+  /* NOT --stamp, and this is the assertion that says so. --stamp is
+     4.32:1 on the card paper; the measured replacement is 4.75:1. */
+  ok('and that red is NOT --stamp, which fails on this paper',
+     wrong.every(b => b.ptsInk !== 'rgb(200, 52, 42)'),
+     JSON.stringify(wrong.slice(0, 2).map(b => b.ptsInk)));
+
+  ok('a loss scores zero and says so',
+     wrong.every(b => b.ptsTxt === '0 pts'),
+     JSON.stringify(wrong.slice(0, 3).map(b => b.ptsTxt)));
+  ok('a win scores something and says so',
+     right.every(b => /^\+\d+ pts?$/.test(b.ptsTxt)),
+     JSON.stringify(right.slice(0, 3).map(b => b.ptsTxt)));
+  ok('Rank is capitalised on every one of them',
+     decided.every(b => !/\brank \d/.test(b.leftTxt)),
+     JSON.stringify(decided.slice(0, 3).map(b => b.leftTxt)));
+
+  /* NO COLOURED STRIP ANYWHERE. The bar sits on the card's own paper,
+     and the lock band — which used to carry the fill — is not on a
+     final card at all. */
+  ok('the result bar is not a coloured strip',
+     decided.every(b => b.barFill !== HIT && b.barFill !== SINK && b.barFill !== DARK),
+     JSON.stringify(decided.slice(0, 2).map(b => b.barFill)));
+  ok('and a final card has no lock band',
+     decided.every(b => b.band === false),
+     JSON.stringify(decided.slice(0, 3).map(b => b.band)));
   ok('no page errors', A.errors.length === 0, A.errors[0]);
   await A.ctx.close();
 
-  /* A game still being played has decided nothing, so no ring. */
+  ok('no card ever prints a rank it does not have',
+     decided.every(b => !/Rank (undefined|null|NaN|0)\b/.test(b.leftTxt)),
+     JSON.stringify(decided.slice(0, 3).map(b => b.leftTxt)));
+
+  /* THE UNSTAKED PICK — the state Lee spotted, and the one that had no
+     fixture anywhere until mutation batch 30 proved it.
+
+     pay(r,n) returns 1 for a falsy rank, so a pick with no rank that
+     comes in has ALWAYS scored one point — the same as rank 16. The
+     scoring was never wrong; the card had no line for it, because
+     "Rank 9" cannot be printed when there is no rank, so it read
+     "+1 pt" with nothing explaining why 1 and not 8.
+
+     Every fixture staked every pick — the weight was (i+mi)%16+1, never
+     zero — so a mutation that deleted the word "Unstaked" and printed
+     "Rank undefined" instead had nothing to show, and the assertion
+     above passed with the bug in place. P.unstaked leaves the first n
+     games of each week picked but unranked, which is what a player who
+     taps a team and never opens the tray actually produces. */
+  /* THE UNSTAKED CARDS ARE FOUND BY POSITION, NOT BY THE WORD.
+
+     The first version of this case built its list with
+     `.filter(b => /Unstaked/.test(b.left))` — which is the one way of
+     picking the cards that cannot survive the bug it is here for.
+     Delete the word and the list empties, every `.every()` below passes
+     on nothing, and only "there are unstaked picks on screen" goes red.
+     Mutation batch 30 reported exactly that.
+
+     P.unstaked leaves the FIRST UN_N games of each week picked but
+     unranked, and app-serve's kickoff offsets put game 0 on Thursday
+     and games 1..n-4 at the same Sunday 1pm, so slate order is index
+     order for the first few cards. Selecting by index means the content
+     assertions read the cards that are SUPPOSED to say Unstaked and
+     fail when they do not. The count assertion below is what catches a
+     reordering, so a positional selector cannot go quietly wrong. */
+  const UN_N = 3;
+  const NS = await open({ startISO: past, weeks: 2, gamesPerWeek: 16,
+                          playerCount: 8, unstaked: UN_N });
+  await NS.page.waitForTimeout(700);
+  /* BOTH WEEKS, for the same reason the main collection reads both: the
+     generator's pick winner is (i+mi)%2 and the game winner is (w+i)%2,
+     so one week has Lee calling every game right and the other every
+     game wrong. Reading one week gave an unstaked WIN and no unstaked
+     LOSS, and the loss branch had to be written as a conditional —
+     which is an assertion that can vanish. */
+  const readUn = () => NS.page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('.card')) {
+      const bar = el.querySelector('.resbar'); if (!bar) continue;
+      const head = el.querySelector('.meta.fmeta .fin');
+      const l = bar.querySelector('.sb-l.res'), p = bar.querySelector('.sb-pts');
+      const w = bar.querySelector('.sb-word');
+      out.push({
+        idx: out.length,
+        winner: head ? (head.textContent.match(/Final\s*·\s*([A-Z]{2,3})/) || [])[1] || null : null,
+        took: (/You took ([A-Z]{2,3})/.exec(l.textContent) || [])[1] || null,
+        left: l.textContent.trim(), pts: p.textContent.trim(),
+        word: w.textContent.trim(),
+        ink: getComputedStyle(l).color,
+      });
+    }
+    return out;
+  });
+  await NS.page.click('.wk[data-wk="1"]').catch(() => {});
+  await NS.page.waitForTimeout(800);
+  const un1 = await readUn();
+  await NS.page.click('.wk[data-wk="2"]').catch(() => {});
+  await NS.page.waitForTimeout(800);
+  const un2 = await readUn();
+  const unst = [...un1, ...un2].filter(b => b.idx < UN_N && b.winner && b.took);
+  /* EXACTLY UN_N PER WEEK, not "more than none". A positional selector
+     that drifted — a reordered slate, a fixture that stopped unstaking
+     the first games — would otherwise feed the content assertions the
+     wrong cards, and they would fail for a reason that has nothing to
+     do with the card. This assertion is the one that says so plainly. */
+  ok('there are unstaked picks on screen, UN_N of them in each week',
+     unst.length === UN_N * 2, String(unst.length));
+  ok('an unstaked pick says Unstaked, not a rank',
+     unst.every(b => b.left === `You took ${b.took} · Unstaked`),
+     JSON.stringify(unst.slice(0, 3).map(b => b.left)));
+  ok('and never prints a rank it does not have',
+     unst.every(b => !/Rank/.test(b.left)),
+     JSON.stringify(unst.slice(0, 3).map(b => b.left)));
+  const unWin = unst.filter(b => b.took === b.winner);
+  const unLose = unst.filter(b => b.took !== b.winner);
+  ok('the fixture covers an unstaked pick that WON', unWin.length > 0, String(unWin.length));
+  /* ONE POINT, AND EXACTLY ONE. This is the number the whole state
+     exists to explain, and "+1 pt" also proves ptsLbl's singular is
+     still being used on this line. */
+  ok('an unstaked pick that comes in is worth exactly one point',
+     unWin.every(b => b.pts === '+1 pt'),
+     JSON.stringify(unWin.slice(0, 3).map(b => b.pts)));
+  ok('and it still says WIN', unWin.every(b => b.word === 'WIN'),
+     JSON.stringify(unWin.slice(0, 3).map(b => b.word)));
+  ok('and it is green', unWin.every(b => b.ink === HIT),
+     JSON.stringify(unWin.slice(0, 2).map(b => b.ink)));
+  ok('and an unstaked pick that lost', unLose.length > 0, String(unLose.length));
+  ok('which scores nothing, in red, and says LOSS',
+     unLose.length > 0 &&
+     unLose.every(b => b.pts === '0 pts' && b.word === 'LOSS' && b.ink === SINK),
+     JSON.stringify(unLose.slice(0, 3)));
+  ok('no page errors on the unstaked fixture', NS.errors.length === 0, NS.errors[0]);
+  await NS.ctx.close();
+
+  /* NO PICK AT ALL. A card you never picked is a loss of a different
+     kind: zero points, red, and a dash rather than a word, because
+     there was no call to be right or wrong about. */
+  const C = await open({ startISO: past, weeks: 2, gamesPerWeek: 16,
+                         playerCount: 8, noPicks: true });
+  await C.page.waitForTimeout(700);
+  const none = await C.page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('.card')) {
+      const bar = el.querySelector('.resbar'); if (!bar) continue;
+      const l = bar.querySelector('.sb-l.res'), p = bar.querySelector('.sb-pts');
+      const w = bar.querySelector('.sb-word');
+      out.push({ left: l.textContent.trim(), pts: p.textContent.trim(),
+                 word: w.textContent.trim(), ink: getComputedStyle(l).color });
+    }
+    return out;
+  });
+  ok('there are unpicked final cards to inspect', none.length > 0, String(none.length));
+  ok('an unpicked card says No pick, not a rank',
+     none.every(b => b.left === 'No pick'), JSON.stringify(none.slice(0, 3)));
+  ok('scores zero', none.every(b => b.pts === '0 pts'), JSON.stringify(none.slice(0, 2)));
+  ok('in the paper-side red', none.every(b => b.ink === SINK),
+     JSON.stringify(none.slice(0, 2).map(b => b.ink)));
+  ok('and the pill is a dash, not the word LOSS',
+     none.every(b => !/LOSS|WIN/.test(b.word)), JSON.stringify(none.slice(0, 3).map(b => b.word)));
+  ok('no page errors on the unpicked fixture', C.errors.length === 0, C.errors[0]);
+  await C.ctx.close();
+
+  /* A GAME STILL BEING PLAYED HAS DECIDED NOTHING. It keeps the lock
+     band, the band keeps its dark #1F1D1B, and there is no result bar
+     and no pill anywhere on it. */
   const justOn = new Date(Date.now() - 60*60*1000).toISOString();
   const B = await open({ startISO: justOn, weeks: 2, gamesPerWeek: 16, playerCount: 8 });
   await B.page.waitForTimeout(700);
   const live = await B.page.evaluate(() => {
     const out = [];
     for (const el of document.querySelectorAll('.card')) {
-      const band = el.querySelector('.lockband');
-      if (!band || /final/i.test(band.textContent)) continue;
-      out.push({ cls: band.className, fill: getComputedStyle(band).backgroundColor });
+      const band = el.querySelector('.lockband'); if (!band) continue;
+      out.push({ cls: band.className, fill: getComputedStyle(band).backgroundColor,
+                 txt: band.textContent.trim().slice(0, 40),
+                 hasBar: !!el.querySelector('.resbar'),
+                 hasPill: !!el.querySelector('.sb-word'),
+                 hasFinHead: !!el.querySelector('.meta.fmeta') });
     }
     return out;
   });
   ok('a live game has a lock band', live.length > 0, String(live.length));
-  ok('but it is not coloured while the game is still being played',
-     live.every(b => !/\bwon\b|\blost\b/.test(b.cls)), JSON.stringify(live));
-  ok('and the strip is still the neutral dark one',
-     live.every(b => b.fill === 'rgb(31, 29, 27)'), JSON.stringify(live));
+  ok('it is the neutral dark one and cannot be coloured',
+     live.every(b => b.fill === DARK && !/\bwon\b|\blost\b/.test(b.cls)),
+     JSON.stringify(live.slice(0, 2)));
+  ok('it says the game is in progress, not final',
+     live.every(b => /in progress/i.test(b.txt)),
+     JSON.stringify(live.slice(0, 2).map(b => b.txt)));
+  ok('and a live card has no result bar, no pill and no final head',
+     live.every(b => !b.hasBar && !b.hasPill && !b.hasFinHead),
+     JSON.stringify(live.slice(0, 2)));
   ok('no page errors on the live fixture', B.errors.length === 0, B.errors[0]);
   await B.ctx.close();
 }
 
 /* ------------------------------------------------------------------ */
-console.log('\n53b. "FINAL" on a card must be readable');
+console.log('\n53b. Everything on a final card must be readable on it');
 {
-  /* THE BUG: `.meta .cd.done{color:var(--chalk)}`. --chalk is
+  /* THE ORIGINAL BUG: `.meta .cd.done{color:var(--chalk)}`. --chalk is
      rgba(250,247,241,.62) — a near-white built for the dark shell — and
-     the card's meta row is --paper-2, a near-white too. Measured 1.09:1,
-     so the word FINAL was all but invisible on every finished card, and
-     by Sunday night that is most of the slate. Nothing errored and no
-     test looked at colour, so it survived. Measured here rather than
-     eyeballed, because "looks a bit faint" is how it got shipped. */
+     the card's meta row is --paper-2, a near-white too. Measured
+     1.09:1, so the word FINAL was all but invisible on every finished
+     card, and by Sunday night that is most of the slate. Nothing
+     errored and no test looked at colour, so it survived. Measured
+     here rather than eyeballed, because "looks a bit faint" is how it
+     got shipped.
+
+     THE WORD MOVED, SO THE MEASUREMENT FOLLOWED IT — and grew, because
+     the final card now carries five pieces of coloured text instead of
+     one. FINAL is the `<b>` inside the centred `.fin` head; the score
+     is the rest of that line; the result bar has the line about your
+     pick, the points, and the pill. Every one of them sits on the
+     card's own light paper, and three of them are in colours chosen
+     BECAUSE of this measurement — which makes leaving them unmeasured
+     the obvious way to lose it again.
+
+     The method is unchanged: getComputedStyle resolves alpha but not
+     the blend, so walk up for the first opaque background, composite,
+     and take the ratio. The pill's OUTLINE is measured against 3:1
+     rather than 4.5, because a border is a graphic and not text. */
   const past = new Date(Date.now() - 12*24*3600*1000).toISOString();
   const { ctx, page, errors } = await open(
     { startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 6 });
   await page.waitForTimeout(600);
-  const c = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('.card .meta .cd')]
-      .find(e => /final/i.test(e.textContent));
+
+  const CONTRAST = `(sel, which) => {
+    const el = document.querySelector(sel);
     if (!el) return null;
-    const px = v => (v.match(/[\d.]+/g) || []).map(Number);
+    const px = v => (v.match(/[\\d.]+/g) || []).map(Number);
     const lin = x => { x /= 255; return x <= 0.03928 ? x/12.92
       : Math.pow((x + 0.055)/1.055, 2.4); };
     const lum = ([r,g,b]) => 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
-    /* getComputedStyle resolves the alpha for us, but not the blend, so
-       walk up for the first non-transparent background and composite. */
     let node = el, bg = null;
     while (node && !bg) {
       const v = px(getComputedStyle(node).backgroundColor);
       if (v.length >= 3 && (v.length < 4 || v[3] > 0)) bg = v.slice(0, 3);
       node = node.parentElement;
     }
-    const f = px(getComputedStyle(el).color);
+    if (!bg) return null;
+    const raw = which === 'border'
+      ? getComputedStyle(el).borderTopColor : getComputedStyle(el).color;
+    const f = px(raw);
     const a = f.length > 3 ? f[3] : 1;
     const fg = [0,1,2].map(i => f[i]*a + bg[i]*(1-a));
     const l1 = lum(fg), l2 = lum(bg);
     return { ratio: (Math.max(l1,l2) + 0.05) / (Math.min(l1,l2) + 0.05),
-             colour: getComputedStyle(el).color };
-  });
-  ok('a final card is on screen', !!c, JSON.stringify(c));
+             colour: raw, txt: el.textContent.trim().slice(0, 24) };
+  }`;
+  const measure = (sel, which) =>
+    page.evaluate(`(${CONTRAST})(${JSON.stringify(sel)}, ${JSON.stringify(which || 'color')})`);
+
+  const head = await measure('.card .meta.fmeta .fin b');
+  ok('a final card is on screen', !!head, JSON.stringify(head));
   ok('and its FINAL label clears 4.5:1 against the card',
-     c && c.ratio >= 4.5, c && `${c.ratio.toFixed(2)}:1 (${c.colour})`);
-  ok('no page errors', errors.length === 0, errors[0]);
+     head && head.ratio >= 4.5,
+     head && `${head.ratio.toFixed(2)}:1 (${head.colour})`);
+  const score = await measure('.card .meta.fmeta .fin');
+  ok('so does the score beside it',
+     score && score.ratio >= 4.5,
+     score && `${score.ratio.toFixed(2)}:1 (${score.colour}) "${score.txt}"`);
+
+  /* THE RESULT BAR. Green and the paper-side red both had to be chosen
+     against this exact paper — --stamp measured 4.32:1 here, which is
+     why it is not used — so these three are the assertions that keep
+     that decision honest. Checked on whichever card is first, then on
+     a winning and a losing one specifically. */
+  for (const [what, sel] of [
+    ['the line about your pick', '.card .resbar .sb-l.res'],
+    ['the points', '.card .resbar .sb-pts'],
+    ['the word in the pill', '.card .resbar .sb-word'],
+  ]) {
+    const m = await measure(sel);
+    ok(`${what} clears 4.5:1 too`, m && m.ratio >= 4.5,
+       m && `${m.ratio.toFixed(2)}:1 (${m.colour}) "${m.txt}"`);
+  }
+  const ring = await measure('.card .resbar .sb-word', 'border');
+  ok('and the pill\'s outline clears 3:1 as a graphic',
+     ring && ring.ratio >= 3, ring && `${ring.ratio.toFixed(2)}:1 (${ring.colour})`);
+
+  /* BOTH COLOURS, not just whichever the first card happens to be. The
+     generator calls week 1 wrong and week 2 right, so one of the two
+     weeks has the green and the other the red. */
+  for (const [wk, want] of [['1', 'a loss'], ['2', 'a win']]) {
+    await page.click(`.wk[data-wk="${wk}"]`).catch(() => {});
+    await page.waitForTimeout(700);
+    const m = await measure('.card .resbar .sb-pts');
+    ok(`${want}'s points clear 4.5:1 on the card paper`,
+       m && m.ratio >= 4.5,
+       m && `week ${wk}: ${m.ratio.toFixed(2)}:1 (${m.colour}) "${m.txt}"`);
+  }
+
+  /* THE CHIP on the pool sub-line is a graphic, so 3:1. Only one team
+     colour in the league fails it against this paper — Cincinnati's
+     #FB4F14 at 2.76:1 — which is why the chip carries a hairline ring.
+     Assert the ring exists rather than the colour passing, because the
+     colour is the team's and not ours to change. */
+  /* A LOPSIDED FIXTURE FOR THE NARROW SIDE, because the default one
+     never produces it. The generator splits every game (i+mi)%2, so
+     consensus is always ~50/50 and nothing is ever under the 22%
+     threshold — the first version of these three checks reported "no
+     narrow split in this fixture" and asserted nothing at all.
+     P.lopsided makes one member the lone dissenter and alternates which
+     side they are on, so one fixture has a narrow segment on the left
+     and one on the right. */
   await ctx.close();
+  const { ctx: LC, page: LP, errors: LE } = await open(
+    { startISO: past, weeks: 2, gamesPerWeek: 16, playerCount: 13, lopsided: true });
+  await LP.waitForTimeout(800);
+  const page2 = LP;
+  const chip = await page2.evaluate(() => {
+    const c = document.querySelector('.card .cons-sub .pchip');
+    return c ? { shadow: getComputedStyle(c).boxShadow,
+                 w: Math.round(c.getBoundingClientRect().width) } : null;
+  });
+  ok('the narrow-side chip is on screen', !!chip, JSON.stringify(chip));
+  ok('it carries its hairline ring',
+     chip && /rgba?\(/.test(chip.shadow) && chip.shadow !== 'none', JSON.stringify(chip));
+  ok('and is 9px square', chip && chip.w === 9, chip && String(chip.w));
+
+  /* THE HEAD IS CENTRED, AND MEASURED RATHER THAN TRUSTED. `.meta` gives
+     its first child margin-right:auto and `.cd` margin-left:auto, so a
+     row holding one item centres itself as a side effect of those
+     cancelling out — it looked right for the wrong reason, and `.fmeta`
+     was added to say it on purpose. Which means the assertion has to be
+     about the pixels, not about the class being present: compare the
+     head's centre with the card's. */
+  const centred = await page2.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('.card').forEach((card, i) => {
+      const fin = card.querySelector('.meta.fmeta .fin');
+      if (!fin) return;
+      const c = card.getBoundingClientRect(), f = fin.getBoundingClientRect();
+      out.push({ i, off: Math.round(((f.left + f.right) / 2) - ((c.left + c.right) / 2)) });
+    });
+    return out;
+  });
+  ok('there are final heads to measure', centred.length > 0, String(centred.length));
+  ok('and every one is centred on its card',
+     centred.every(h => Math.abs(h.off) <= 1),
+     JSON.stringify(centred.filter(h => Math.abs(h.off) > 1).slice(0, 4)));
+
+  /* W1: THE NARROW SIDE'S FIGURE SITS ON ITS OWN SIDE OF THE SPLIT.
+     This is the whole point of the change and the one thing that could
+     silently not be true — the figure would still be on screen, still
+     say the right number, and just be at the wrong end. So compare the
+     centre of the figure with the centre of the bar, and the centre of
+     the narrow segment with the centre of the bar, and require them to
+     agree. */
+  const sides = await page2.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('.cons').forEach((cons, i) => {
+      const note = cons.querySelector('.psmall'); if (!note) return;
+      const bar = cons.querySelector('.cbar');
+      const segs = [...bar.children]; if (segs.length < 2) return;
+      const br = bar.getBoundingClientRect(), mid = (br.left + br.right) / 2;
+      const small = segs.reduce((m, sg) =>
+        sg.getBoundingClientRect().width < m.getBoundingClientRect().width ? sg : m);
+      const sr = small.getBoundingClientRect(), nr = note.getBoundingClientRect();
+      out.push({ i, txt: note.textContent.trim(),
+                 sliver: (sr.left + sr.right) / 2 > mid ? 'right' : 'left',
+                 note: (nr.left + nr.right) / 2 > mid ? 'right' : 'left' });
+    });
+    return out;
+  });
+  /* NOT CONDITIONAL. The fixture is built to produce these, so "if
+     there are any" would let the whole check disappear the moment the
+     generator drifted — which is the failure this replaced. */
+  ok('the lopsided fixture produced narrow splits', sides.length > 0, String(sides.length));
+  ok("the narrow side's figure sits on its own side of the split",
+     sides.length > 0 && sides.every(x => x.sliver === x.note),
+     JSON.stringify(sides.filter(x => x.sliver !== x.note).slice(0, 4)));
+  ok('and it names the team whose sliver it is',
+     sides.every(x => /^[A-Z]{2,3} \d+%$/.test(x.txt)),
+     JSON.stringify(sides.slice(0, 3).map(x => x.txt)));
+  /* BOTH WAYS ROUND, or the check passes on a fixture that only ever
+     puts the sliver on one side and never exercises the swap. */
+  ok('and the fixture covers a narrow left AND a narrow right',
+     new Set(sides.map(x => x.sliver)).size === 2,
+     JSON.stringify([...new Set(sides.map(x => x.sliver))]));
+  ok('no page errors', LE.length === 0, LE[0]);
+  await LC.close();
 }
 
 /* ------------------------------------------------------------------ */
@@ -4772,6 +5232,344 @@ console.log('\n59. A finished week in which nobody scored crowns nobody');
   ok('no runner-up either', s.silver === 0 && s.second === 0, JSON.stringify(s));
   ok('and no row wears the gold treatment', s.lead === 0, String(s.lead));
   ok('the word "winner" appears nowhere on the board', s.winnerWord === false);
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+console.log('\n60. The version card in Settings, and where an update shows up');
+{
+  /* WHAT THIS IS FOR. "Is this phone on the new one" was answered for
+     three releases by telling twenty eight people to swipe the app away
+     and reopen it. The card is the number plus a button that asks, and
+     the banner at the top of the Picks tab is where an update announces
+     itself.
+
+     THE NUMBER MUST COME FROM sw.js AND NOWHERE ELSE. That file holds
+     the only version constant in the project and is the file whose
+     change makes a phone fetch anything; a second constant in
+     index.html would be a second line to remember to bump, and a wrong
+     version on screen is worse than none. The stub reports what the
+     server read off sw.js on disk, and this case compares the rendered
+     text with the same file. */
+  const openSettings = async page => {
+    await page.click('[data-tab="settings"]').catch(() => {});
+    await page.waitForTimeout(500);
+  };
+  const read = page => page.evaluate(() => {
+    const opt = document.getElementById('verOpt');
+    const opts = [...document.querySelectorAll('.settings > .opt')];
+    const btn = document.getElementById('verBtn');
+    const bar = document.getElementById('updbar');
+    return {
+      present: !!opt,
+      last: !!opt && opts[opts.length - 1] === opt,
+      visible: !!opt && opt.offsetHeight > 0,
+      num: (document.getElementById('verNum') || {}).textContent.trim(),
+      sub: (document.getElementById('verSub') || {}).textContent.trim(),
+      label: btn ? btn.textContent.trim() : null,
+      green: btn ? btn.classList.contains('now') : null,
+      disabled: btn ? btn.disabled : null,
+      barHidden: bar ? bar.classList.contains('hide') : null,
+      activated: !!window.__swActivated,
+      /* The button must sit on ONE row with the number, which is the
+         whole reason .vbtn overrides .mbtn's full width. */
+      sameRow: (() => {
+        if (!btn) return null;
+        const n = document.getElementById('verNum').getBoundingClientRect();
+        const b = btn.getBoundingClientRect();
+        return b.left > n.right && Math.abs((b.top + b.bottom) / 2 - (n.top + n.bottom) / 2) < 30;
+      })(),
+    };
+  });
+
+  /* ---- up to date, the state twenty seven of twenty eight see ---- */
+  {
+    const { ctx, page, errors } = await open({ playerCount: 6, weeks: 1, gamesPerWeek: 4 });
+    await openSettings(page);
+    const a = await read(page);
+    ok('Settings carries a version card', a.present && a.visible, JSON.stringify(a));
+    ok('and it is the last thing on the tab', a.last, String(a.last));
+    ok('it prints the version sw.js declares, not one of its own',
+       a.num === SW_VERSION, `${a.num} vs ${SW_VERSION}`);
+    ok('the button offers a check', a.label === 'Check for update', a.label);
+    ok('and it is not the green one yet', a.green === false, String(a.green));
+    ok('the number and the button share a row', a.sameRow === true, JSON.stringify(a));
+    ok('no update banner on the Picks tab', a.barHidden === true, String(a.barHidden));
+    await page.click('#verBtn');
+    await page.waitForTimeout(700);
+    const b = await read(page);
+    ok('checking reports back that this is the newest',
+       /newest version/i.test(b.sub), b.sub);
+    ok('and the version did not change under it', b.num === SW_VERSION, b.num);
+    ok('still no banner, because nothing is waiting', b.barHidden === true);
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* ---- one parked and waiting, which is the state that matters ---- */
+  {
+    const { ctx, page, errors } = await open(
+      { playerCount: 6, weeks: 1, gamesPerWeek: 4, sw: 'waiting' });
+    /* THE BANNER FIRST, BEFORE SETTINGS IS EVEN OPENED. A worker parked
+       from a previous visit is announced at registration, which is what
+       Lee asked for: the notice belongs at the top of the Picks tab,
+       not only on a card in Settings. */
+    await page.waitForTimeout(600);
+    const boot = await page.evaluate(() => {
+      const bar = document.getElementById('updbar');
+      return { hidden: bar.classList.contains('hide'),
+               /* EVERY CHECK ON THIS BANNER CARRIES ITS HEIGHT, and
+                  that is the lesson of mutation batch 37. Hiding the
+                  banner left both the wording and the position checks
+                  green: a hidden element's bounding rect is all zeros,
+                  so "above the slate" was trivially true at top 0, and
+                  reading its text works fine either way. innerText was
+                  my first fix and it is not one — the spec says innerText
+                  falls back to textContent for an element that is not
+                  being rendered, so it reads a display:none banner
+                  exactly as textContent does. offsetHeight is the only
+                  one of the three that actually knows. Same trap as the
+                  archive-in-Settings case. */
+               text: (bar.innerText || '').replace(/\s+/g, ' ').trim(),
+               height: bar.offsetHeight,
+               top: Math.round(bar.getBoundingClientRect().top),
+               slate: Math.round(document.getElementById('slate').getBoundingClientRect().top) };
+    });
+    ok('an update parked from a previous visit raises the banner at once',
+       boot.hidden === false, JSON.stringify(boot));
+    ok('the banner says a new version is ready',
+       boot.height > 0 && /new version is ready/i.test(boot.text), JSON.stringify(boot));
+    ok('and it sits above the games, not below them',
+       boot.height > 0 && boot.top < boot.slate, JSON.stringify(boot));
+
+    await openSettings(page);
+    await page.click('#verBtn');
+    await page.waitForTimeout(700);
+    const c = await read(page);
+    ok('the card turns its button green when one is waiting', c.green === true, JSON.stringify(c));
+    ok('and says so plainly', /newer version is ready/i.test(c.sub), c.sub);
+    ok('the label becomes Update now', c.label === 'Update now', c.label);
+    /* TAPPING IT ACTUALLY APPLIES IT. The stub records the call rather
+       than reloading, because a reload here would throw away the
+       assertion. */
+    await page.click('#verBtn');
+    await page.waitForTimeout(400);
+    const d = await read(page);
+    ok('tapping it applies the waiting worker', d.activated === true, JSON.stringify(d));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* ---- no worker at all: a browser tab on a first visit ---- */
+  {
+    const { ctx, page, errors } = await open(
+      { playerCount: 6, weeks: 1, gamesPerWeek: 4, sw: 'none' });
+    await openSettings(page);
+    const a = await read(page);
+    /* NOT INSTALLED IS AN ANSWER. The temptation is to fall back to a
+       constant in index.html, which is the one thing this card must
+       never do. */
+    ok('with no worker it says so rather than inventing a number',
+       /not installed/i.test(a.num), a.num);
+    ok('and tells you how to get one', /home screen/i.test(a.sub), a.sub);
+    await page.click('#verBtn');
+    await page.waitForTimeout(600);
+    const b = await read(page);
+    ok('checking cannot succeed, and says that too',
+       /could not check/i.test(b.sub), b.sub);
+    ok('the button is not green and not stuck on Checking',
+       b.green === false && b.label === 'Check for update', JSON.stringify(b));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* ---- the check itself fails, which is a phone on bad wifi ---- */
+  {
+    const { ctx, page, errors } = await open(
+      { playerCount: 6, weeks: 1, gamesPerWeek: 4, sw: 'offline' });
+    await openSettings(page);
+    const a = await read(page);
+    ok('offline, the version it already has is still printed',
+       a.num === SW_VERSION, a.num);
+    await page.click('#verBtn');
+    await page.waitForTimeout(600);
+    const b = await read(page);
+    ok('and a failed check says so instead of claiming to be up to date',
+       /could not check/i.test(b.sub), b.sub);
+    ok('the button recovers rather than staying disabled',
+       b.disabled === false, String(b.disabled));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n61. White writing on every club, and the ring that makes it work');
+{
+  /* THE INSTRUCTION: no black writing anywhere on a game card, white
+     throughout, with a thin white ring round the badge on the team you
+     took or the team that won.
+
+     WHAT WAS BLACK. onColor() measured each club's primary and returned
+     near-black for the four too light for white text, so the lit side
+     of a CIN, MIA, CAR or LAC card printed its name in #15171B and the
+     other twenty eight printed white. onColor is gone.
+
+     WHAT WE KNOWINGLY GAVE UP is asserted here too, at the bottom, with
+     the real ratios: on those four the team name sits between 3.37 and
+     4.28:1 rather than 4.5. That is a decision, not an oversight, and a
+     test that quietly stopped measuring it would let it drift into an
+     oversight. */
+  const past61 = new Date(Date.now() - 12 * 864e5).toISOString();
+  const { ctx, page, errors } = await open(
+    { startISO: past61, weeks: 2, gamesPerWeek: 16, playerCount: 8 });
+  await page.waitForTimeout(700);
+
+  const readSides = () => page.evaluate(() => {
+    const px = s => (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+    const lum = c => .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
+    const cr = (a, b) => { const x = lum(a), y = lum(b);
+      return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+    const out = [];
+    for (const side of document.querySelectorAll('.card .side')) {
+      const cs = getComputedStyle(side);
+      const bg = px(cs.backgroundColor);
+      const mark = side.querySelector('.mark');
+      const one = sel => {
+        const el = side.querySelector(sel); if (!el) return null;
+        const s2 = getComputedStyle(el);
+        const a = parseFloat(s2.opacity);
+        /* THE OPACITY HAS TO BE COMPOSITED HERE. getComputedStyle
+           reports the city line as white with an opacity beside it, and
+           reading only the colour would grade a line that is not on
+           screen: at 62% over Cincinnati orange it measured 2.08:1. */
+        return { raw: s2.color, opacity: a,
+                 ratio: +cr(px(s2.color).map((v, i) => v * a + bg[i] * (1 - a)), bg).toFixed(2),
+                 size: parseFloat(s2.fontSize), weight: +s2.fontWeight };
+      };
+      out.push({
+        won: side.classList.contains('won'),
+        lost: side.classList.contains('lost'),
+        code: mark ? mark.textContent.trim() : null,
+        ring: mark ? getComputedStyle(mark).boxShadow : null,
+        /* THE BADGE'S SECONDARY STRIP, which is the thing "no black
+           writing on the card" actually came down to. It is a 6px
+           ::after bar of the club's secondary colour, and for Atlanta,
+           Cincinnati and the Jets that colour is #000000. Reading the
+           pseudo-element is the only way to see it: nothing about the
+           .mark element itself changes. */
+        strip: mark ? getComputedStyle(mark, '::after').display : null,
+        stripBg: mark ? getComputedStyle(mark, '::after').backgroundColor : null,
+        city: one('.city'), team: one('.team'), scr: one('.scr'),
+        inline: side.getAttribute('style') || '',
+      });
+    }
+    return out;
+  });
+
+  await page.click('.wk[data-wk="1"]').catch(() => {});
+  await page.waitForTimeout(900);
+  const s1 = await readSides();
+  await page.click('.wk[data-wk="2"]').catch(() => {});
+  await page.waitForTimeout(900);
+  const s2 = await readSides();
+  const all = [...s1, ...s2];
+  const lit = all.filter(x => x.won);
+  const WHITE = 'rgb(255, 255, 255)';
+
+  ok('the fixture puts lit sides from the whole league on screen',
+     new Set(lit.map(x => x.code)).size >= 24, String(new Set(lit.map(x => x.code)).size));
+
+  /* ---- 1. NO BLACK WRITING, and no inline colour to put it back ---- */
+  const notWhite = lit.filter(x => x.team.raw !== WHITE || x.city.raw !== WHITE
+                                || x.scr.raw !== WHITE);
+  ok('every lit side writes in white, on all 32 clubs', notWhite.length === 0,
+     JSON.stringify(notWhite.slice(0, 3).map(x => x.code + ' ' + x.team.raw)));
+  /* THE ROUTE THE BLACK CAME BY. onColor put a colour in the side's
+     inline style attribute, which beats any stylesheet rule, so the one
+     assertion that cannot be satisfied by accident is that the
+     attribute carries a background and nothing else. */
+  ok('and the inline style sets a background only, never a colour',
+     lit.every(x => /^background:/.test(x.inline.trim()) && !/color:/.test(x.inline)),
+     JSON.stringify(lit.slice(0, 2).map(x => x.inline)));
+
+  /* ---- 2. THE RING ---- */
+  const ringed = lit.filter(x => /rgba?\(255, 255, 255/.test(x.ring || ''));
+  ok('every lit badge carries the white ring', ringed.length === lit.length,
+     `${ringed.length} of ${lit.length}`);
+  ok('and it is a hairline, not a border',
+     lit.every(x => /inset/.test(x.ring) && /1\.5px|2px/.test(x.ring)),
+     JSON.stringify(lit[0] && lit[0].ring));
+  /* THE LOSING BADGE MUST NOT HAVE ONE. The ring is what marks the side
+     you took; putting it on both would make it decoration. */
+  const dim = all.filter(x => x.lost && x.ring);
+  ok('a losing badge has no white ring', dim.length > 0
+     && dim.every(x => !/rgba?\(255, 255, 255/.test(x.ring)),
+     JSON.stringify(dim.slice(0, 2).map(x => x.code + ' ' + x.ring)));
+
+  /* ---- 2b. THE BADGE KEEPS ITS SECOND COLOUR, BOTH SIDES ----
+     I removed this strip from the selected badge, reading "no black
+     writing anywhere" as covering it. It is the club's second colour,
+     not writing, and Lee wants it: gold on Green Bay, #101820 on
+     Carolina. Both sides keep it; the ring is the only thing the
+     selected badge gains. */
+  ok('a selected badge keeps its second-colour strip',
+     lit.every(x => x.strip && x.strip !== 'none'),
+     JSON.stringify(lit.filter(x => !x.strip || x.strip === 'none')
+       .slice(0, 3).map(x => x.code + ' ' + x.strip)));
+  const keepStrip = all.filter(x => x.lost && x.strip);
+  ok('and so does an unselected one', keepStrip.length > 0
+     && keepStrip.every(x => x.strip !== 'none'),
+     JSON.stringify(keepStrip.slice(0, 2).map(x => x.code + ' ' + x.strip)));
+  /* AND IT IS THE CLUB'S OWN SECOND COLOUR, not a fixed accent. The
+     strip is what tells a Packers badge from a Panthers badge at 42px,
+     so a rule that hardcoded one colour would pass "the strip is there"
+     while throwing away the reason for it. */
+  ok('the strip is painted from the club\u2019s own --sec',
+     lit.every(x => x.stripBg && x.stripBg !== 'rgba(0, 0, 0, 0)'),
+     JSON.stringify(lit.slice(0, 3).map(x => x.code + ' ' + x.stripBg)));
+
+  /* ---- 3. THE CITY LINE AT FULL WHITE ---- */
+  /* FADED SLIGHTLY, WHICH IS A RANGE AND NOT A LOOK. Lee wants the city
+     line set back from the team name. .62 was the old value and is far
+     too much (2.08:1 on Cincinnati, the worst text on any card); full
+     white made it as loud as the name. .92 is the most fade that keeps
+     the worst club at 3:1 or better. The window below is deliberately
+     narrow: anything outside it is either not faded or too faded. */
+  ok('the lit city line is faded, but only slightly',
+     lit.every(x => x.city.opacity >= 0.9 && x.city.opacity <= 0.95),
+     JSON.stringify(lit.slice(0, 3).map(x => x.code + ' ' + x.city.opacity)));
+  ok('so it sits back from the team name rather than matching it',
+     lit.every(x => x.city.ratio < x.team.ratio),
+     JSON.stringify(lit.slice(0, 3).map(x => `${x.code} city ${x.city.ratio} name ${x.team.ratio}`)));
+  /* AND IT IS STILL WHITE, which is the part the fade must not cost.
+     An opacity is not a colour: the declared colour stays #fff and the
+     composite stays a light grey, never a dark one. */
+  ok('and it is still white, not grey ink',
+     lit.every(x => x.city.raw === WHITE),
+     JSON.stringify(lit.slice(0, 2).map(x => x.city.raw)));
+  ok('and nothing on a lit side is under 3:1 any more',
+     lit.every(x => x.city.ratio >= 3 && x.team.ratio >= 3 && x.scr.ratio >= 3),
+     JSON.stringify(lit.filter(x => x.city.ratio < 3 || x.team.ratio < 3)
+       .slice(0, 3).map(x => x.code + ' ' + x.city.ratio + '/' + x.team.ratio)));
+
+  /* ---- 4. WHAT WAS GIVEN UP, stated rather than hidden ---- */
+  /* The score line is 21px at weight 800, which is WCAG large text, so
+     3:1 is its floor and every club clears it. */
+  ok('the score line is large text, and passes its own 3:1 floor',
+     lit.every(x => x.scr.size >= 18.66 && x.scr.weight >= 700 && x.scr.ratio >= 3),
+     JSON.stringify(lit.slice(0, 2).map(x => `${x.scr.size}px/${x.scr.weight} ${x.scr.ratio}`)));
+  const LIGHT = ['CIN', 'MIA', 'CAR', 'LAC'];
+  const soft = lit.filter(x => x.team.ratio < 4.5);
+  ok('the only clubs under 4.5:1 are the four light ones, by decision',
+     soft.every(x => LIGHT.includes(x.code)),
+     JSON.stringify([...new Set(soft.map(x => x.code))]));
+  ok('and they are between 3.3 and 4.3, which is where the sheet said',
+     soft.every(x => x.team.ratio >= 3.3 && x.team.ratio <= 4.3),
+     JSON.stringify(soft.slice(0, 4).map(x => x.code + ' ' + x.team.ratio)));
   ok('no page errors', errors.length === 0, errors[0]);
   await ctx.close();
 }

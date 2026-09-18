@@ -5,7 +5,7 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.34.0';
+const VERSION = 'v1.38.3';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not
@@ -282,7 +282,30 @@ self.addEventListener('notificationclick', e => {
   })());
 });
 
-// Lets the page force an immediate swap when the user taps "Update now".
+/* Lets the page force an immediate swap when the user taps "Update now",
+   and tells it which version is actually running.
+
+   WHY THE PAGE HAS TO ASK RATHER THAN JUST KNOWING. The number on
+   screen has to be the version SERVING the app, and the page cannot
+   read that off itself: a phone can be looking at an index.html that
+   came out of this worker's cache while a newer worker sits parked in
+   `waiting`. The version that answers "what am I running" lives here,
+   in the worker that answered the request, so the Settings card asks
+   for it over a port and prints the reply.
+
+   A second constant in index.html would have been the obvious shortcut
+   and it would be wrong twice over: it is a second line to remember to
+   bump, and it describes a file rather than the worker.
+
+   Both reply routes are covered on purpose. A MessageChannel port is
+   what the page normally sends, but a client that posts without one
+   still gets an answer through e.source, so a caller written the
+   simpler way is not silently ignored. */
 self.addEventListener('message', e => {
-  if (e.data === 'SKIP_WAITING') self.skipWaiting();
+  if (e.data === 'SKIP_WAITING') return self.skipWaiting();
+  if (e.data && e.data.type === 'VERSION') {
+    const reply = { type: 'VERSION', version: VERSION, cache: CACHE };
+    if (e.ports && e.ports[0]) e.ports[0].postMessage(reply);
+    else if (e.source && e.source.postMessage) e.source.postMessage(reply);
+  }
 });

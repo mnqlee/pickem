@@ -525,8 +525,14 @@ console.log('\n7. The Thursday-night path, at both real widths');
     const s = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('#slate .card')];
       const live = cards.filter(c => c.querySelector('.cd.live.lefted'));
-      const filled = cards.filter(c =>
-        c.querySelector('.lockband.won, .lockband.lost'));
+      /* DECIDED CARDS, AS THEY ARE REPORTED NOW. This counted
+         `.lockband.won, .lockband.lost` — the Q2 fill — which no longer
+         exists: a final card has no lock band at all, and says WIN or
+         LOSS in the result bar's pill instead. */
+      const decided = cards.filter(c => {
+        const w = c.querySelector('.resbar .sb-word');
+        return w && /WIN|LOSS/.test(w.textContent);
+      });
       const dots = c => {
         // a dot is ::before on .cd.live without .nodot
         return [...c.querySelectorAll('.meta .cd.live')]
@@ -539,7 +545,10 @@ console.log('\n7. The Thursday-night path, at both real widths');
         right: live.length
           ? [...live[0].querySelectorAll('.meta .cd')].pop().textContent.trim() : '',
         dots: live.length ? dots(live[0]) : -1,
-        filled: filled.length,
+        decided: decided.length,
+        // and none of them may be a coloured strip
+        strips: cards.filter(c =>
+          c.querySelector('.lockband.won, .lockband.lost')).length,
         header: (document.querySelector('#countdown') || {}).textContent.trim(),
         over: document.documentElement.scrollWidth - window.innerWidth,
         clipped: [...document.querySelectorAll('#countdown .txt, .meta .cd')]
@@ -563,14 +572,16 @@ console.log('\n7. The Thursday-night path, at both real widths');
     if (when === 'Mon') {
       // Fifteen decided cards above the live one: the fill, and the
       // header state that only exists once everything has kicked off.
-      ok(`${at}: the decided cards' strips are FILLED, not ringed`,
-         s.filled === 15, String(s.filled));
+      ok(`${at}: fifteen decided cards report a result`,
+         s.decided === 15, String(s.decided));
+      ok(`${at}: and none of them is a coloured strip`,
+         s.strips === 0, String(s.strips));
       ok(`${at}: and the header reads the live count`,
          /^1 game live$/.test(s.header), JSON.stringify(s.header));
     } else {
       // Thursday: the week has games still to come, so the gold
       // countdown branch is correct and must NOT be the live count.
-      ok(`${at}: nothing is decided yet`, s.filled === 0, String(s.filled));
+      ok(`${at}: nothing is decided yet`, s.decided === 0, String(s.decided));
       ok(`${at}: so the header is still counting down to the next game`,
          /·/.test(s.header) && !/live/i.test(s.header), JSON.stringify(s.header));
     }

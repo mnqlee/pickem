@@ -133,9 +133,38 @@ function buildGames(){
         network: NETS[(w+i) % NETS.length],
         spread: (w+i) % 5 === 0 ? '' : (home + ' -' + (((w+i)%13)/2 + 1).toFixed(1)),
         status: done ? 'final' : 'scheduled',
-        awayScore: done ? 10 + ((w*i*7) % 25) : null,
-        homeScore: done ? 13 + ((w*i*5) % 22) : null,
-        winner: done ? (((w+i) % 2) ? home : away) : null,
+        /* THE WINNER AND THE SCORES HAVE TO AGREE, and for a long time
+           they did not. The winner field was (w+i)%2 and the two scores
+           were two unrelated hashes, so roughly half the finished games
+           in every fixture had the losing team named as the winner: a
+           card reading "Final · SEA 13-10" with SEA on 10.
+
+           NOTE FOR ANYONE EDITING THIS FILE: everything from the STUB
+           declaration down to its closing backtick is one template
+           literal, so a backtick anywhere in here — including inside a
+           comment — ends the string and breaks the server with an
+           error pointing at a line that looks fine. Four times now.
+
+           Nothing caught it because nothing on the card put the two
+           side by side — the old lock band printed max-min, which
+           silently "corrected" the incoherence by never naming which
+           side had which number. The v1.35.0 head prints the winner's
+           score first, so a fixture that contradicts itself now shows
+           it, and the first screenshot of the real card is what
+           surfaced this.
+
+           A fixture that disagrees with itself cannot tell you whether
+           the app is right. So: pick the winner, then make the winner
+           the higher score. */
+        ...(() => {
+          if (!done) return { awayScore: null, homeScore: null, winner: null };
+          const hi = 24 + ((w*i*7) % 17);          // 24-40
+          const lo = hi - (3 + ((w*i*5) % 18));    // 3-20 behind
+          const homeWon = ((w+i) % 2) === 1;
+          return { awayScore: homeWon ? lo : hi,
+                   homeScore: homeWon ? hi : lo,
+                   winner: homeWon ? home : away };
+        })(),
       });
     }
   }
@@ -177,6 +206,52 @@ function makeRoster() {
 }
 const ROSTER = makeRoster();
 const MEMBERS = ROSTER.map((n,i) => ({ uid: 'u_'+i, name: n }));
+
+/* P.lopsided: FORCE A POOL THAT NEARLY ALL AGREES, BOTH WAYS ROUND.
+
+   The default generator splits every game (i+mi)%2, so consensus is
+   always about 50/50 and no segment is ever narrow enough to drop its
+   own label. Which means every assertion about the narrow side was
+   filtering an empty list, and .every() on nothing is true — two of
+   them had been green for months without once seeing the case.
+
+   So this makes ONE member the lone dissenter, and alternates which
+   side they are on, so a single fixture produces a narrow segment on
+   the left AND one on the right:
+     i % 3 === 0  everyone on home but member 0  -> AWAY narrow (left)
+     i % 3 === 1  everyone on away but member 0  -> HOME narrow (right)
+     otherwise    the ordinary split, untouched
+   At 13 members that is 8% against 92%, under the 22% threshold either
+   way round.
+
+   Used by BOTH getRevealed and watchRevealed, from this one function,
+   because a listener that disagrees with the first read pushes a
+   different pool a moment later — the same class of bug P.noRevealed
+   already hit here once. */
+/* P.unstaked: how many games at the START of each week are PICKED BUT
+   NOT RANKED.
+
+   THE STATE THIS EXISTS FOR, and it had no fixture at all. pay(r,n)
+   returns 1 for a falsy rank, so an unstaked pick that comes in scores
+   ONE point — the same as the lowest rank. The card says "Unstaked" to
+   explain the 1, and mutating that word away printed "Rank undefined"
+   ... except every fixture staked every pick (the weight was
+   (i+mi)%16+1, never zero), so the mutation had nothing to show and the
+   assertion could not catch it. Mutation batch 30 surfaced that.
+
+   Zero rather than undefined, because zero is what the app's own
+   pick weight is when somebody taps a team and never opens the tray. */
+const unstakedGame = i => (P.unstaked || 0) > 0 && i < P.unstaked;
+
+const pickFor = (g, i, mi, wk) => {
+  if (P.lopsided) {
+    if (i % 3 === 0) return mi === 0 ? g.away : g.home;
+    if (i % 3 === 1) return mi === 0 ? g.home : g.away;
+  }
+  return P.promo
+    ? (((i*2654435761 + mi*40503 + wk*97) >>> 4) % 100 < 62 ? g.home : g.away)
+    : ((i+mi)%2 ? g.home : g.away);
+};
 
 const PSX = window.PS = {
   SEASON: '2026', user: { uid: 'u_0' }, poolId: 'p_test',
@@ -253,8 +328,9 @@ const PSX = window.PS = {
       if (i < (P.myPickCount == null ? 16 : P.myPickCount))
         o[g.id] = P.promo
           ? { winner: (((i*2654435761 + wk*97) >>> 4) % 100 < 62 ? g.home : g.away),
-              weight: ((i*7+wk)%16)+1 }
-          : { winner: i%2 ? g.home : g.away, weight: i+1 };
+              weight: unstakedGame(i) ? 0 : ((i*7+wk)%16)+1 }
+          : { winner: i%2 ? g.home : g.away,
+              weight: unstakedGame(i) ? 0 : i+1 };
     }); return o; },
   /* Rows carry uid AND name, exactly as firebase-init.js returns them.
      The stub used to omit uid, which started mattering the moment the app
@@ -276,10 +352,9 @@ const PSX = window.PS = {
     const rows = []; GAMES.filter(g=>g.wk===wk).forEach((g,i) =>
       MEMBERS.forEach((m,mi) => { if (g.kickoff.toMillis() < Date.now())
         rows.push({ uid:m.uid, name:m.name, gameId:g.id,
-                    winner: (P.promo
-                      ? (((i*2654435761 + mi*40503 + wk*97) >>> 4) % 100 < 62 ? g.home : g.away)
-                      : ((i+mi)%2 ? g.home : g.away)),
-                    weight: P.promo ? ((i*7+mi*13+wk)%16)+1 : (i+mi)%16+1 }); }));
+                    winner: pickFor(g, i, mi, wk),
+                    weight: unstakedGame(i) ? 0
+                      : P.promo ? ((i*7+mi*13+wk)%16)+1 : (i+mi)%16+1 }); }));
     return rows; },
   /* P.tbTotals lets a case state the guesses exactly, by roster index.
      The default 44 + i*3 is deliberately all-distinct, which means it can
@@ -335,9 +410,13 @@ const PSX = window.PS = {
     (window.__revealBounds ||= []).push(bound);
     const due = GAMES.filter(g => g.wk === wk && g.kickoff.toMillis() <= bound);
     const rows = [];
+    /* pickFor, not its own copy of the split: a listener that disagreed
+       with the first read pushed a different pool a moment later, which
+       is exactly the class of bug P.noRevealed already hit here. */
     due.forEach((g,i) => MEMBERS.forEach((m,mi) => rows.push({
       uid:m.uid, name:m.name, gameId:g.id,
-      winner:(i+mi)%2 ? g.home : g.away, weight:(i+mi)%16+1 })));
+      winner: pickFor(g, i, mi, wk),
+      weight: unstakedGame(i) ? 0 : (i+mi)%16+1 })));
     if (rows.length) setTimeout(() => cb(rows, wk), 0);
     window.__pushRevealed = (r) => cb(r || rows, wk);
   },
@@ -370,7 +449,58 @@ const PSX = window.PS = {
     window.__alerts = { ok:true };   // a real grant heals the next check
     return true; },
   getBoard(){ return []; }, watchBoard(){}, getShard(){ return null; },
-  async getWeek(){ return []; }, async setScoringMode(){}, registerSW(){},
+  async getWeek(){ return []; }, async setScoringMode(){},
+
+  /* registerSW KEEPS THE CALLBACK, because the banner at the top of the
+     Picks tab is raised through it and a no-op stub made that banner
+     untestable. The real swAnnounce() fires on registration when a
+     worker is already parked from a previous visit, and again whenever
+     a check finds one; both are mirrored here. */
+  registerSW(cb){
+    if (typeof cb === 'function') {
+      window.__swCb = cb;
+      if (P.sw === 'waiting') cb(() => { window.__swSkip = true; });
+    }
+  },
+
+  /* ---- THE SERVICE WORKER, AS THE VERSION CARD SEES IT ----
+
+     A real worker cannot be used here: sw.js is not served by this stub,
+     and registering one inside the suite would have it caching and
+     intercepting every request the tests make. So the three calls the
+     card uses are stubbed, and a plan key drives which of its four
+     states is reached.
+
+       P.sw           'none'    no registration at all, so 'Not installed yet'
+                      'current' registered and up to date          (default)
+                      'waiting' an update is parked and ready
+                      'offline' the check itself fails
+       P.swVersion    the version string to report. The DEFAULT IS READ
+                      OUT OF sw.js ON DISK by the server below, so a test
+                      asserting what the card prints is asserting against
+                      the real file rather than a number typed twice.
+
+     swCheck() flips 'waiting' on once it has been found, exactly as a
+     real registration does: reg.waiting stays set, so a second tap goes
+     straight to activating rather than checking again. */
+  async swVersion(){ await call('swVersion');
+    return (P.sw === 'none') ? null : (P.swVersion || window.__swVersion || null); },
+  async swCheck(){ await call('swCheck');
+    if (P.sw === 'none' || P.sw === 'offline') return 'unknown';
+    if (P.sw === 'waiting') {
+      window.__swWaiting = true;
+      /* Same as the real swCheck, which calls swAnnounce(): an update
+         found from Settings has to surface on the Picks tab too. */
+      if (window.__swCb) window.__swCb(() => { window.__swSkip = true; });
+      return 'waiting';
+    }
+    return 'current'; },
+  async swActivate(){ await call('swActivate');
+    if (!window.__swWaiting) return false;
+    /* A real activate ends in controllerchange and a reload. The stub
+       stops at "yes, that happened": reloading the page mid-test would
+       throw away the very assertions that are about to read it. */
+    window.__swActivated = true; return true; },
 };
 `;
 
@@ -388,8 +518,18 @@ const srv = http.createServer(async (req, res) => {
     if (u.pathname === '/api/session') return send(200, { token: 't', uid: 'u_0' });
     return send(200, { ok: true });
   }
-  if (u.pathname === '/firebase-init.js')
-    return send(200, `window.__plan=${JSON.stringify(plan)};\n${STUB}`, 'text/javascript');
+  if (u.pathname === '/firebase-init.js') {
+    /* THE VERSION COMES OUT OF sw.js, not out of this file. A stub that
+       reported a version of its own invention would let the card's test
+       pass while the app printed something else entirely. */
+    let swver = null;
+    try {
+      swver = (fs.readFileSync(new URL('../../sw.js', import.meta.url).pathname, 'utf8')
+        .match(/const VERSION = '([^']+)'/) || [])[1] || null;
+    } catch (_) {}
+    return send(200, `window.__plan=${JSON.stringify(plan)};\n`
+      + `window.__swVersion=${JSON.stringify(swver)};\n${STUB}`, 'text/javascript');
+  }
   if (u.pathname === '/' || u.pathname === '/index.html')
     return send(200, fs.readFileSync(APP, 'utf8'), 'text/html');
   send(404, 'nope', 'text/plain');

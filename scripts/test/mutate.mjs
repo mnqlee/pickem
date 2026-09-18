@@ -137,10 +137,8 @@ const MUTATIONS = [
    ['the lit side is the team that WON, whoever you took']],
 
   [3, 'cards: show the pool sub-line only on lopsided games again',
-   `    <div class="cons-sub mono">\${
-      [c.pa<22?\`\${g.a} \${c.pa}%\`:'', c.ph<22?\`\${g.h} \${c.ph}%\`:'',
-       \`\${c.n} pick\${c.n===1?'':'s'}\`].filter(Boolean).join(' · ')}</div>`,
-   `    \${(c.pa<22||c.ph<22)?\`<div class="cons-sub mono">\${g.a} \${c.pa}% · \${g.h} \${c.ph}% · \${c.n} picks</div>\`:''}`,
+   `      if(!small)return \`<div class="cons-sub mono">\${cnt}</div>\`;`,
+   `      if(!small)return '';`,
    ['every card with a pool bar has a sub-line under it']],
 
   [3, "cards: stop capturing ESPN's clock string",
@@ -181,40 +179,115 @@ const MUTATIONS = [
    ``,
    ['and the line says everybody went over, so the number makes sense']],
 
+  /* The word FINAL moved from the `.cd.done` chip to the <b> in the
+     centred head, so the mutation follows it. --chalk is a dark-shell
+     token at 1.09:1 over this card's paper; the whole point of the case
+     is that a colour this wrong can look merely "a bit faint". */
   [9, 'cards: put the invisible FINAL label back',
-   `.meta .cd.done,.tbmeta .cd.done{color:var(--ink-mute)}`,
-   `.meta .cd.done,.tbmeta .cd.done{color:var(--chalk)}`,
+   `.meta .fin b{font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-mute)}`,
+   `.meta .fin b{font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--chalk)}`,
    ['and its FINAL label clears 4.5:1 against the card']],
 
-  [10, 'cards: drop the Q2 fill entirely',
-   `.lockband.won{background:var(--hit)}
-.lockband.lost{background:var(--stamp)}`,
+  /* ---- batches 10 to 13: the FINAL CARD, one variant per batch ----
+     Q2 — the whole bottom strip filled in --hit or --stamp with every
+     letter white — is superseded by the W3 pill, so the four batches
+     that used to put Q2's own faults back now put the WRONG VARIANT OF
+     W back instead. Same discipline, same reason: I built N3 in place
+     of Q2 once, and a test asking "is there something green here"
+     passed on it. Each of these is a real option from the W sheet that
+     was rendered, looked at, and not chosen. */
+
+  // W1: the single letter in the rank circle, instead of the word.
+  [10, 'cards: build W1 instead — a single letter, not the word',
+   `          <span class="sb-word \${k}">\${word}</span></span></div>\``,
+   `          <span class="sb-word \${k}">\${word[0]}</span></span></div>\``,
+   ['a card you called right says WIN', 'and one you called wrong says LOSS',
+    'the pill is a word, not a letter']],
+
+  // W2: the pill filled rather than outlined — Q2's idea moved inwards.
+  [11, 'cards: fill the pill instead of outlining it',
+   `.sb-word.w{border-color:var(--hit);color:var(--hit)}`,
+   `.sb-word.w{border-color:var(--hit);background:var(--hit);color:#fff}`,
+   ['it is an outline, not a filled pill', 'a win is green all through']],
+
+  // W4: the unslanted pill. It reads as a button rather than a stamp,
+  // and it stops matching the rank circle it is meant to echo.
+  [12, 'cards: unslant the pill (W4, ruled out)',
+   `  white-space:nowrap;transform:rotate(-7deg)}`,
+   `  white-space:nowrap}`,
+   ['it is slanted, like the rank circle']],
+
+  /* THE RED. --stamp is 4.32:1 on the card's own paper, under the floor
+     for text, which is the entire reason the paper-side red exists. A
+     mutation that swaps it back has to be caught by the measurement,
+     not by somebody noticing it looks fine. */
+  [13, 'cards: use --stamp for the losing line, as on the dark strip',
+   `.resbar{--sink:#BE2F26}`,
+   `.resbar{--sink:#C8342A}`,
+   /* THE LOSS-SPECIFIC ASSERTIONS ONLY. The first version of this list
+      also named "the line about your pick clears 4.5:1 too", which
+      measures whichever final card happens to be first — and in this
+      fixture that is a WIN, so it is green and unaffected. An
+      expectation that depends on card order is exactly the kind that
+      reports a mutation as uncaught for a reason unrelated to the
+      mutation. */
+   ['and that red is NOT --stamp, which fails on this paper',
+    "a loss's points clear 4.5:1 on the card paper",
+    'a loss is the paper-side red all through',
+    'in the paper-side red']],
+
+  /* ---- batches 28 to 31: the rest of the final card ---------------- */
+
+  // The head: put the pre-game row back on a finished game.
+  [28, 'cards: leave kickoff time, network and spread on a final card',
+   `      \${isFinal(g)?finHead:\`<div class="meta">\${`,
+   `      \${false?finHead:\`<div class="meta">\${`,
+   ['a final card is on screen', 'a finished card has no countdown chip to mis-class',
+    'the week has finished games to check']],
+
+  // The head, left-aligned: it centred by accident before .fmeta said so.
+  [29, 'cards: let the final head centre by accident again',
+   `.meta.fmeta{justify-content:center}
+.meta.fmeta>:first-child{margin-right:0}`,
    ``,
-   /* "the strip is still the neutral dark one" is about a LIVE game and
-      is unaffected by removing the fill — it was wrong of me to expect
-      it here. "it is a FILL" is the one that catches the dark strip
-      surviving on a finished card. */
-   ['a card you called right fills with the palette green',
-    'and one you called wrong fills with the palette red',
-    'it is a FILL, not a ring round a dark strip']],
+   ['and every one is centred on its card']],
 
-  /* The variant I built by mistake. It has to FAIL, or the test is only
-     asserting "something green is here" and would have passed on the
-     wrong design — which is exactly how this shipped wrong once. */
-  [11, 'cards: build N3 instead — a ring round the dark strip',
-   `.lockband.won{background:var(--hit)}
-.lockband.lost{background:var(--stamp)}`,
-   `.lockband.won{box-shadow:inset 0 0 0 1.5px var(--live)}
-.lockband.lost{box-shadow:inset 0 0 0 1.5px var(--stamp)}`,
-   ['a card you called right fills with the palette green',
-    'and one you called wrong fills with the palette red',
-    'it is a FILL, not a ring round a dark strip']],
+  /* THE UNSTAKED PICK. pay(0,n) is 1, so an unstaked pick that comes in
+     scores one point — and the line has to say why, or the card reports
+     a number with no explanation. Printing "Rank undefined" is what
+     happens if the word is dropped. */
+  [30, 'cards: print a rank even when there is not one',
+   `      const took=p?\`You took \${p.winner} &middot; \${w?\`Rank \${w}\`:'Unstaked'}\`:'No pick';`,
+   `      const took=p?\`You took \${p.winner} &middot; Rank \${w}\`:'No pick';`,
+   /* THE ASSERTIONS THAT CAN ACTUALLY SEE THIS, arrived at in two steps.
 
-  [12, 'cards: leave the losing line its own red on the red fill',
-   `.lockband.won,.lockband.won span,
-.lockband.lost,.lockband.lost span{color:#fff}`,
-   `.lockband.won,.lockband.lost{color:#fff}`,
-   ['and EVERY letter on the strip is white, including the losing line']],
+      The first version named only "no card ever prints a rank it does
+      not have", from the main collection — true of every fixture that
+      stakes every pick, and all of them did, so the mutation had
+      nothing to show. P.unstaked exists because of that. It is still
+      NOT in this list: the main fixture stakes every pick, so there the
+      mutation prints the rank the card already has and changes nothing.
+
+      The second version named the unstaked case's content assertions,
+      and they did not catch it either — because that case built its
+      list with /Unstaked/.test(left), so deleting the word emptied the
+      list and every .every() passed on nothing (only the population
+      assertion went red). The case now selects its cards by POSITION,
+      which is what lets a content assertion read a card that should say
+      Unstaked and does not. */
+   ['an unstaked pick says Unstaked, not a rank',
+    'and never prints a rank it does not have']],
+
+  /* W1's whole point: the narrow side's figure goes under its own
+     sliver. Pinning it to the left always is the behaviour that shipped
+     before, and on an 8%-on-the-right split it puts the figure as far
+     from the segment it describes as the card allows. */
+  [31, 'cards: put the narrow-side figure at the left, whichever side it is',
+   `        small[0]===g.a ? note+cnt : cnt+note}</div>\`;`,
+   `        note+cnt}</div>\`;`,
+   ["the narrow side's figure sits on its own side of the split"]],
 
   [14, 'cards: put the invented word "Live" back in front of the clock',
    '          ? \u0060<span class="cd live lefted">${esc(lc)}</span>\u0060',
@@ -236,11 +309,20 @@ const MUTATIONS = [
    `.meta .cd.live::before{content:none;display:none;width:5px;height:5px;`,
    ['exactly one dot on the row, and it is on the clock']],
 
-  [13, 'cards: colour the strip on a live game too',
-   `    const bandCls=!isFinal(g)||!R ? '' : (p&&p.winner===R ? 'won' : 'lost');`,
-   `    const bandCls=p&&R&&p.winner===R ? 'won' : 'lost';`,
-   ['but it is not coloured while the game is still being played',
-    'and the strip is still the neutral dark one']],
+  /* THE LIVE CARD MUST NOT REPORT A RESULT. This used to be a mutation
+     that coloured the lock band on a live game; the band can no longer
+     be coloured at all, so the equivalent mistake now is giving a live
+     card the result bar — which would say WIN or LOSS about a game
+     still being played. */
+  [32, 'cards: give a live card the final result bar too',
+   `    const resbar=isFinal(g)?(()=>{`,
+   `    const resbar=L?(()=>{`,
+   /* ONE ASSERTION, and it has to be this one. "it says the game is in
+      progress, not final" reads the LOCK BAND's text, and the band is
+      untouched by this mutation — a live card with a result bar bolted
+      underneath still says "In progress · locked" above it. Naming it
+      here reported a miss for a bug it structurally cannot see. */
+   ['and a live card has no result bar, no pill and no final head']],
 
   [6, 'standings: never band the runner-up row',
    `    const second=snd;`,
@@ -389,6 +471,136 @@ const MUTATIONS = [
    `        <div class="who"><div class="nrow"><b>\${esc(r.name)}</b>\${b}</div>`,
    `        <div class="who"><div class="nrow"><b>\${r.name}</b>\${b}</div>`,
    ['a member name is escaped, not executed', 'and it created no element']],
+
+  /* ================= THE VERSION CARD (case 60) ====================
+     Every batch here mutates index.html, which is the only file this
+     runner touches. That rules out testing the stub's own announce
+     path from in here, so batch 37 goes after the app's half of the
+     banner instead: showUpdate, which is what actually unhides it. */
+
+  /* THE OBVIOUS SHORTCUT, and the reason the card exists in the shape
+     it does: print a constant from index.html instead of asking the
+     worker. It looks identical the day it is written and lies the first
+     time somebody bumps sw.js without bumping this. */
+  [36, 'settings: print a hardcoded version instead of asking the worker',
+   `  const v=(window.PS&&PS.swVersion)?await PS.swVersion().catch(()=>null):null;`,
+   `  const v='v1.0.0';`,
+   ['it prints the version sw.js declares, not one of its own',
+    'and the version did not change under it',
+    'with no worker it says so rather than inventing a number',
+    'and tells you how to get one',
+    'offline, the version it already has is still printed']],
+
+  /* THE BANNER THAT NEVER APPEARS. An update can be found, parked and
+     ready, and the one place Lee asked for it to show up is the top of
+     the Picks tab. showUpdate is the half of that which lives in this
+     file. */
+  [37, 'cards: find an update and leave the banner hidden',
+   `  bar.classList.remove('hide');`,
+   ``,
+   ['an update parked from a previous visit raises the banner at once',
+    'the banner says a new version is ready',
+    'and it sits above the games, not below them']],
+
+  /* THE GREEN BUTTON THAT DOES NOTHING. Tapping "Update now" has to
+     reach the waiting worker. A card that only changed its own label
+     would look right and leave the phone on the old version, which is
+     the whole problem this card was built to end. */
+  [38, 'settings: make Update now a label change and nothing more',
+   `    const ok=(window.PS&&PS.swActivate)?await PS.swActivate().catch(()=>false):false;`,
+   `    const ok=true;`,
+   ['tapping it applies the waiting worker']],
+
+  /* A FAILED CHECK THAT CLAIMS SUCCESS. 'unknown' means the check could
+     not happen: no registration, or the network refused. Folding it in
+     with 'current' tells somebody on bad wifi that they are up to date,
+     which is a lie the app cannot detect afterwards. */
+  [39, 'settings: treat a failed check as being up to date',
+   `  if(st==='waiting')
+    verSet(null,'A newer version is ready. This reloads once and you are on it.',
+      'Update now',{now:true});`,
+   `  if(st==='unknown'||st==='waiting')
+    verSet(null,'A newer version is ready. This reloads once and you are on it.',
+      'Update now',{now:true});`,
+   ['checking cannot succeed, and says that too',
+    'the button is not green and not stuck on Checking',
+    'and a failed check says so instead of claiming to be up to date']],
+
+  /* ================= WHITE ON EVERY CLUB (case 61) ================= */
+
+  /* THE BLACK WRITING, PUT BACK, by the exact route it arrived: an
+     inline colour on the lit side, which beats any stylesheet rule. */
+  [40, 'cards: let the lit side choose its own ink again',
+   `    const aBg=litA?\`style="background:\${TEAM(g.a)[2]}"\`:'';
+    const hBg=litH?\`style="background:\${TEAM(g.h)[2]}"\`:'';`,
+   `    const aBg=litA?\`style="background:\${TEAM(g.a)[2]};color:#15171B"\`:'';
+    const hBg=litH?\`style="background:\${TEAM(g.h)[2]};color:#15171B"\`:'';`,
+   /* NOT "so it reads at least as well as the team name below it". That
+      one compares the city line against the name beside it, and this
+      mutation darkens BOTH by the same amount, so the comparison holds
+      and the assertion cannot see the bug. It is batch 43's catcher,
+      where only the city changes. Reported as a miss on the first run
+      of this batch. */
+   ['every lit side writes in white, on all 32 clubs',
+    'and the inline style sets a background only, never a colour',
+    'and nothing on a lit side is under 3:1 any more',
+    'the score line is large text, and passes its own 3:1 floor',
+    'the only clubs under 4.5:1 are the four light ones, by decision',
+    'and they are between 3.3 and 4.3, which is where the sheet said']],
+
+  /* THE RING, REMOVED. Everything else still looks right, which is why
+     it needs a test of its own: it is the only thing separating a badge
+     from a light panel. */
+  [41, 'cards: drop the white ring from the lit badge',
+   `.side.won .mark{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.92)}`,
+   ``,
+   ['every lit badge carries the white ring',
+    'and it is a hairline, not a border']],
+
+  /* THE RING ON BOTH SIDES, which makes it decoration rather than the
+     mark of the side you took. */
+  [42, 'cards: ring the losing badge too',
+   `.side.won .mark{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.92)}`,
+   `.side .mark{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.92)}`,
+   ['a losing badge has no white ring']],
+
+  /* THE CITY LINE BACK TO 62%, where it measured 2.08:1 on Cincinnati
+     and 2.48 on Kansas City: the worst text on any card, on a club that
+     never had black writing and so was never questioned. */
+  [43, 'cards: put the city line back to 62% opacity',
+   `.side.won .city{opacity:.92}`,
+   `.side.won .city{opacity:.62}`,
+   /* .62 is the old value and it is the one that has to stay out: white
+      at 62% over Cincinnati orange is 2.08:1. The window assertion is
+      what sees it; "sits back from the team name" cannot, because .62
+      sits back too. */
+   ['the lit city line is faded, but only slightly',
+    'and nothing on a lit side is under 3:1 any more']],
+
+  /* THE OTHER DIRECTION: no fade at all, which makes the city line as
+     loud as the name and is what Lee looked at and rejected. */
+  [45, 'cards: stop fading the city line',
+   `.side.won .city{opacity:.92}`,
+   `.side.won .city{opacity:1}`,
+   /* Both ends of the window are real bugs, so the window assertion
+      belongs in this list as well as batch 43's: it fails at 1 for the
+      same reason it fails at .62. The comparison against the team name
+      is the one only this direction can trip. It went red on the first
+      run of this batch and was reported as unlisted, which is the
+      report doing its job. */
+   ['the lit city line is faded, but only slightly',
+    'so it sits back from the team name rather than matching it']],
+
+  /* THE STRIP, TAKEN AWAY AGAIN. I removed it once, reading "no black
+     writing anywhere" as covering the club's second colour, and Lee put
+     it back: it is not writing, and it is what tells one badge from
+     another at 42px. This batch is the mistake, so it has to be caught.
+     Only a test that reads the pseudo-element can see it. */
+  [44, 'cards: hide the second-colour strip on a selected badge',
+   `.mark::after{content:'';position:absolute;left:0;right:0;bottom:0;height:6px;background:var(--sec)}`,
+   `.mark::after{content:'';position:absolute;left:0;right:0;bottom:0;height:6px;background:var(--sec)}
+.side.won .mark::after{display:none}`,
+   ['a selected badge keeps its second-colour strip']],
 ];
 
 function runSuite() {

@@ -938,6 +938,101 @@ const swAnnounce = () => {
   swUpdateCb(() => swReg.waiting && swReg.waiting.postMessage('SKIP_WAITING'));
 };
 
+/* ---------- WHAT THE SETTINGS CARD NEEDS ----------
+
+   Three calls, all of which can fail, none of which may hang or throw.
+   The card in index.html never touches navigator.serviceWorker itself:
+   every platform call lives here with the rest of the worker plumbing,
+   which is also what lets the test stub drive the card through all four
+   of its states without a real worker.
+
+   EVERY ONE RESOLVES. Not one of them rejects, and not one of them
+   waits indefinitely. swReady's own comment above records what an
+   unbounded await cost this app once already: `navigator.serviceWorker
+   .ready` never rejects and never times out, and three functions
+   awaiting it left the whole app on "Getting your week…" forever on any
+   device with no registration. A Settings card is not worth repeating
+   that, so the version read is racing a 1.5s timer and the answer on
+   timeout is null. */
+
+/* WHICH VERSION IS ACTUALLY SERVING THIS PAGE.
+
+   Asks the controlling worker over a MessageChannel. If there is no
+   controller, or it does not answer, the cache name is the fallback:
+   sw.js names its cache `poolsheet-${VERSION}` and deletes every other
+   one on activate, so the newest remaining key carries the same number.
+   Both routes can come back empty — a browser tab on a first visit has
+   no worker and no cache — and the card is written to say so rather
+   than print a guess. */
+async function swVersion() {
+  if (!('serviceWorker' in navigator)) return null;
+  const ctrl = navigator.serviceWorker.controller;
+  if (ctrl) {
+    const asked = await new Promise(res => {
+      let done = false;
+      const finish = v => { if (!done) { done = true; res(v); } };
+      const timer = setTimeout(() => finish(null), 1500);
+      try {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = e => {
+          clearTimeout(timer);
+          finish(e.data && e.data.version ? String(e.data.version) : null);
+        };
+        ctrl.postMessage({ type: 'VERSION' }, [ch.port2]);
+      } catch (_) { clearTimeout(timer); finish(null); }
+    });
+    if (asked) return asked;
+  }
+  /* The cache name, which encodes the same number. Sorted so that if an
+     old cache somehow survived, the highest version wins rather than
+     whichever key the browser happened to list first. */
+  try {
+    const keys = await caches.keys();
+    const mine = keys.filter(k => k.startsWith('poolsheet-')).sort();
+    if (mine.length) return mine[mine.length - 1].replace('poolsheet-', '');
+  } catch (_) {}
+  return null;
+}
+
+/* ASK THE SERVER WHETHER THERE IS A NEWER ONE.
+
+   Returns 'waiting' when an update is parked and ready to take over,
+   'current' when there is nothing new, and 'unknown' when there is no
+   registration to ask. reg.update() hits the network for sw.js, so it
+   is bounded too: a phone on a dead hotel wifi should get an honest
+   "could not check" rather than a button that spins forever.
+
+   It deliberately does NOT activate anything. Finding an update and
+   applying it are two decisions, and the second one belongs to whoever
+   tapped the button. */
+async function swCheck(ms = 8000) {
+  if (!('serviceWorker' in navigator)) return 'unknown';
+  const reg = await swReady(ms);
+  if (!reg) return 'unknown';
+  await Promise.race([
+    reg.update().catch(() => null),
+    new Promise(r => setTimeout(r, ms)),
+  ]);
+  /* swAnnounce is what raises the banner at the top of the Picks tab.
+     Calling it here means a check started from Settings surfaces the
+     update in the place people will see it next, not only on the card
+     they are looking at. */
+  swAnnounce();
+  return reg.waiting ? 'waiting' : 'current';
+}
+
+/* APPLY THE ONE THAT IS WAITING, by exactly the same route as the
+   banner's own button: tell the waiting worker to take over and let the
+   page's controllerchange listener do the reload. Returns false when
+   there was nothing to apply, so the card can put itself right instead
+   of promising something that did not happen. */
+async function swActivate() {
+  const reg = swReg || await swReady(4000);
+  if (!reg || !reg.waiting) return false;
+  reg.waiting.postMessage('SKIP_WAITING');
+  return true;
+}
+
 function registerSW(onUpdateReady) {
   if (typeof onUpdateReady === 'function') {
     swUpdateCb = onUpdateReady;
@@ -1015,7 +1110,7 @@ window.PS = {
   getBoard, watchBoard, getShard, upsertRoster,
   ensureCurrentPool, refreshPushToken, alertsHealthy,
   signInWithToken, getAllWeeks, getRevealed, getTiebreaks, saveTiebreak, getArchive,
-  enablePush, registerSW,
+  enablePush, registerSW, swVersion, swCheck, swActivate,
   /* EXPORTED SO THE APP CAN WAIT LONG ENOUGH.
 
      index.html re-opens the reveal listener just past each kickoff so its

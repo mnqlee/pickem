@@ -154,5 +154,77 @@ function boot(fetchStub){
      src.includes("caches.match('./')") && !src.includes("caches.match('./index.html')"));
 }
 
+/* ------------------------------------------------------------------ */
+/* THE MESSAGE HANDLER: two jobs, and they must not have eaten each
+   other. It has taken SKIP_WAITING since the update prompt was built;
+   answering VERSION is new, and the Settings card prints whatever comes
+   back. A handler that replied but had stopped calling skipWaiting()
+   would leave every phone with an Update button that does nothing, and
+   nothing else in the suite would notice: the browser tests run against
+   a stub, so this file is the only place the real worker is executed. */
+console.log('\nService worker messages');
+{
+  const boot2 = () => {
+    const handlers = {}; let skipped = 0;
+    const self = { addEventListener:(t,f)=>{handlers[t]=f},
+      skipWaiting(){ skipped++; },
+      clients:{claim(){},matchAll:async()=>[],openWindow:async()=>{}},
+      registration:{showNotification:async()=>{}} };
+    new Function('self','caches','fetch','Response','URL',src)
+      (self,{open:async()=>({}),keys:async()=>[],match:async()=>null,delete:async()=>{}},
+       async()=>({}),class{},URL);
+    return { handlers, skipped: () => skipped };
+  };
+  const VER = (src.match(/const VERSION = '([^']+)'/) || [])[1];
+  ok('sw.js declares a version at all', !!VER, String(VER));
+
+  {
+    const t = boot2();
+    ok('a message handler exists', typeof t.handlers.message === 'function');
+    t.handlers.message({ data: 'SKIP_WAITING' });
+    ok('SKIP_WAITING still swaps the worker in', t.skipped() === 1, String(t.skipped()));
+  }
+  {
+    /* THE PORT ROUTE, which is what the page actually uses. */
+    const t = boot2();
+    const got = [];
+    t.handlers.message({ data: { type: 'VERSION' },
+                         ports: [{ postMessage: m => got.push(m) }] });
+    ok('a VERSION ask is answered on the port it arrived on', got.length === 1,
+       JSON.stringify(got));
+    ok('with the version this file declares', got[0] && got[0].version === VER,
+       JSON.stringify(got[0]));
+    ok('and the cache name, which encodes the same number',
+       !!got[0] && got[0].cache === 'poolsheet-' + VER, JSON.stringify(got[0]));
+    ok('asking the version does NOT swap the worker in', t.skipped() === 0,
+       String(t.skipped()));
+  }
+  {
+    /* THE FALLBACK ROUTE: a client that posts without a MessageChannel
+       still gets an answer, rather than being silently ignored. */
+    const t = boot2();
+    const got = [];
+    t.handlers.message({ data: { type: 'VERSION' },
+                         source: { postMessage: m => got.push(m) } });
+    ok('a caller with no port is answered through e.source', got.length === 1,
+       JSON.stringify(got));
+    ok('and gets the same version', got[0] && got[0].version === VER,
+       JSON.stringify(got[0]));
+  }
+  {
+    /* Anything else must be ignored rather than throwing inside the
+       worker, which would take the fetch handler down with it. */
+    const t = boot2();
+    let threw = null;
+    try {
+      t.handlers.message({ data: null });
+      t.handlers.message({ data: { type: 'SOMETHING_ELSE' } });
+      t.handlers.message({ data: { type: 'VERSION' } });   // no port, no source
+    } catch (e) { threw = String(e); }
+    ok('an unknown or malformed message is ignored quietly', threw === null, threw);
+    ok('and none of it swapped the worker in', t.skipped() === 0, String(t.skipped()));
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

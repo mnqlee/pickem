@@ -118,12 +118,53 @@ const CHECKS = [
    () => has('.side.lost{flex-grow:.94;background:var(--paper-2)') &&
          lacks('.side.lost .mark{filter:grayscale')],
 
-  ['Q2', 'final strip FILLS --hit / --stamp, every letter white',
-   () => has('.lockband.won{background:var(--hit)}',
-             '.lockband.lost{background:var(--stamp)}',
-             '.lockband.won,.lockband.won span') &&
-         // N3/K3 were the inset perimeter; J4 was black text
-         lacks('.lockband.won{box-shadow:inset', '.lockband.lost{box-shadow:inset')],
+  /* Q2 IS SUPERSEDED, NOT REVERTED, and this check is inverted to say
+     so. Q2 filled the whole bottom strip with --hit or --stamp and
+     turned every letter white. It was chosen from a rendered sheet and
+     it worked; it is gone because the result it reported now has a
+     better home — the W3 pill in the result bar. What must NOT come
+     back is a coloured lock band, because the band is live-only now and
+     a fill on it would be reporting a result on a game still being
+     played. And N3, the inset perimeter that was shown beside Q2 and
+     rejected, must not reappear either. */
+  ['Q2 retired', 'the lock band is live-only and can no longer be coloured',
+   () => lacks('.lockband.won', '.lockband.lost',
+               'bandCls', 'won-pts') &&
+         // the one rule on that strip that still has a job
+         has('.lockband .miss{color:#E0645A}')],
+
+  ['W3 pill', 'the final card says WIN / LOSS in a slanted pill',
+   () => has(".sb-word{height:26px", 'transform:rotate(-7deg)}',
+             '.sb-word.w{border-color:var(--hit);color:var(--hit)}',
+             '.sb-word.l,.sb-word.none{border-color:var(--sink);color:var(--sink)}',
+             '.sb-word.tie{border-color:var(--ink-faint)') &&
+         // W4 was the unslanted pill; W1/W2 were the single letter
+         lacks('.sb-word.flat', ">W</span></span></div>")],
+
+  ['paper red', 'the losing line uses the measured paper-side red, not --stamp',
+   () => has('.resbar{--sink:#BE2F26}',
+             '.sb-l.res.l,.sb-l.res.none{color:var(--sink)}',
+             '.sb-pts.l,.sb-pts.none{color:var(--sink)}')],
+
+  ['Z1 head', 'a final card is headed FINAL and the score, centred',
+   () => has('.meta.fmeta{justify-content:center}',
+             '.meta.fmeta>:first-child{margin-right:0}',
+             '<div class="meta fmeta"><span class="fin mono"><b>Final</b>') &&
+         // Z2 was a tick, Z3 a dot, Z4 the winner's code in team colour
+         lacks('.meta .ftick', '.meta .fdot', '.meta .fwin')],
+
+  ['Unstaked', 'a pick with no rank says so, and scores its one point',
+   () => has("${w?`Rank ${w}`:'Unstaked'}", '`+${ptsLbl(pay(w,N))}`') &&
+         // the old form computed the same number by a longer road
+         lacks('ptsLbl(w?pts:1)')],
+
+  ['W1 sub-line', "the narrow side's figure sits under its own sliver",
+   () => has('.cons-sub.subflex{display:flex', 'justify-content:space-between',
+             'const note=`<span class="psmall"><i class="pchip"',
+             'small[0]===g.a ? note+cnt : cnt+note') &&
+         has('.pchip{width:9px;height:9px', 'box-shadow:inset 0 0 0 1px rgba(20,22,26,.30)') &&
+         // W2 tinted the words, which measured 3.51:1 on the Chargers
+         lacks('.psmall{color:', 'style="color:${TEAM(')],
 
   ['true colour', 'a locked card is not desaturated wholesale',
    () => lacks('.card.locked .match{filter:saturate')],
@@ -131,8 +172,17 @@ const CHECKS = [
   ['winner', 'once final the colour follows the team that won',
    () => has('const litA=isFinal(g)?(R?R===g.a:null):(p?p.winner===g.a:null)')],
 
-  ['pool sub-line', 'on every card, carrying any percentage the bar cannot fit',
-   () => has('<div class="cons-sub mono">', "c.pa<22?`${g.a} ${c.pa}%`:''") &&
+  /* The sub-line is on EVERY card, which is the decision here: it used
+     to appear only on lopsided games, so the pool block grew a fourth
+     line on some cards and not others and no two games looked alike.
+     What it CARRIES changed with W1 — the narrow side's figure is now a
+     chip pinned to that side rather than plain text at the left — so
+     the check is that both shapes exist and that neither is conditional
+     on the split. */
+  ['pool sub-line', 'on every card, and it carries the narrow side either way',
+   () => has('<div class="cons-sub mono">${cnt}</div>',
+             '<div class="cons-sub mono subflex">',
+             "const small=c.pa>0&&c.pa<22 ? [g.a,c.pa] : c.ph>0&&c.ph<22 ? [g.h,c.ph] : null") &&
          lacks("${(c.pa<22||c.ph<22)?`<div class=\"cons-sub")],
 
   ['1 PT', 'one point is singular, everywhere',
@@ -195,11 +245,65 @@ const CHECKS = [
   ['leader cells', "the leader's sticky cells are opaque",
    () => has('tbody tr.lead td.pl,tbody tr.lead td.tot{background:#211D16}')],
 
+  /* THE WORD MOVED. It was the `.cd.done` chip at the right of the meta
+     row; it is the <b> in the centred head now. The token is the same
+     --ink-mute and for the same measured reason (--chalk over
+     --paper-2 is 1.09:1), and the `.meta` half of the old selector is
+     deleted because nothing on a card can match it any more. */
   ['FINAL label', 'readable on the light card, not the dark-shell token',
-   () => has('.meta .cd.done,.tbmeta .cd.done{color:var(--ink-mute)}')],
+   () => has('.meta .fin b{font-weight:800', 'color:var(--ink-mute)}',
+             '.tbmeta .cd.done{color:var(--ink-mute)}') &&
+         lacks('.meta .cd.done')],
 
   ['live no-pick', 'the no-pick line stays red on the dark strip, at 4.91:1',
    () => has('.lockband .miss{color:#E0645A}')],
+
+  /* THE VERSION CARD, and the one thing that must never come back: a
+     version constant in this file. sw.js holds the only one, the page
+     asks the worker for it, and `lacks` is what keeps a well-meaning
+     shortcut from reintroducing a second number that can disagree with
+     the first. Measured end to end in regress case 60. */
+  ['version card', 'last in Settings, number read from the worker, not from here',
+   () => has('<div class="opt" id="verOpt">', 'id="verNum"', 'id="verBtn"',
+             'PS.swVersion()', 'PS.swCheck()', 'PS.swActivate()',
+             '.vbtn.now{background:var(--live)') &&
+         // no second version constant, in any of the shapes somebody would reach for
+         !/const\s+(APP_)?VERSION\s*=/.test(CODE) &&
+         !/APP_VERSION/.test(CODE)],
+
+  /* WHERE THE PLATFORM CALLS LIVE. The first version of this check
+     claimed "exactly one SKIP_WAITING" and was simply wrong: there are
+     two call sites and both are right, the banner's and the card's.
+     What actually matters is that neither of them is in index.html.
+     Every navigator.serviceWorker call belongs in firebase-init.js with
+     the rest of the worker plumbing, which is also what lets the test
+     stub drive the card through all four of its states. */
+  /* WHITE ON EVERY CLUB, and the device that pays for it. onColor() is
+     deleted, not merely unused: while it existed, one line reinstating
+     the call would have brought the black writing back with no test
+     failing anywhere near the place it was reintroduced. */
+  ['white ink', 'white on all 32: the ring, the slightly faded city, the strip',
+   () => has('.side.won{flex-grow:1.12;color:#fff}',
+             '.side.won .mark{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.92)}',
+             '.side.won .city{opacity:.92}',
+             'const aBg=litA?`style="background:${TEAM(g.a)[2]}"`') &&
+         lacks('function onColor', 'onColor(TEAM',
+               // the badge keeps its second colour: removing it was my
+               // misreading of "no black writing", and Lee reversed it
+               '.side.won .mark::after{display:none}')],
+
+  ['version routes', 'the page makes no worker calls of its own',
+   () => lacks("postMessage('SKIP_WAITING')", 'navigator.serviceWorker.register',
+               'caches.keys()', 'new MessageChannel') &&
+         (() => {
+           const FB = fs.readFileSync(
+             new URL('../../firebase-init.js', import.meta.url).pathname, 'utf8');
+           const posts = (FB.match(/postMessage\('SKIP_WAITING'\)/g) || []).length;
+           // one for the banner (swAnnounce), one for the card (swActivate)
+           return posts === 2 && /function swVersion/.test(FB)
+             && /function swCheck/.test(FB) && /function swActivate/.test(FB)
+             && /swVersion, swCheck, swActivate/.test(FB);
+         })()],
 ];
 
 let bad = 0;

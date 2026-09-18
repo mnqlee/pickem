@@ -332,8 +332,14 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    FINAL was very nearly invisible on every finished card, which is
    half the slate by Sunday night. --ink-mute is the card's own quiet
    token (the losing side already uses it) and measures 5.30:1.
-   The same rule was doing it on the tiebreaker card too. */
-.meta .cd.done,.tbmeta .cd.done{color:var(--ink-mute)}
+   THE `.meta` HALF OF THIS SELECTOR IS GONE, because it became dead:
+   a game card's `.cd` chip now exists only while the game has NOT
+   gone final, and cdClass() only returns `done` for a final one, so
+   nothing on a card can match it any more. The word FINAL lives in
+   `.meta .fin b` instead and carries the same --ink-mute for the same
+   measured reason. The tiebreaker card still has a `.cd.done`, and
+   that is what is left here. */
+.tbmeta .cd.done{color:var(--ink-mute)}
 
 /* 82px -> 72px. One game occupied roughly 300px of an 844px screen once
    the meta row and the stake bar were counted, so barely two and a half
@@ -344,7 +350,42 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
   background:var(--paper);border:0;font:inherit;color:inherit;cursor:pointer;text-align:left;
   transition:flex-grow .3s cubic-bezier(.4,0,.2,1),background-color .22s,color .22s}
 .side.r{flex-direction:row-reverse;text-align:right}
+/* WHITE ON EVERY CLUB, and the two devices that make it work.
+
+   The ring is 1.5px of near-white inset INSIDE the badge's rounded
+   corner, replacing the dark hairline .mark carries elsewhere, which on
+   a light club is doing nothing at all. It is on the lit side only: the
+   team you took, or the team that won once the game is final.
+
+   The city line goes to full white in the same rule. At 62% it measured
+   2.08:1 on Cincinnati orange, the worst text on any card, and it is
+   redundant anyway ("LOS ANGELES" sits directly above "Chargers"). */
 .side.won{flex-grow:1.12;color:#fff}
+.side.won .mark{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.92)}
+/* FADED SLIGHTLY, AND THE NUMBER IS WHERE IT IS FOR A REASON.
+
+   Lee asked for the city line to sit back from the team name, the way
+   it does in the reference shot. .62 was the old value and is far too
+   much: white at 62% over Cincinnati orange measures 2.08:1, the worst
+   text on any card. Full white is 3.37:1 there.
+
+   .92 is the most fade that keeps the worst club in the league at 3:1
+   or better: Cincinnati lands on 3.05, Miami 3.55, Carolina 3.62, the
+   Chargers 3.86, and every other club is well clear. It reads as
+   secondary next to a 16px/800 name while staying legible, which is
+   the whole point of the line. */
+.side.won .city{opacity:.92}
+/* THE BADGE KEEPS ITS SECONDARY STRIP, on both sides.
+
+   .mark::after paints a 6px bar of the club's secondary colour across
+   the bottom of the badge: gold on Green Bay, #101820 on Carolina,
+   #000000 on Atlanta, Cincinnati and the Jets. I removed it from the
+   selected side, reading "no black writing anywhere" as covering it,
+   and that was wrong: it is the club's second colour, not writing, and
+   Lee wants it. Restored, and there is nothing to add here beyond the
+   ring, which is why this is a comment rather than a rule. Case 61
+   asserts every badge still has it, and mutation batch 44 hides it on
+   the selected side and has to be caught. */
 /* The team you did NOT pick was rgba(...,.4) — 2.47:1, the least readable
    text on the screen, and the thing you must read in order to change your
    mind. It is de-emphasised now by weight and by the flat backdrop, not
@@ -456,40 +497,82 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    row, which say it in words. */
 .lockband{background:#1F1D1B;color:var(--paper);padding:6px 11px;font-size:9px;font-weight:800;
   letter-spacing:.11em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
-/* Q2 — THE WHOLE STRIP FILLS, AND EVERY LETTER ON IT GOES WHITE.
-   Not a perimeter: that was N3, and it was shown alongside this and
-   not chosen. The fill is --hit and --stamp exactly as the palette
-   already defines them, which is the whole point of Q2 over Q1's
-   darker pair and Q3's brighter one — no new colours enter the app.
-   Measured white-on-fill: 6.2:1 on the green, 5.3:1 on the red. Both
-   clear 4.5:1, so the 9px text passes as small text rather than
-   leaning on the large-text allowance.
-   The `span` in the selector is load-bearing because of ONE span:
-   .lockband .miss, which sets its own #E0645A. Without the span half,
-   the losing line stayed that red on the red fill — the "red on red"
-   this replaced. (.won-pts is the other span in there and is NOT part
-   of this: it carries no colour rule at all, and is only a hook. An
-   earlier version of this comment named it as a second reason the
-   selector was needed, which would have made deleting the .miss rule
-   look safe. It is not safe — see the note on .miss below.) */
-/* "No pick · 0 pts" on a game that is LIVE but not finished still needs
-   to stand out against the dark strip — that is the one case where the
-   strip carries no fill and the text is the only signal. --stamp there
-   measured 3.18:1, which at 9px fails; #E0645A is 4.91:1 and is the
-   same red the Grid's no-pick cell already uses.
-   Deleting this rule outright was tempting because the fill makes it
-   redundant on a FINISHED card. It is not redundant on a live one. */
+/* THE Q2 FILL USED TO BE HERE, AND IS SUPERSEDED — not reverted.
+   Q2 filled this whole strip with --hit or --stamp and turned every
+   letter white, once a game was final. It was chosen from a rendered
+   sheet and it worked. It is gone because the result it was reporting
+   now has a better home: the W3 pill in the result bar below the pool
+   block, which says WIN or LOSS in a word, carries the points beside
+   it, and leaves the card's own colours to the teams. The sheets are
+   docs/mockups/result-badge-W-series.png and the X/Y/Z follow-ups;
+   DESIGN-DECISIONS.md section 3b records why Q2 was right at the time
+   and what replaced it.
+   So this band now has ONE state — live — and cannot be coloured. The
+   .lockband.won / .lockband.lost rules and the white-text selector
+   that went with them are deleted rather than left as dead CSS. */
+/* "No pick · 0 pts" on a game that is LIVE but not finished is the one
+   line on this strip that still needs its own colour, and now the only
+   reason this rule exists. --stamp measured 3.18:1 on #1F1D1B, which at
+   9px fails; #E0645A is 4.91:1 and is the same red the Grid's no-pick
+   cell already uses. */
 .lockband .miss{color:#E0645A}
-.lockband.won{background:var(--hit)}
-.lockband.lost{background:var(--stamp)}
-/* The `span` half IS load-bearing, and mutation testing is what proved
-   it: .lockband .miss above sets its own colour, so without these the
-   losing line stayed red on the red fill — the exact "red on red" Q2
-   replaces. (My first version dropped the .miss rule instead and then
-   claimed the span selector was load-bearing when it no longer was. It
-   is now, and .miss is the single span that makes it so.) */
-.lockband.won,.lockband.won span,
-.lockband.lost,.lockband.lost span{color:#fff}
+
+/* ---------- A FINAL CARD ----------
+   The head, the result bar and the pool sub-line's narrow-side note.
+   Nothing below is reachable while a game is unplayed or being played. */
+/* Z1 — the head says what happened, centred.
+   CENTRED DELIBERATELY, not by accident: `.meta` gives its first child
+   margin-right:auto and `.cd` margin-left:auto, so a row holding one
+   item centres itself as a side effect of those cancelling out. It
+   rendered right for the wrong reason, which is not a thing to leave
+   for the next person editing this file. */
+.meta.fmeta{justify-content:center}
+.meta.fmeta>:first-child{margin-right:0}
+.meta .fin{white-space:nowrap;letter-spacing:.01em}
+.meta .fin b{font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-mute)}
+
+/* THE RESULT BAR sits exactly where the stake bar sits — same 44px,
+   same paper, same border — so a card does not change height when it
+   goes final. It is not a button, and it is not tappable. */
+.resbar{cursor:default;border-top:1px solid var(--rule)}
+/* A PAPER-SIDE RED, and it is a measured value rather than a shade.
+   --stamp #C8342A is 4.32:1 on this card's #EDE8DE — under the 4.5:1
+   floor, and this is now a whole line of real information rather than
+   one word. #BE2F26 is 4.75:1 and is indistinguishable from --stamp at
+   a glance. It is the mirror of .lockband .miss above, which exists
+   because --stamp is 3.18:1 on the DARK strip: same problem, opposite
+   ground. --hit needs no adjustment at all: 5.09:1 on this paper. */
+.resbar{--sink:#BE2F26}
+.sb-l.res{font-weight:800}
+.sb-l.res.w{color:var(--hit)}
+.sb-l.res.l,.sb-l.res.none{color:var(--sink)}
+.sb-l.res.tie{color:var(--ink-soft)}
+.sb-pts.w{color:var(--hit)}
+.sb-pts.l,.sb-pts.none{color:var(--sink)}
+.sb-pts.tie{color:var(--ink-faint)}
+/* W3 — the word in a slanted pill, at the circle's height and slant, so
+   it reads as the same stamp the rank circle is. `white-space:nowrap`
+   because LOSS is four characters and must not wrap to two lines inside
+   a 26px pill. */
+.sb-word{height:26px;display:grid;place-items:center;padding:0 9px;border-radius:13px;
+  border:2px solid;font-size:11px;font-weight:900;letter-spacing:.04em;
+  white-space:nowrap;transform:rotate(-7deg)}
+.sb-word.w{border-color:var(--hit);color:var(--hit)}
+.sb-word.l,.sb-word.none{border-color:var(--sink);color:var(--sink)}
+.sb-word.tie{border-color:var(--ink-faint);color:var(--ink-faint)}
+
+/* W1 — the pool sub-line becomes a two-ended row when one side is too
+   narrow to label itself. See the note in consensusBar() for why the
+   chip carries the colour and the words do not. */
+.cons-sub.subflex{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.psmall{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.pcount{color:var(--ink-soft)}
+/* The chip is a graphic, so 3:1 is the bar, and only Cincinnati's
+   #FB4F14 fails it against this paper at 2.76:1. The ring is the same
+   device .mark carries for the same reason. */
+.pchip{width:9px;height:9px;border-radius:2px;display:inline-block;flex:0 0 9px;
+  box-shadow:inset 0 0 0 1px rgba(20,22,26,.30)}
 
 /* ---------- GRID ---------- */
 .tbwrap{margin:22px var(--pad) 0}
@@ -1415,6 +1498,25 @@ tbody tr.me td.tot{background:#241F1E}
 .cseg.l:only-child,.cseg.r:only-child{border-radius:5px}
 .cons-sub{margin-top:6px;font-size:9.5px;color:var(--ink-soft);font-weight:600}
 
+/* ---------- THE VERSION CARD, last in Settings ----------
+   One row: the number and a sentence on the left, one button on the
+   right. The button is flex:0 0 auto and width:auto because .mbtn is a
+   full-width control everywhere else in Settings, and a full-width
+   button here would push the number onto its own line for no reason.
+   .vbtn.now is the only green button in the app: it appears in exactly
+   one state, when an update is sitting there ready to take over, and it
+   is the same green as the live clock rather than a fourth colour. */
+.vrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.vleft{min-width:0}
+.vnum{font-size:15px;font-weight:700;letter-spacing:.02em;color:var(--paper)}
+.vsub{margin-top:3px;font-size:10px;line-height:1.4;color:var(--chalk)}
+/* min-height:36px is not decoration. polish.ui.test.mjs asserts no
+   control in the app is under 36px tall, and the first version of this
+   button measured 35 — caught by that suite, not by looking at it. */
+.vbtn{width:auto;flex:0 0 auto;padding:10px 14px;font-size:11px;min-height:36px}
+.vbtn:disabled{opacity:.6}
+.vbtn.now{background:var(--live);border-color:var(--live);color:#10210C}
+
 .arch{padding:6px var(--pad) 0}
 .arch-head{padding:14px 0 4px}
 .arch-head h2{margin:0 0 4px;font-size:23px;font-weight:900;letter-spacing:-.035em}
@@ -1835,6 +1937,39 @@ tbody tr.me td.tot{background:#241F1E}
     <div class="opt"><h4>First run</h4>
       <p>Replay the welcome screens. Useful when you're walking somebody through installing it.</p>
       <button class="mbtn" style="margin-top:12px;width:auto;padding:11px 16px" id="obReplay">Show me again</button></div>
+    <!-- VERSION, LAST IN SETTINGS AND ON PURPOSE.
+
+         The question this answers is not "what version is this", it is
+         "is this phone on the new one" — which came up on every deploy
+         and was answered by telling twenty eight people to swipe the app
+         away and reopen it. So it is a card rather than a label: the
+         number, and a button that asks the server whether there is a
+         newer one.
+
+         THE NUMBER IS NOT WRITTEN HERE. It comes from the service worker
+         that is actually serving this page, over PS.swVersion(). sw.js
+         already holds the only version constant in the project and is
+         the file whose change makes a phone fetch anything at all; a
+         second constant in this file would be a second line to remember
+         to bump, and the day it was missed the app would confidently
+         display the wrong version, which is worse than displaying none.
+
+         WHEN AN UPDATE IS FOUND, the banner at the top of the Picks tab
+         is what says so — the same #updbar that already existed. The
+         check here calls swAnnounce() through PS.swCheck(), so an
+         update found from Settings is waiting on the Picks tab too
+         rather than only on the card nobody is looking at. Both routes
+         end in the same postMessage('SKIP_WAITING'). -->
+    <div class="opt" id="verOpt">
+      <h4>Version</h4>
+      <div class="vrow">
+        <div class="vleft">
+          <div class="vnum mono" id="verNum">&hellip;</div>
+          <div class="vsub" id="verSub">Reading what this phone is running.</div>
+        </div>
+        <button class="mbtn vbtn" id="verBtn">Check for update</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2418,19 +2553,38 @@ const TEAM=c=>T[c]||[String(c||'?'),String(c||'?'),FALLBACK[2],FALLBACK[3]];
 
 function mark(c){const[,,p,s]=TEAM(c);
   return `<div class="mark" style="background:${p};--sec:${s}"><span>${c}</span></div>`;}
-/* Readable text for an arbitrary brand colour.
-   Relative luminance per WCAG, then whichever of ink/paper contrasts
-   better. Four NFL primaries are too light for white text. */
-function onColor(hex){
-  const h=String(hex||'').replace('#','');
-  if(h.length!==6)return '#fff';
-  const lin=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);};
-  const L=.2126*lin(parseInt(h.slice(0,2),16))
-         +.7152*lin(parseInt(h.slice(2,4),16))
-         +.0722*lin(parseInt(h.slice(4,6),16));
-  // Contrast against white vs against near-black; take the better one.
-  return (1.05/(L+.05)) >= ((L+.05)/.05) ? '#fff' : '#15171B';
-}
+/* onColor() USED TO LIVE HERE AND IS GONE ON PURPOSE.
+
+   It measured a club's primary and returned dark ink for the four that
+   are too light for white text: CIN #FB4F14 (3.37:1 on white), MIA
+   #008E97 (3.95), CAR #0085CA (4.03), LAC #0080C6 (4.28). It was called
+   on the lit side of a card, so the team you took or the team that won
+   printed its name in near-black on those four clubs and in white on
+   the other twenty eight.
+
+   Lee's instruction: no black writing anywhere on a card, consistently
+   white. He is right that consistency is worth something here, and the
+   four ratios above are all readable text; the WCAG floor is a floor,
+   not the point at which letters stop resolving.
+
+   WHAT REPLACES IT, from the sheets in docs/mockups/white-ink-*:
+     the lit side is white, always            .side.won{color:#fff}
+     the badge gets a thin white ring         .side.won .mark
+     the city line goes to full white         .side.won .city
+   The ring is what he asked for and it earns its place: it separates
+   the badge from a light panel, which is the one thing white text
+   cannot do for itself. Full white on the city line is the measured
+   bonus in the same change: at 62% opacity that 9.5px label was the
+   worst text on any card, 2.08:1 on Cincinnati and 2.48:1 on Kansas
+   City, a club that never had black text and so was never questioned.
+
+   WHAT WE KNOWINGLY GAVE UP, recorded so nobody has to measure it
+   again: on those four clubs the team name sits at 3.37 to 4.28:1
+   rather than 4.5. Darkening the lit panel by 3 to 15 per cent would
+   have cleared the floor (variant C on the sheet) and was rejected,
+   because it prints a colour that is not the club's. The score line is
+   21px/800, which is WCAG large text at 3:1, so it passes regardless.
+   DESIGN-DECISIONS section 3i has the full table. */
 
 function side(code,which,cls,bg,ha,sc){const[city,team]=TEAM(code);
   return `<button class="side ${which} ${cls}" data-side="${which==='l'?'a':'h'}" ${bg}>
@@ -2462,6 +2616,13 @@ function consensusBar(g){
   const w=isFinal(g)?result(g):null;
   // The pool getting it wrong together is the fun part, so name it.
   const upset=w&&((c.pa>60&&w===g.h)||(c.ph>60&&w===g.a));
+  /* THE LABEL IS WHITE ON THE CLUB'S OWN COLOUR, and on four clubs that
+     is under the 4.5:1 floor — CIN 3.37:1, MIA 3.95, CAR 4.03, LAC
+     4.28. Kept on purpose: the alternative was built and rendered side
+     by side (docs/mockups/label-ink-before-after-390.png) and Lee chose
+     white, because none of the four is actually hard to read. Recorded
+     as an open item in DESIGN-DECISIONS section 5 rather than left
+     unnoticed. */
   const seg=(pct,code,side)=>pct===0?'':
     `<div class="cseg ${side}" style="width:${pct}%;background:${TEAM(code)[2]}">${
       pct>=22?`<span>${code} ${pct}%</span>`:''}</div>`;
@@ -2480,9 +2641,38 @@ function consensusBar(g){
           segment narrower than 22% drops its own label. So an 8% side is
           never silently unlabelled, which was the flaw in my first pass
           at this — the narrow number vanished from both places. */''}
-    <div class="cons-sub mono">${
-      [c.pa<22?`${g.a} ${c.pa}%`:'', c.ph<22?`${g.h} ${c.ph}%`:'',
-       `${c.n} pick${c.n===1?'':'s'}`].filter(Boolean).join(' · ')}</div>
+    ${/* W1 — THE NARROW SIDE'S FIGURE GOES UNDER ITS OWN SLIVER.
+          This line already carried that number. It printed it as plain
+          text at the left, whichever end the sliver was on — so on an
+          8%-on-the-right split the figure sat as far from the segment
+          it describes as the card allows, and nothing connected them.
+          Now it pins to the sliver's side, with a chip in that team's
+          colour, and the pick count takes the other end.
+
+          ONLY ONE SIDE CAN EVER BE NARROW: the two percentages sum to
+          100, so under 22% on one means over 78% on the other. And a
+          unanimous pool has a single segment, so there is no narrow
+          side at all — in that case this is just the count, exactly
+          where it has always been. The DOM order decides which end each
+          takes, so there is no left/right CSS to keep in step.
+
+          THE CHIP CARRIES THE COLOUR AND THE WORDS DO NOT, and that is
+          measured. As TEXT on this card's #EDE8DE paper, seven team
+          primaries fail 4.5:1 — Cincinnati #FB4F14 at 2.76:1, Miami
+          3.24, Carolina 3.30, the Chargers 3.51, Kansas City 3.86,
+          Detroit 4.03, Tampa Bay 4.44. As a CHIP, which is a graphic
+          and wants 3:1, only Cincinnati fails — and the hairline ring
+          covers that, the same device .mark already carries for the
+          same reason. */''}
+    ${(()=>{
+      const cnt=`<span class="pcount">${c.n} pick${c.n===1?'':'s'}</span>`;
+      const small=c.pa>0&&c.pa<22 ? [g.a,c.pa] : c.ph>0&&c.ph<22 ? [g.h,c.ph] : null;
+      if(!small)return `<div class="cons-sub mono">${cnt}</div>`;
+      const note=`<span class="psmall"><i class="pchip" style="background:${
+        TEAM(small[0])[2]}"></i>${small[0]} ${small[1]}%</span>`;
+      return `<div class="cons-sub mono subflex">${
+        small[0]===g.a ? note+cnt : cnt+note}</div>`;
+    })()}
   </div>`;
 }
 
@@ -2568,8 +2758,10 @@ function renderSlate(){
        on those the selected team's own name was the hardest thing on the
        card to read. Pick the text colour from the background's luminance
        instead of assuming white always wins. */
-    const aBg=litA?`style="background:${TEAM(g.a)[2]};color:${onColor(TEAM(g.a)[2])}"`:'';
-    const hBg=litH?`style="background:${TEAM(g.h)[2]};color:${onColor(TEAM(g.h)[2])}"`:'';
+    /* BACKGROUND ONLY. The colour comes from .side.won, which is white
+       for all 32 clubs: see the note where onColor() used to be. */
+    const aBg=litA?`style="background:${TEAM(g.a)[2]}"`:'';
+    const hBg=litH?`style="background:${TEAM(g.h)[2]}"`:'';
     /* The stake gets its own row under the matchup. It used to float over
        the card corner, where it collided with the countdown and clipped
        the home team's name. */
@@ -2595,44 +2787,66 @@ function renderSlate(){
              aria-label="Stake a confidence rank on this pick">
              <span class="sb-l">Tap to stake points</span>
              <span class="sb-r"><span class="sb-num blank">?</span></span></button>`;
-    /* THE FILL — Q2, not a perimeter. This comment said "THE PERIMETER
-       RIBBON", which is N3: the rejected variant, shown beside Q2 on the
-       same sheet and not chosen. The words were left behind when the CSS
-       was corrected, and a stale comment naming the wrong option is
-       exactly how the wrong option got built the first time.
-       The strip FILLS: green if your pick came in, red if it did not,
-       and nothing at all while the game is still being played or if it
-       ended level, because neither of those has decided anything yet.
-       No pick counts as red: it scored zero. */
-    const bandCls=!isFinal(g)||!R ? '' : (p&&p.winner===R ? 'won' : 'lost');
-    const band=L?`<div class="lockband${bandCls?' '+bandCls:''}"><span>${isFinal(g)
-      // A genuine tie is written with no winner, so say "tie" rather than
-      // printing the word "null" at people.
-      ?`Final · ${result(g)||'tie'} ${sc?Math.max(sc[0],sc[1])+'-'+Math.min(sc[0],sc[1]):''}`
-      :'In progress · locked'}</span>${
-      /* WHAT THE PICK ACTUALLY DID, not what it would have been worth.
+    /* THE LOCK BAND IS THE LIVE-ONLY BAND NOW.
+       It used to serve both states: a dark strip while a game was being
+       played, and the Q2 fill — the whole strip in --hit or --stamp with
+       every letter white — once it was final. The final half has moved
+       out to the result bar below, which is the W3 pill. So the
+       `won`/`lost` classes and their white-text selector are gone from
+       the stylesheet with it, and this band can no longer be coloured
+       at all.
+       `.lockband .miss` stays, and is now the ONLY reason that rule
+       exists: a live game you did not pick still needs its line to
+       stand out on the dark strip, and that is the one place the strip
+       carries no fill to lean on. */
+    const band=(L&&!isFinal(g))?`<div class="lockband">
+      <span>In progress &middot; locked</span>${
+      /* WHAT THE PICK IS WORTH IF IT HOLDS — provisional, and said so.
+         This used to print pay(weight) without consulting isFinal() or
+         result(), so a card could read "Final · GB 13-10" on the left
+         and "You took DET · rank 1 · 16 pts" on the right. The final
+         case is no longer handled here at all, which removes the way
+         that could go wrong a second time. */
+      p?`<span>You took ${p.winner}${p.weight?` &middot; Rank ${p.weight}`:''}${
+          p.weight?` &middot; ${ptsLbl(pay(p.weight,N))} if it holds`:''}</span>`
+       :`<span class="miss">No pick &middot; 0 pts</span>`}</div>`:'';
 
-         This printed `pay(weight)` unconditionally, without ever
-         consulting isFinal() or result() — so a card could read
-         "Final · GB 13-10" on the left and "You took DET · rank 1 ·
-         16 pts" on the right. You backed the Lions, the Lions lost, and
-         the app told you it banked you 16 points, while the strip above
-         said 0 banked. Two numbers on one screen that cannot both be
-         true is the fastest way to make someone stop trusting a scoring
-         app. Now: earned if it won, a plain zero if it lost, and clearly
-         provisional while the game is still being played. */
-      p?(()=>{
-          const w=p.weight, pts=pay(w,N), R=result(g);
-          const rank=w?` · rank ${w}`:'';
-          if(isFinal(g)){
-            if(!R)          return `<span>You took ${p.winner}${rank} · no score (tie)</span>`;
-            return p.winner===R
-              ? `<span class="won-pts">You took ${p.winner}${rank} · +${ptsLbl(w?pts:1)}</span>`
-              : `<span class="miss">You took ${p.winner}${rank} · 0 pts</span>`;
-          }
-          return `<span>You took ${p.winner}${rank}${w?` · ${ptsLbl(pts)} if it holds`:''}</span>`;
-        })()
-       :`<span class="miss">No pick · 0 pts</span>`}</div>`:'';
+    /* THE FINAL CARD'S RESULT BAR — the W3 pill, chosen from rendered
+       sheets (docs/mockups/result-badge-W-series.png and the X, Y, Z
+       follow-ups). It sits where the stake bar sits, is one 44px line,
+       and replaces BOTH the Q2 fill and the pre-game meta row's job.
+
+       WHY ONE LINE. It was drawn as two — the game's score above the
+       line about you — and that is what moved FINAL and the score into
+       the head instead. Once the head carries them this bar has only
+       your own result to say, so it fits on one line at 320px with
+       room. The version carrying both needed 261px against 236px of
+       card and ellipsed; measured, not guessed.
+
+       FIVE STATES, and the third is the one that had no line at all
+       before. pay(r,n) is `!r ? 1 : …`, so an unstaked pick that comes
+       in has always scored ONE point — the same as the lowest rank —
+       and the card could not say why, because "Rank 9" cannot be
+       printed when there is no rank. It says "Unstaked" now.
+
+       pay(w,N) covers both: the old code wrote `w?pts:1`, which was the
+       same number by a longer road, since pay() already returns 1 for a
+       falsy rank. */
+    const resbar=isFinal(g)?(()=>{
+      const w=p&&p.weight;
+      const took=p?`You took ${p.winner} &middot; ${w?`Rank ${w}`:'Unstaked'}`:'No pick';
+      /* A GENUINE TIE DECIDED NOTHING, so it is neither a win nor a
+         loss. Neither colour would be true, so the pill says TIE in the
+         muted ink rather than picking one. */
+      const [k,pts,word]=!R        ? ['tie', 'no score', 'TIE']
+        : !p                       ? ['none','0 pts',    '&ndash;']
+        : p.winner===R             ? ['w',  `+${ptsLbl(pay(w,N))}`, 'WIN']
+        :                            ['l',  '0 pts',     'LOSS'];
+      return `<div class="stakebar resbar">
+        <span class="sb-l res ${k}">${took}</span>
+        <span class="sb-r"><span class="sb-pts ${k}">${pts}</span>
+          <span class="sb-word ${k}">${word}</span></span></div>`;
+    })():'';
     /* P4, AND WHERE THE DOT LIVES WHEN P4 FIRES.
        The left slot is only a clock when there is a clock to put in it.
        When ESPN has sent nothing yet, `cd live lefted` was still being
@@ -2644,8 +2858,56 @@ function renderSlate(){
        would leave a live game with no pulse anywhere on the row.
        So: one decision, made once, read twice. */
     const lc=(L&&!isFinal(g))?liveClock(g):null;
+
+    /* THE HEAD OF A FINAL CARD SAYS WHAT HAPPENED — Z1.
+       Kickoff time, the network badge and the spread are all answers to
+       pre-game questions: when do I watch this, which channel, who is
+       favoured. The moment the whistle goes none of the three has a
+       question left to answer, and they were still sitting across the
+       top of every finished card. FINAL and the score take the row
+       instead, centred.
+
+       CENTRED WITH justify-content, NOT BY ACCIDENT. `.meta` gives its
+       first child margin-right:auto and `.cd` margin-left:auto, so a
+       row holding one item centres itself as a side effect of those two
+       cancelling out. It rendered correctly and for the wrong reason,
+       which is not a thing to leave in a stylesheet somebody else will
+       edit. `.fmeta` says it.
+
+       A TIE NAMES NO WINNER. result(g) is null on a genuine tie, and
+       the old strip printed `Final · tie 30-30` by falling back to the
+       word. "Tie" reads better capitalised in this slot, and naming a
+       team that did not win would be worse than either.
+
+       NOTHING HERE TOUCHES A LIVE OR UNPLAYED CARD: while a game is
+       being played the row still carries ESPN's clock, the network and
+       the line, which is P1/P5 and already chosen. */
+    const finHead=(()=>{
+      /* THE WINNER'S SCORE FIRST, DERIVED FROM WHICH SIDE WON — not
+         Math.max / Math.min.
+
+         The old lock band wrote `${result(g)} ${max}-${min}`, which
+         reads correctly only as long as `winner` and the two scores
+         agree. When they disagree it prints the winner's name against
+         the other team's number and looks perfectly fine doing it —
+         "Final · SEA 13-10" on a card whose SEA side shows 10. Taking
+         the score from the side that actually won cannot do that: it
+         would print "SEA 10-13", which is wrong-looking, which is the
+         point. A contradiction in the data should look like one.
+         (And it is not hypothetical: the test fixture generated its
+         winner and its two scores from three unrelated hashes, so half
+         of every finished week disagreed with itself. The first
+         screenshot of this head is what found it.) */
+      const line=sc
+        ? (R ? `${R} ${R===g.a?sc[0]:sc[1]}-${R===g.a?sc[1]:sc[0]}`
+             : `Tie ${sc[0]}-${sc[1]}`)
+        : (R || '');
+      return `<div class="meta fmeta"><span class="fin mono"><b>Final</b>${
+        line?` &middot; ${esc(line)}`:''}</span></div>`;
+    })();
+
     h+=`<div class="card${L?' locked':''}" data-game="${g.id}">
-      <div class="meta">${
+      ${isFinal(g)?finHead:`<div class="meta">${
         /* P1 + P5 — THE CLOCK TAKES THE LEFT SLOT, IN PROGRESS THE RIGHT.
            Both slots are `.cd.live`, so the green, the weight and the
            size are identical on each side; `lefted` only drops the auto
@@ -2667,11 +2929,11 @@ function renderSlate(){
         <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
         <span class="cd ${cdClass(g.kick-Date.now(),isFinal(g))}${
           lc?' nodot':''}" data-cd="${g.id}">${
-          L?(isFinal(g)?'Final':'In progress'):'Locks in '+fmt(g.kick-Date.now())}</span></div>
+          L?'In progress':'Locks in '+fmt(g.kick-Date.now())}</span></div>`}
       <div class="match">${side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null)}
         <div class="gutter"><span>@</span></div>
         ${side(g.h,'r',hCls,hBg,'Home',sc?sc[1]:null)}</div>${stake}${
-        L?consensusBar(g):''}${band}</div>`;});
+        L?consensusBar(g):''}${band}${resbar}</div>`;});
   $('#slate').innerHTML=h+tbCard();
 }
 
@@ -3092,6 +3354,73 @@ function showUpdate(activate){
 // late: firebase-init keeps the callback in module state precisely so
 // the order of these two registrations cannot matter.
 if(!DEMO&&window.PS&&PS.registerSW)PS.registerSW(showUpdate);
+
+/* ---------- THE VERSION CARD IN SETTINGS ----------
+
+   Four states and one button. Resting shows what this phone is running;
+   checking, while it asks the server; nothing new; and one waiting,
+   where the same button turns green and applies it.
+
+   NO PLATFORM CALLS IN HERE. Everything goes through PS.swVersion,
+   PS.swCheck and PS.swActivate, which live in firebase-init.js with the
+   rest of the worker plumbing. That keeps the three ways this can fail
+   (no worker, no answer, no network) in one place, and it is what lets
+   the test stub walk this card through every state without a real
+   service worker.
+
+   THE GREEN BUTTON ENDS IN THE SAME PLACE AS THE BANNER'S. Both post
+   SKIP_WAITING to the waiting worker and let the page's
+   controllerchange listener do the reload; the 2.5s fallback below is
+   the same guard showUpdate uses, for a worker that was discarded
+   between the check and the tap. Two buttons, one route: if that route
+   ever breaks, it breaks in one place rather than differently in two. */
+function verSet(num,sub,label,opt={}){
+  const n=$('#verNum'), s=$('#verSub'), b=$('#verBtn');
+  if(!n||!s||!b)return;
+  if(num!=null)n.textContent=num;
+  s.textContent=sub;
+  b.textContent=label;
+  b.disabled=!!opt.busy;
+  b.classList.toggle('now',!!opt.now);
+}
+let verBusy=false;
+async function verRender(){
+  if(!$('#verOpt')||verBusy)return;
+  const v=(window.PS&&PS.swVersion)?await PS.swVersion().catch(()=>null):null;
+  /* NOT INSTALLED IS A REAL ANSWER, not an error. Opened in a browser
+     tab on a first visit there is no worker and no cache, so there is
+     no version to report — and inventing one from this file is exactly
+     the mistake this card exists to avoid. */
+  if(v)verSet(v,'This is what this phone is running.','Check for update');
+  else verSet('Not installed yet',
+    'Add the app to your home screen and this will show its version.',
+    'Check for update');
+}
+$('#verBtn')&&$('#verBtn').addEventListener('click',async()=>{
+  const b=$('#verBtn'); if(!b||verBusy)return;
+  if(b.classList.contains('now')){
+    verSet(null,'Applying it now.','Updating',{busy:true,now:true});
+    const ok=(window.PS&&PS.swActivate)?await PS.swActivate().catch(()=>false):false;
+    /* Nothing was waiting after all — it activated on its own between
+       the check and the tap, which happens when another tab took it.
+       Put the card back rather than leaving a dead "Updating". */
+    if(!ok){verRender();return;}
+    setTimeout(()=>{if(!updReloading){updReloading=true;location.reload();}},2500);
+    return;
+  }
+  verBusy=true;
+  verSet(null,'Asking the server for a newer version.','Checking',{busy:true});
+  const st=(window.PS&&PS.swCheck)?await PS.swCheck().catch(()=>'unknown'):'unknown';
+  verBusy=false;
+  if(st==='waiting')
+    verSet(null,'A newer version is ready. This reloads once and you are on it.',
+      'Update now',{now:true});
+  else if(st==='current')
+    verSet(null,'Checked just now. This is the newest version.','Check for update');
+  else
+    verSet(null,'Could not check. You are offline, or the app is not installed.',
+      'Check for update');
+});
 
 function renderInPlay(){
   const el=$('#inplay'); if(!el)return;
@@ -4171,7 +4500,11 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
      getToken(), which is a network round trip to FCM — cheap once, waste
      on every tab tap, and absurd on every preference toggle. Not awaited:
      the tab must switch at once whatever the network is doing. */
-  if(state.tab==='settings')renderAlertFix();}));
+  /* Same rule as renderAlertFix above, and the same reason: reading the
+     version asks the service worker and can wait on a message that
+     never comes, so it happens on arrival at Settings and nowhere else.
+     Not awaited either. */
+  if(state.tab==='settings'){renderAlertFix();verRender();}}));
 
 /* The scoring-mode switch and its click handler are GONE — see the note
    where the buttons used to be, in the Settings markup.
@@ -6091,24 +6424,31 @@ const obScreens=()=>[
              compares the two files for precisely that reason, and it is
              what caught this preview still promising the old wording
              after the sender had moved on. -->
-        <!-- ROWS 1 AND 2 WERE ARITHMETICALLY IMPOSSIBLE. compose()'s n
-             is the number of picks due AT THAT DEADLINE, not in the week
-             — the week total is weekLeft, which is what the body
-             carries. These two are Thursday-deadline alerts, and a
-             Thursday slot is one game, so "8 picks due Thu, 8:20 PM"
-             and "6 picks due Thu" described a slate that does not
-             exist. The first alert a new member ever sees was teaching
-             them to read the title as a week count, which is exactly
-             the misreading the compose() rewrite above was done to end.
-             Now n=1 against a week total of 16 then 14, which is the
-             real shape of a Thursday opener — and it shows off the
-             singular "1 pick" branch of picks() into the bargain. -->
-        ${nt('Tue','1 pick due Thu, 8:20 PM','16 Week 4 games still need a pick.')}
-        ${nt('Wed','1 pick due Thu, 8:20 PM','Less than a day. 14 Week 4 games still need a pick.')}
-        ${nt('Sun','3 picks due in 2 hours','Unpicked games score zero. 4 Week 4 games still need a pick.')}
-        ${nt('Sun','Last call — 3 picks','Kickoff in 30 minutes. Unpicked games score zero.')}
+        <!-- THESE FOUR MIRROR compose() IN worker/live.js, and case 24
+             compares the two files precisely so neither can drift from
+             the other. It has caught this block twice: once promising
+             "First kickoff Sunday 1:00 PM" when nearly every NFL week
+             opens on a Thursday, and once still promising the old
+             "N picks due" titles after the sender had moved on.
+
+             The unit is a BUNCH of games now, named the way football
+             names it, and every number counts that bunch. The name is
+             left off these four on purpose: at this point in onboarding
+             the member has typed a name but the preview is about the
+             shape of the alert, and printing one person's name in a
+             screen everybody sees reads as a mistake. The paragraph
+             below says the name is there. -->
+        ${nt('Wed','Thursday Night Football','Kicks off in 24 hours, Thu 8:20 PM. No team selected yet.')}
+        ${nt('Thu','Thursday Night Football','Kicks off in 22 min. No team selected yet. Unselected games score 0.')}
+        ${nt('Sat','The early Sunday games','First kickoff in 18 hours, Sun 1:00 PM. 9 games unpicked.')}
+        ${nt('Sun','The late Sunday games','First kickoff in 2 hours. 4 games unpicked. Unselected games score 0.')}
       </div>
-      <p class="ob-p" style="margin-top:14px">That's the entire list. We only ever
+      <p class="ob-p" style="margin-top:14px">One per bunch of games, not one
+        per kickoff: Thursday night, the early Sunday games, the late ones,
+        Sunday night, Monday night. Each one starts with <b>your name</b>, so
+        two accounts on one phone are easy to tell apart, and the count is
+        that bunch's own unpicked games.</p>
+      <p class="ob-p" style="margin-top:9px">That's the entire list. We only ever
         mention games you <b>haven't</b> picked, so get your week in early and you'll
         never hear from us at all.</p>`,
     btn:'Keep me honest', skip:'Not now',

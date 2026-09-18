@@ -1,9 +1,9 @@
 # Tests
 
-1197 checks. Nothing here touches Firebase, Resend, KV or the live site.
+1371 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
-That number is the eighteen suite totals below added up, from a full run
-on 2026-09-16 for v1.34.0. If you change a suite, re-run everything and
+That number is the nineteen suite totals below added up, from a full run
+on 2026-09-17 for v1.38.3. If you change a suite, re-run everything and
 re-add — a count carried forward from memory drifts, and quoting a stale
 one is the same class of mistake as a green run that graded a stale file.
 
@@ -11,11 +11,12 @@ one is the same class of mistake as a green run that graded a stale file.
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
     cp ../../worker/auth.js /tmp/auth.mjs      # NOTE: /tmp — see below
 
-    node picks-audit.mjs         #  30 every design choice, still in the build
+    node picks-audit.mjs         #  38 every design choice, still in the build
     node auth.core.test.mjs      #  27 sign-in Worker, happy path and edges
     node auth.stress.test.mjs    #  49 sign-in Worker, adversarial
     node nudge.test.mjs          #  42 reminder scheduling
-    node reminder-copy.test.mjs  #  20 the words in every reminder
+    node reminder-copy.test.mjs  #  50 the words in every reminder
+    node reminder-send.test.mjs  #  21 which reminders get sent, and to whom
     node live-auth.test.mjs      #  20 the live Worker's auth
 
     node serve.mjs &
@@ -26,18 +27,31 @@ one is the same class of mistake as a green run that graded a stale file.
     node polish.ui.test.mjs      #  41 layout, states, degradation, edges
     node season.ui.test.mjs      #  21 full 18-week season, 25-40 players
     node scale.ui.test.mjs       #  21 50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 499 bugs that shipped, so they cannot return
-    node stress.ui.test.mjs      # 113 a full pool leaned on: see below
-    node sw.push.test.mjs        #  22 service worker push + what it may cache
+    node regress.ui.test.mjs     # 601 bugs that shipped, so they cannot return
+    node stress.ui.test.mjs      # 115 a full pool leaned on: see below
+    node sw.push.test.mjs        #  33 service worker push, caching, and the message handler
     node shots.mjs all           #     screenshots to /tmp/shots
+    node shot-final-card.mjs     #     the shipped final card, to docs/mockups
+    node shot-white-ink.mjs      #     the white-ink slate, two weeks, 390px
+    node shot-zoom-lit.mjs       #     one lit card at 4x, ring, fade and bar
 
     python season_sim.py         # 128 the REAL scorer, 50 players, 18 weeks
     python test_result_copy.py   #  30 what a player reads on Tuesday morning
     python test_status_env.py    #  32 the four variables the week closer reads
     python test_loop_window.py   #  49 the Live-scores window's own shell logic
 
-    node mutate-dryrun.mjs       #     do all 38 mutations still apply?
-    node mutate.mjs              #     38 mutations, 27 batches, ~4 hours
+    node mutate-dryrun.mjs       #     do all 53 mutations still apply?
+    node mutate.mjs              #     53 mutations, 40 batches, ~5 hours
+
+The three `shot-*.mjs` scripts grade nothing. They write the sheets in
+`docs/mockups/` that ship in the release zip, out of the REAL app
+through `app-serve`, which is the only thing that can confirm a
+hand-built mockup was actually built. They exist as scripts because the
+first versions of `shipped-white-w*.png` and the Carolina zoom were
+captured by hand: when the badge's colour bar came back in v1.38.3 every
+one of them was silently a picture of the wrong build, and nothing could
+re-make them. A sheet that ships is a build artefact, so it gets a
+script.
 
 `season_sim.py` needs no Firebase and no credentials: `fakestore.py` is an
 in-memory stand-in for the Firestore client, so `score_week.py` runs
@@ -68,7 +82,31 @@ silently NOT APPLIED — the batch then runs against unmutated code, every
 expected assertion stays green, and the harness reports that the tests
 failed to catch their bug. That is the right complaint for the wrong
 reason, and it costs a full suite run per batch to discover. The dry run
-checks all 38 in a second.
+checks all 53 in a second.
+
+**A "did not catch" report is usually the expectation list, not the
+app.** Three kinds of mistake produced every such report in v1.34.0 and
+v1.35.0, and none of them was a bug in `index.html`:
+
+- *The named assertion cannot reach the mutation.* Batch 32 gives a LIVE
+  card the result bar and named `it says the game is in progress, not
+  final` — which reads the lock band, and the band is untouched by that
+  mutation. An assertion that structurally cannot see the bug will never
+  catch it, however true it is.
+- *The selector is derived from the string under test.* Batch 30 deletes
+  the word `Unstaked`; the case built its list with
+  `/Unstaked/.test(left)`, so the list emptied, every `.every()` passed
+  on nothing, and only the population check went red. Select the subject
+  by something the mutation does not touch — position, count, a class —
+  and assert the count, so drift fails loudly instead of quietly.
+- *There is no fixture for the state at all.* Every fixture staked every
+  pick, so batch 30 had nothing to mutate until `P.unstaked` existed.
+  The correct response is a fixture, not a shorter expectation list.
+
+Read the "also red, not listed as expected" block every time. When the
+assertions that went red are not the ones named, the named ones are
+wrong — fix the list *and* record why in a comment beside the batch, or
+the same wrong list comes back next release.
 
 **The auth tests import `/tmp/auth.mjs`, not `./auth.mjs`.** Copying to the
 local directory leaves a stale `/tmp` copy in place, and the suite then

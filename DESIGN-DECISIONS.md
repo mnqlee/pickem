@@ -23,7 +23,9 @@ option letters, the rejected alternatives named, and a test.
 | I → L → M → P — live row | **P1 + P5** | dot + ESPN's clock left, IN PROGRESS right |
 | S — meta centring | **S2** | network and line centred between the ends |
 | R — losing side | **R2** | panel greys, badge keeps its team colour |
-| J → K → N → Q — final strip | **Q2** | strip FILLS `--hit`/`--stamp`, all letters white |
+| J → K → N → Q — final strip | ~~**Q2**~~ | **superseded by W3** — see 3b |
+| W → X → Y → Z — the final card | **W3 + Z1** | WIN/LOSS in a slanted pill; head centred `Final · CHI 59-37` |
+| V → W — the narrow pool side | **W1** | its figure under its own sliver, chip in that team's colour |
 | the tiebreaker column | **TB-A, numbers only** | no +/- deltas |
 | the week honours | **S3** | gold winner banner, silver runner-up |
 | the header clock | **H3** | grey tick, `Week n · Final` |
@@ -253,9 +255,24 @@ again; the 23px page title becomes 15px to sit beside 13.5px section
 headings; and `.arch-foot`'s `var(--shell-2)` is exactly `.opt`'s own
 background, which made the closing note an invisible box.
 
-## 3b. The card's bottom strip — Q2, the solid fill
+## 3b. The card's bottom strip — Q2, and what replaced it
 
-**This is the one I got wrong, so it is written out in full.** The strip
+### Q2 IS SUPERSEDED. Read this first.
+
+Q2 filled the whole bottom strip with `--hit` or `--stamp` and turned
+every letter white. It was chosen from a rendered sheet, it was built,
+it shipped in v1.34.0, and it worked. **It is gone as of v1.35.0**,
+replaced by the **W3 pill** — the word WIN or LOSS in a slanted outline
+at the rank circle's own size, in a result bar that also carries the
+points and what you took.
+
+Not a revert, and not a correction: a different and better home for the
+same fact. The rest of this section stays exactly as written, because
+the *reasoning* behind Q2 — what was measured, what was rejected, what
+got built by mistake — is why the W series was judged the way it was.
+Section 3f records the replacement.
+
+**The history it must not lose.** The strip
 was mocked as an N series and then a Q series. Lee chose **N4 — solid
 fill** over N3 — inset perimeter — and then, from the follow-up mockups
 of N4 with white letters, chose **Q2**. I built N3. Recorded here with
@@ -333,6 +350,136 @@ not yet.
 | the tiebreak game has not kicked off | `open` | `Open` |
 | kicked off, not final | `live` | `Live` |
 | final | `final` | `Total` |
+
+## 3f. The final card, rebuilt — W3 + Z1 + W1
+
+Four rendered sheets, in order, each answering the question the last one
+raised: `result-badge-W-series.png`, then the X, Y and Z follow-ups, then
+`pool-bar-V-series` and `pool-subline-W-series`. Every one is in
+`docs/mockups/`, drawn on the app's own stylesheet at 390px **and**
+320px, with a measured overflow check rather than my opinion of whether
+it fits.
+
+### W3 — the result is a word in a slanted pill
+
+The pill is **literally `.sb-num`'s geometry**: 26px, a 2px ring, 13px
+at weight 900, rotated −7°. Only the colour changes and the content
+becomes a word. That is deliberate — it is the same stamp as the rank
+circle in the stake bar, so the card uses one shape for "this is your
+number on this game" in both states.
+
+What was rejected, and why, from the same sheet:
+
+| | rejected because |
+|---|---|
+| **W1 / W2** — a single letter `W` / `L` | a letter is a code; the word needs no learning |
+| **W4** — the same pill unslanted | reads as a button, and stops echoing the rank circle |
+| **W5** — the rank in the circle, the word on the left | puts the settled fact in the smaller slot |
+| **W6** — points moved left, pill alone on the right | the right side reads lopsided against the left stack |
+| **X3** — one line carrying the score AND your result | **it clips.** 261px needed against 236px at 390px, 178px at 320px |
+| **X4** — two lines, points beside the score | works, but unbalances the bar for no gain |
+
+### The five pick states, and the one that had no line at all
+
+`pay(r,n)` is `!r ? 1 : …`, so **an unstaked pick that comes in has
+always scored one point** — the same as the lowest rank. The scoring was
+never wrong. The card had no line for it, because `Rank 9` cannot be
+printed when there is no rank, so it read "You took CHI · +1 pt" with
+nothing explaining why 1 and not 8.
+
+| state | left | points | pill |
+|---|---|---|---|
+| staked, won | `You took CHI · Rank 9` | `+8 pts` | WIN |
+| staked, lost | `You took LAC · Rank 3` | `0 pts` | LOSS |
+| **unstaked, won** | `You took CHI · Unstaked` | `+1 pt` | WIN |
+| **unstaked, lost** | `You took LAC · Unstaked` | `0 pts` | LOSS |
+| no pick | `No pick` | `0 pts` | – |
+| ended level | `You took DET · Rank 2` | `no score` | TIE |
+
+`Unstaked` over `No rank` and `Unranked`: the app already calls the act
+staking ("tap to stake points"), and "unranked" reads as a judgement of
+the game rather than of the pick.
+
+**`Rank`, capitalised**, everywhere on the card. And `pay(w,N)` replaces
+`w?pay(w,N):1` — the same number by a shorter road, since `pay()`
+already returns 1 for a falsy rank.
+
+### THE PAPER-SIDE RED — #BE2F26, and it is measured
+
+`--stamp` #C8342A is **4.32:1** on the card's `#EDE8DE` paper: under the
+4.5:1 floor, and this is now a whole line of real information rather
+than one word. **#BE2F26 is 4.75:1** and is indistinguishable from
+`--stamp` at a glance.
+
+This is the exact mirror of `.lockband .miss`, which exists because
+`--stamp` is 3.18:1 on the **dark** strip. Same problem, opposite
+ground, so it gets its own token: `--sink`, scoped to `.resbar`.
+`--hit` needs no adjustment — 5.09:1 on this paper.
+
+### Z1 — the head says what happened
+
+Kickoff time, the network badge and the spread are all answers to
+pre-game questions: when do I watch this, which channel, who is
+favoured. The moment the whistle goes, none of the three has a question
+left, and all three were still sitting across the top of every finished
+card. `Final · CHI 59-37` takes the row instead, **centred**.
+
+- **Z2** (a tick before it) and **Z3** (a dot) were both rejected: the
+  tick belongs to the header clock's own "week finished" state, and a
+  dot on a card means *being played right now* everywhere else in the
+  app. A grey non-pulsing dot would make that signal mean two things.
+- **Z4** — the winner's code in its own team colour — reads well for
+  Chicago and needs the badges' luminance test to be safe for all 32.
+  More machinery than the row is worth.
+- **CENTRED WITH `justify-content`, NOT BY ACCIDENT.** `.meta` gives its
+  first child `margin-right:auto` and `.cd` `margin-left:auto`, so a row
+  holding one item centres itself as a side effect of those cancelling
+  out. It rendered right for the wrong reason. `.fmeta` says it, and
+  regress case 53b measures the head's centre against the card's.
+- **And it made the bar one line.** Once the head carries FINAL and the
+  score, the bar has only your own result to say — which is why X3's
+  clipping problem disappeared and the bar went back to 44px, so a card
+  does not change height when it goes final.
+- **Nothing here touches a live or unplayed card.** While a game is
+  being played the meta row still carries ESPN's clock, the network and
+  the line, which is P1/P5. The lock band is live-only now, and cannot
+  be coloured at all.
+
+### W1 — the narrow pool side's figure sits under its own sliver
+
+A segment under 22% cannot hold its own label. It used to drop it, and
+the sub-line carried the number as plain text **at the left, whichever
+end the sliver was on** — so on an 8%-on-the-right split the figure sat
+as far from the segment it describes as the card allows.
+
+Now the sub-line is a two-ended row: the figure pins to the sliver's
+side with a chip in that team's colour, and the pick count takes the
+other end. The DOM order decides which end each takes, so there is no
+left/right CSS to keep in step.
+
+- **Only one side can ever be narrow** — the two percentages sum to 100,
+  so under 22% on one means over 78% on the other. A unanimous pool has
+  one segment and no narrow side, and the line is then just the count,
+  where it has always been.
+- **V1/V2/V3** put the figure *inside* the big segment, against the
+  split. Rejected: Lee wanted it below the bar, on the card's own paper.
+- **THE CHIP CARRIES THE COLOUR AND THE WORDS DO NOT**, and that is
+  measured. As **text** on this paper, seven primaries fail 4.5:1 —
+  Cincinnati #FB4F14 at **2.76:1**, Miami 3.24, Carolina 3.30, the
+  Chargers 3.51, Kansas City 3.86, Detroit 4.03, Tampa Bay 4.44. As a
+  **chip**, which is a graphic wanting 3:1, only Cincinnati fails — and
+  the hairline ring covers that, the same device `.mark` already carries
+  for the same reason. W2, the coloured-text version, was rendered
+  specifically so it could be ruled out on sight.
+
+### A contrast problem this turned up that is not new
+
+`.cseg` paints its label `#fff` on the team's own primary, and **four
+primaries fail 4.5:1 for white text**: Cincinnati 3.37:1, Miami 3.95,
+Carolina 4.03, the Chargers 4.28. That is true in the shipped app, on
+their own labels, and predates all of this. `onColor()` — the luminance
+test the badges already use — fixes it in one line. **Not done yet**;
+see section 5.
 
 ## 4. Two bugs found while mocking
 
@@ -429,6 +576,227 @@ no week, not complete, one game live — so no information produces no new
 behaviour: the window keeps pulling and the Tuesday cron still scores
 the week, which is exactly where this started.
 
+## 3h. The version card, and why the number is not in index.html
+
+**Built, in v1.36.0.** Lee asked for a version somewhere in the app and
+suggested Settings. Settings is right, at the very bottom, under First
+run. Four placements were rendered first:
+`docs/mockups/version-line-390.png`.
+
+**The question it answers is not "what version is this."** It is *"is
+this phone on the new one"*, which came up on every deploy and was
+answered by telling twenty eight people to swipe the app away and reopen
+it. A label answers half of that. So it is a card: the number, and a
+button that asks the server.
+
+**One version constant in the whole project, and it is line 8 of
+`sw.js`.** That file is the one whose change makes a phone fetch
+anything, so it is the only sane place for the number to live. The page
+asks the running worker over a `MessageChannel` and prints the reply; if
+there is no answer, the cache name (`poolsheet-v1.36.0`) carries the
+same figure; if there is neither, the card says `Not installed yet`
+rather than guessing. A second constant in `index.html` would have been
+one line and two problems: something else to remember to bump, and a
+number describing a file rather than the worker that served it. Audit
+`version card` fails the build if one ever appears.
+
+**Four states**, all in regress case 60: resting, checking, nothing new,
+and one waiting where the same button turns green and says **Update
+now**. A failed check says it failed rather than claiming you are up to
+date, which mutation batch 39 exists to keep true.
+
+**Where an update announces itself: the top of the Picks tab**, in the
+`#updbar` banner that already existed. Lee asked for that specifically.
+`swCheck()` calls `swAnnounce()`, so an update found from a card in
+Settings is also waiting on the tab people actually open. Both the
+banner's button and the card's green one end in the same
+`postMessage('SKIP_WAITING')`, so the route can only break in one place.
+
+**All three platform calls live in `firebase-init.js`** (`swVersion`,
+`swCheck`, `swActivate`) with the rest of the worker plumbing. The page
+makes no `navigator.serviceWorker` call of its own, which is what lets
+the test stub walk the card through every state without a real worker,
+and audit `version routes` checks it stays that way.
+
+**Two things the suite caught that looking at it would not have.** The
+button measured 35px and `polish.ui.test.mjs` asserts a 36px minimum tap
+target. And mutation batch 37 hid the banner while two of the three
+banner assertions stayed green: a hidden element's bounding rect is all
+zeros, so "above the slate" was trivially true, and `innerText` is not a
+fix, because the spec has it fall back to `textContent` for anything not
+being rendered. `offsetHeight` is the only one of the three that knows.
+
+## 4e. Reminders are about a bunch of games, not a kickoff time
+
+**Built, in v1.37.0.** Mockups:
+`docs/mockups/reminder-copy-390.png` (the four shapes I proposed and Lee
+rejected), `reminder-slate-*` (his framing), and
+`reminder-g1t-1-spec-390.png` plus `reminder-g1t-2-edges-390.png` (the
+spec that shipped).
+
+**What he received, and why it was wrong.** `1 pick due Fri 9:15 AM`
+over `Less than a day. 16 Week 2 games still need a pick.` Both numbers
+were true: the title counted the picks due at ONE deadline (Thursday
+night is one game) and the body counted what the week still owed. The
+title is the line a phone shows first, so the 1 read as the whole job
+and the 16 arrived as a contradiction.
+
+**This was the second version of that mistake.** The first had a
+week-level title over a slot-level body, `Week 1 is open` above `1 game
+to pick`, sent three times to somebody with the whole Sunday slate
+unpicked. Rewriting the sentence fixed one and created the other,
+because the problem was never the sentence.
+
+**The unit was wrong.** Lee said what it should be: *"a reminder for
+what's about to come up. 1 game still needs a pick before Thursday Night
+Football. Then on Saturday for Sunday, 14 games still need a pick for
+Sunday football."* The alert is about a NAMED BUNCH, and every number in
+it counts that bunch, so there is no second figure to mistake for the
+first.
+
+| | |
+|---|---|
+| title | `Lee, Thursday Night Football` |
+| one game | `Kicks off in 22 min. No team selected yet. Unselected games score 0.` |
+| several | `First kickoff in 3 hours. 6 games unpicked. Unselected games score 0.` |
+
+**Five bunches**, from his own list: Thursday Night Football, the early
+Sunday games, the late Sunday games, Sunday Night Football, Monday Night
+Football, plus `sat` for December Saturdays and `other` as a
+backstop. **Sunday sends one alert per tier instead of three**, because
+it used to key on kickoff time and Sunday has three of them. Seven
+alerts across a week if you pick nothing until Saturday, where it used
+to be ten; still none at all if you pick on Wednesday.
+
+**The bunch is named in ET, the clock is localised.** "Thursday Night
+Football" is a fact about the schedule; in Iwakuni it kicks off Friday
+morning and the Picks tab already labels that card FRIDAY. Naming the
+bunch from the reader's own zone would put one member's alert at odds
+with the schedule the other twenty seven talk about. `etSlate()` takes a
+timestamp, so the reader's zone cannot reach it.
+
+**Not "morning" and "afternoon", which the mockup used and I changed.**
+The early Sunday block is 1pm in New York and 2am in Japan. Neither is
+morning, so the names describe the order instead of the hour.
+
+**The name is on every alert.** Lee asked for it, and it solves the
+thing that made two alerts look like a bug: two accounts on one phone
+produced two identical notifications. Measured on the mockup sheet,
+every name in the pool fits one title line against the longest bunch
+name in the league.
+
+**Three smaller calls, all reversible.** A bunch of one game gets no
+count, because "1 of 1 unpicked" is a worse sentence than "No team
+selected yet". `Unselected games score 0.` starts at the hours tier:
+two days out it warns about a hypothetical, and it was what pushed the
+body onto a third line, which iOS hides behind a pull-down. Two days
+out gives the clock rather than "in 44 hours".
+
+**The sender had no test at all before this.**
+`reminder-copy.test.mjs` graded the words; nothing graded `remind()`,
+which is where "three Sunday alerts became one" actually lives.
+`reminder-send.test.mjs` is new and does: one alert per bunch with that
+bunch's own count, a finished bunch never mentioned again, a cleared
+pick still counting as unpicked, one alert per member, a tier switched
+off respected, and the dedupe key naming the bunch rather than a
+timestamp.
+
+**Deploying it takes both commands.** `worker/live.js` is a Worker, so
+`wrangler deploy -c wrangler-live.toml`; the Help tab's preview is in
+`index.html`, so `git push`. Regress case 24 compares the two files as a
+pair precisely so they cannot drift, and it has caught that drift twice.
+
+## 3i. White on every club, and the ring that pays for it
+
+**Built, in v1.38.3.** Sheets:
+`docs/mockups/white-ink-1-teams-390.png` and
+`white-ink-2-ring-390.png`. Lee chose variant **E**. It took three
+corrections after that to land, and both of the wrong turns are recorded
+below rather than tidied away: the fade, and the strip.
+
+**The instruction:** no black writing anywhere on a game card, white
+throughout, with a thin white ring round the badge on the team you took
+or the team that won.
+
+**What was black.** `onColor()` measured each club's primary and
+returned near-black for the four too light for white text, so the lit
+side of a CIN, MIA, CAR or LAC card printed its name in `#15171B` while
+the other twenty eight printed white. Nothing else on a card was ever
+dark; the badge letters and the pool bar label were white on all 32.
+
+**What replaced it, three lines:**
+
+```
+.side.won{flex-grow:1.12;color:#fff}
+.side.won .mark{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.92)}
+.side.won .city{opacity:.92}
+```
+
+**And the badge's own secondary strip, which the build took away and Lee
+put back.** `.mark::after` paints a 6px bar of the club's SECONDARY
+colour across the bottom of the badge: gold on Green Bay, `#101820` on
+Carolina, `#000000` on Atlanta, Cincinnati and the Jets. Once the
+writing was all white, that bar was the only dark thing left inside the
+colour block, so I read "no black writing anywhere" as covering it and
+added `.side.won .mark::after{display:none}`.
+
+**That was wrong, and the rule is now the correction.** In Lee's words:
+*"Put the color on the bottom, why did you remove it from inside the
+small square logo on the card."* The bar is not writing. It is the
+club's second colour, it is what tells one badge from another at 42px,
+and it is on both badges, lit and unlit. There is no `display:none`
+rule and there must not be one.
+
+Mutation batch 44 is therefore **inverted**: it re-applies my mistake,
+hiding the strip on the selected side, and regress case 61 has to catch
+it. Only a test that reads the pseudo-element can, which is why case 61
+reads `getComputedStyle(mark, '::after')` for `display` and for
+`backgroundColor` and asserts the bar is present on both badges and
+painted from the club's own `--sec`. Audit `white ink` keeps
+`.side.won .mark::after{display:none}` in its `lacks()` list so the
+rule cannot creep back in.
+
+`onColor()` is **deleted**, not merely unused. While it existed, one
+line reinstating the call would have brought the black back with no test
+failing anywhere near the place it was reintroduced; audit `white ink`
+now fails the build if the function reappears.
+
+**The ring earns its place.** It separates the badge from a light panel,
+which is the one thing white text cannot do for itself. On the lit side
+only: putting it on both sides would make it decoration rather than the
+mark of the side you took, which is mutation batch 42.
+
+**The city line is faded slightly, and the number is measured.** Lee
+wants it set back from the team name, the way the reference shot reads.
+The old value was `.62`, which is far too much: white at 62% over
+Cincinnati orange is **2.08:1**, the worst text on any card. Full white
+is 3.37 there and makes the line as loud as the name. **`.92` is the
+most fade that keeps the worst club in the league at 3:1 or better** —
+Cincinnati 3.05, Miami 3.58, Carolina 3.65, the Chargers 3.86, every
+other club well clear. Case 61 asserts the window `0.9` to `0.95`
+rather than the exact value, because either direction out of it is a
+different decision: batch 43 puts `.62` back, batch 45 removes the fade
+entirely, and the window assertion is in **both** batches' expectation
+lists because it is the one thing that fails at either end.
+
+**What was knowingly given up.** On those four clubs the team name sits
+under the 4.5:1 floor:
+
+| club | primary | white at 16px |
+|---|---|---|
+| Cincinnati | `#FB4F14` | 3.37:1 |
+| Miami | `#008E97` | 3.95:1 |
+| Carolina | `#0085CA` | 4.03:1 |
+| Chargers | `#0080C6` | 4.28:1 |
+
+The score line is 21px at weight 800, which is WCAG large text at a 3:1
+floor, so it passes on every club. Variant **C** on the sheet cleared
+4.5:1 everywhere by darkening the lit panel 3 to 15 per cent, and was
+rejected: it prints a colour that is not the club's. Regress case 61
+asserts those four ranges explicitly rather than letting them drift from
+a decision into an oversight. Variant **D**, a text shadow, changes
+nothing measurable and is on the sheet to be ruled out.
+
 ## 5. Open, not yet decided
 
 - `apply_tiebreak` keys unders as `(0, actual − guess)`, which is
@@ -450,10 +818,10 @@ the week, which is exactly where this started.
 
 ---
 
-## Built — v1.34.0
+## Built — v1.35.0
 
 Everything below is in the build and checked by
-`scripts/test/picks-audit.mjs` (30 of 30) plus the named cases in
+`scripts/test/picks-audit.mjs` (38 of 38) plus the named cases in
 `scripts/test/regress.ui.test.mjs`.
 
 | item | where it is checked |
@@ -462,7 +830,16 @@ Everything below is in the build and checked by
 | **P1 + P5** live row, **P4** the empty case | audit `P1` / `P4` / `P4 dot` / `P5`, case 58a |
 | **S2** meta centring | audit `S2` |
 | **R2** losing side keeps its badge colour | audit `R2`, case 53 |
-| **Q2** the strip FILLS, all letters white | audit `Q2`, case 53 |
+| **W3** the result is a word in a slanted pill | audit `W3 pill`, case 53c |
+| the pill is the rank circle's own geometry | case 53c, measured against `.sb-num` |
+| **Z1** the head is `Final · CHI 59-37`, centred | audit `Z1 head`, case 53b |
+| **W1** the narrow side's figure under its own sliver | audit `W1 sub-line`, cases 52 and 53b |
+| the unstaked pick says so, and scores its one point | audit `Unstaked`, case 53c |
+| the paper-side red #BE2F26, not `--stamp` | audit `paper red`, cases 53b and 53c |
+| the version card, its number read from the worker | audit `version card` / `version routes`, case 60 |
+| white on every club, the ring, the full-white city line | audit `white ink`, case 61 |
+| Q2 retired — the lock band is live-only | audit `Q2 retired`, case 53c |
+| every colour on a final card measured on that paper | case 53b |
 | true card colours — no wholesale desaturation | audit `true colour` |
 | colour follows the winner once final | audit `winner` |
 | pool sub-line on every card | audit `pool sub-line` |
@@ -478,7 +855,7 @@ Everything below is in the build and checked by
 | ESPN's "Final" never renders as a live clock | audit `ESPN final`, case 58a |
 | the Tie column's third state | audit `tie header`, case 58c |
 | the leader's sticky cells are opaque | audit `leader cells`, case 55 |
-| the FINAL label is readable on the card | audit `FINAL label`, case 53b |
+| the FINAL label is readable in its new home | audit `FINAL label`, case 53b |
 | the live no-pick line at 4.91:1 | audit `live no-pick` |
 | the archive as a Settings section | case 57 |
 | the week closer and the early exit | `test_status_env.py`, `test_loop_window.py` |

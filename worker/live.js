@@ -458,6 +458,67 @@ const TIERS = [
 ];
 
 /* ============================================================
+   SLATES — the unit a reminder is about
+
+   A reminder used to be about a KICKOFF TIME. Sunday has three of them,
+   so a Sunday produced three alerts that each named a different clock
+   reading, and the number in each was the games locking at that one
+   moment. Lee asked for the opposite: one alert per bunch of games, the
+   bunch named the way football names it, counting that bunch's own
+   unpicked games.
+
+   THE NAME IS DECIDED IN NEW YORK, THE CLOCK IS SHOWN WHERE YOU ARE.
+   "Thursday Night Football" is a fact about the NFL's schedule, not
+   about the reader's timezone: in Iwakuni it kicks off on Friday
+   morning, and the Picks tab already labels that card FRIDAY. If the
+   slate were named from the reader's own zone, the same game would be
+   Thursday night for most of the pool and Friday morning for one
+   member, and the alert would disagree with the schedule everybody
+   talks about. So: identity from ET, clock from `when()`.
+
+   NOT "MORNING" AND "AFTERNOON". The mockup called the two Sunday
+   bunches morning and afternoon, which is wrong for almost everybody —
+   the early block is 1pm in New York and 2am in Japan, and neither is
+   morning. "Early" and "late" are true in every timezone because they
+   describe the order, not the hour. */
+const SLATE_NAMES = {
+  tnf:  'Thursday Night Football',
+  sat:  'Saturday football',
+  sun1: 'the early Sunday games',
+  sun2: 'the late Sunday games',
+  snf:  'Sunday Night Football',
+  mnf:  'Monday Night Football',
+  other:'the next games'
+};
+/* Weekday and hour in ET, with the small hours folded back into the
+   night before: a 20:15 ET Thursday kickoff can run past midnight, and
+   anything after it in the same window belongs to the same bunch. */
+function etSlate(ms) {
+  let dow, hour;
+  try {
+    const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+      weekday: 'short', hour: 'numeric', hour12: false });
+    for (const p of f.formatToParts(new Date(ms))) {
+      if (p.type === 'weekday') dow = p.value;
+      if (p.type === 'hour') hour = +p.value;
+    }
+  } catch { return 'other'; }
+  if (hour == null || !dow) return 'other';
+  const early = hour < 5;          // still the previous night's slate
+  if (dow === 'Thu' || (dow === 'Fri' && early)) return 'tnf';
+  if (dow === 'Sat' || (dow === 'Sun' && early)) return 'sat';
+  if (dow === 'Mon' && !early) return 'mnf';
+  if (dow === 'Tue' && early) return 'mnf';
+  if (dow === 'Sun') {
+    if (hour >= 19) return 'snf';
+    if (hour >= 15) return 'sun2';
+    return 'sun1';
+  }
+  if (dow === 'Mon' && early) return 'snf';   // SNF running past midnight
+  return 'other';
+}
+
+/* ============================================================
    POKE GITHUB TO PULL SCORES
 
    WHY A WORKER TRIGGERS A GITHUB JOB, which looks absurd written down.
@@ -689,11 +750,32 @@ async function remind(env, dry = false) {
       });
       if (!inTier.length) continue;
 
-      const slots = {};
-      for (const g of inTier) (slots[g.kickoff.getTime()] ||= []).push(g);
+      /* GROUPED BY SLATE, NOT BY KICKOFF TIME. Three Sunday kickoff
+         times used to mean three alerts; they are one bunch now, and
+         the bunch's deadline is its FIRST kickoff, because that is the
+         moment picking stops mattering for part of it. */
+      const bunches = {};
+      for (const g of inTier) (bunches[etSlate(g.kickoff.getTime())] ||= []).push(g);
 
-      for (const [slot, games] of Object.entries(slots)) {
-        const wk = games[0].wk, mins = Math.round((+slot - now) / 60000);
+      for (const [slate, games] of Object.entries(bunches)) {
+        const wk = games[0].wk;
+        const firstKick = Math.min(...games.map(g => g.kickoff.getTime()));
+        const mins = Math.round((firstKick - now) / 60000);
+        /* EVERY GAME IN THIS BUNCH, not only the ones inside the tier
+           window. The window is what decides WHEN to send; the bunch is
+           what the message is about, and a count built from the window
+           would drop a game that kicks off twenty minutes after the
+           rest of its own slate. */
+        const fromWeek = (stillOpen[wk] || [])
+          .filter(g => etSlate(g.kickoff.getTime()) === slate);
+        /* stillOpen is a separate query and can come back short: one
+           failed read, or a game whose kickoff moved. Falling back to
+           the games already in hand means a thin week sends a slightly
+           smaller count, rather than sending nothing at all — and
+           `missing` is built from the same list, so the count and the
+           decision to send can never disagree. */
+        const inSlate = fromWeek.length ? fromWeek : games;
+        const slateTotal = inSlate.length;
 
         for (const uid of uids) {
           const info = roster[uid] || {};
@@ -701,22 +783,26 @@ async function remind(env, dry = false) {
           if (!tokens.length) { unreachable.add(info.name || uid); continue; }
           if ((info.prefs || {})[tier] === false) continue;
 
-          const missing = games.filter(g => !(picks[uid] || new Set()).has(g._id));
+          /* UNPICKED IN THE WHOLE BUNCH, which is the number the message
+             carries, and also the test for whether to send at all: a
+             bunch you have finished is never mentioned again. */
+          const mine0 = picks[uid] || new Set();
+          const missing = inSlate.filter(g => !mine0.has(g._id));
           if (!missing.length) continue;
 
           const tz = info.tz || 'America/New_York';
           if (!urgent && quiet(tz)) continue;
 
-          const key = `r:${pid}:${uid}:${wk}:${slot}:${tier}`;
+          /* KEYED BY SLATE NOW. It was keyed by kickoff time, which is
+             what made three Sunday alerts three separate dedupe
+             entries. One bunch, one entry, one alert per tier. */
+          const key = `r:${pid}:${uid}:${wk}:${slate}:${tier}`;
           if (await env.SESSIONS.get(key)) continue;
 
           const n = missing.length;
-          /* What the WEEK still owes, not just this slot. Same picked-set,
-             wider game list — see stillOpen above. */
-          const mine = picks[uid] || new Set();
-          const weekLeft = (stillOpen[wk] || []).filter(g => !mine.has(g._id)).length;
-          const { title, body } = compose(tier, wk, n, weekLeft, when(+slot, tz), mins);
-          if (dry) { sent.push({ uid, tier, n, title }); continue; }
+          const { title, body } = compose(tier, slate, info.name,
+            n, slateTotal, when(firstKick, tz), mins);
+          if (dry) { sent.push({ uid, tier, n, slate, title }); continue; }
 
           /* Only record a reminder as sent if it ACTUALLY reached a
              device. The marker used to be written unconditionally, right
@@ -741,7 +827,7 @@ async function remind(env, dry = false) {
           }
           await pruneTokens(env, pid, uid, info, dead);
 
-          sent.push({ uid, tier, n, title, delivered, dead: dead.length, failed });
+          sent.push({ uid, tier, n, slate, title, delivered, dead: dead.length, failed });
           if (delivered === 0 && failed > 0) {
             // Nothing landed and the reason was transient. Leave the
             // marker unwritten so the next run tries again.
@@ -773,60 +859,59 @@ function when(ms, tz) {
       hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
   } catch { return 'kickoff'; }
 }
-/* ONE REMINDER ANSWERS TWO DIFFERENT QUESTIONS, and the old copy
-   conflated them into a sentence that was false.
+/* WHAT A REMINDER SAYS, in Lee's own words and nothing more.
 
-     n         picks this DEADLINE needs — the games in one kickoff slot
-     weekLeft  picks the WEEK still owes, across every game not yet locked
+     title   Lee, Thursday Night Football
+     body    Kicks off in 22 min. No team selected yet.
+             Unselected games score 0.
 
-   Reminders fire per kickoff slot, because that is what a deadline is.
-   But the old title was week-level — "Week 1 is open" — over a
-   slot-level body, "1 game to pick". So the owner, with the whole
-   Sunday slate and Monday night unpicked, was told he had one game to
-   pick, three times, days after the week had actually opened. Every
-   number in it was true and the message was a lie.
+   HOW IT GOT HERE, because two earlier versions of this function were
+   both true and both misread. The first had a week-level title over a
+   slot-level body: "Week 1 is open" above "1 game to pick", sent to
+   somebody with the whole Sunday slate unpicked. The second inverted
+   it: "1 pick due Fri 9:15 AM" above "16 Week 2 games still need a
+   pick", where the title counts one deadline and the body counts the
+   week, so the 1 reads as the whole job and the 16 arrives as a
+   contradiction. Lee got that one and said what it should say instead.
 
-   Two fixes, and they are the same fix. No title claims a week-level
-   event any more: a reminder names ITS OWN deadline, so three of them
-   for three Sunday slots read as three deadlines rather than the week
-   opening three times. And when the week owes more than this deadline
-   needs, the body says so, so the small number is never mistaken for
-   the whole job.
+   The fix is not a better sentence, it is a different unit. The alert
+   is about a NAMED BUNCH of games and every number in it counts that
+   bunch, so there is nothing left to mistake one figure for.
 
-   `final` deliberately carries no week-level tail. At ten to seventy-five
-   minutes out, what somebody still owes on Tuesday is noise. */
-function compose(tier, wk, n, weekLeft, w, mins) {
-  const picks = k => `${k} ${k === 1 ? 'pick' : 'picks'}`;
-  /* The week sentence, and it carries the week number so no other line
-     has to. The first draft of this opened every body with "Week 1." and
-     then said "Week 1" again in the tail, which on a phone reads as a
-     stutter. Say a thing once. */
-  const tail = weekLeft > n
-    ? `${weekLeft} Week ${wk} games still need a pick.`
-    : `Nothing else in Week ${wk} needs a pick.`;
+   THE NAME IS ON EVERY ALERT, which Lee asked for and which also solves
+   something real: two accounts on one phone used to produce two
+   identical notifications with no way to tell them apart.
 
-  if (tier === 'open') return {
-    title: `${picks(n)} due ${w}`,
-    body: tail };
+   ONE GAME GETS NO COUNT. "1 of 1 unpicked" is a worse sentence than
+   "No team selected yet", so the single-game bunches say the latter.
 
-  if (tier === 'day') return {
-    title: `${picks(n)} due ${w}`,
-    body: `Less than a day. ${tail}` };
+   THE WARNING STARTS AT A FEW HOURS OUT. Two days before kickoff,
+   "unselected games score 0" is a warning about a hypothetical, and it
+   was also what pushed the body onto a third line — which iOS hides
+   behind a pull-down in a stacked notification.
 
-  if (tier === 'hours') {
-    const h = Math.max(1, Math.floor(mins / 60));
-    /* No kickoff time here on purpose: the title already says how long
-       there is, and at this range the consequence earns the space more
-       than a clock reading does. */
-    return {
-      title: `${picks(n)} due in ${h} hour${h > 1 ? 's' : ''}`,
-      body: `Unpicked games score zero. ${tail}` };
-  }
-
-  return {
-    title: `Last call — ${picks(n)}`,
-    body: `Kickoff in ${mins} minutes. Unpicked games score zero.` };
+   NO DASHES. A full stop where one joined two clauses, a comma where it
+   joined a countdown to a clock reading. */
+function compose(tier, slate, who, unpicked, total, w, mins) {
+  const name = SLATE_NAMES[slate] || SLATE_NAMES.other;
+  /* The title is a label, so the name only earns its place when there
+     is one: a roster row with no display name would otherwise produce
+     ", Thursday Night Football". */
+  const title = who ? `${who}, ${name}` : name;
+  const hrs = Math.max(1, Math.round(mins / 60));
+  const when = tier === 'final' ? `in ${mins} min`
+    : tier === 'hours' ? `in ${hrs} hour${hrs === 1 ? '' : 's'}`
+    : tier === 'day'   ? `in ${hrs} hours, ${w}`
+    : w;
+  const lead = total === 1 ? `Kicks off ${when}` : `First kickoff ${when}`;
+  const what = total === 1
+    ? 'No team selected yet.'
+    : `${unpicked} game${unpicked === 1 ? '' : 's'} unpicked.`;
+  const warn = (tier === 'hours' || tier === 'final')
+    ? ' Unselected games score 0.' : '';
+  return { title, body: `${lead}. ${what}${warn}` };
 }
+
 
 /* Send one notification. Returns 'ok' | 'dead' | 'fail' — the CALLER has
    to know, and it used to be told nothing at all.
