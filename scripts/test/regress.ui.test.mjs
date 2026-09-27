@@ -5570,8 +5570,326 @@ console.log('\n61. White writing on every club, and the ring that makes it work'
   ok('and they are between 3.3 and 4.3, which is where the sheet said',
      soft.every(x => x.team.ratio >= 3.3 && x.team.ratio <= 4.3),
      JSON.stringify(soft.slice(0, 4).map(x => x.code + ' ' + x.team.ratio)));
+
+  /* ---- 5. THE DARK INK THAT STAYS, AND IT IS A DECISION ----
+
+     Lee asked twice for "no black writing anywhere on the cards or
+     outside of it, only white", and the sheets
+     docs/mockups/paper-ink-1-what-is-dark-390.png and
+     paper-ink-2-options-390.png put four answers in front of him. He
+     picked the one that changes nothing:
+
+       "The black is fine on the card, before you select it, once a
+        side is selected it goes white writing."
+
+     So the rule is exactly that: WHITE IS WHAT SELECTION LOOKS LIKE.
+     Dark ink on the cream paper is not a defect to be chased, it is
+     the other half of the signal. A well-meant later pass that
+     "finishes the job" by whitening the paper side would delete the
+     contrast that tells a picked side from an unpicked one, and would
+     be invisible anyway: white on this paper measures about 1.2:1.
+
+     These four assertions exist so that pass cannot land quietly. */
+  const paper = await page.evaluate(() => {
+    const px = s => (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+    const lum = c => .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
+    const surfaceOf = el => {
+      for (let n = el; n; n = n.parentElement) {
+        const bg = getComputedStyle(n).backgroundColor;
+        const p = px(bg), a = (bg.match(/[\d.]+/g) || [])[3];
+        if (p.length === 3 && (a === undefined || +a > .9)) return p;
+      }
+      return [255, 255, 255];
+    };
+    /* BOTH ALPHAS. Nearly every quiet ink in this app is an rgba
+       COLOUR, not an element opacity: --ink-mute is
+       rgba(21,23,27,.66). Reading cs.opacity alone reports the head as
+       near-black and grades a pixel that is not on screen. */
+    const read = (sel, label) => {
+      const el = document.querySelector(sel); if (!el) return null;
+      const cs = getComputedStyle(el);
+      const parts = (cs.color.match(/[\d.]+/g) || []).map(Number);
+      const ca = parts.length > 3 ? parts[3] : 1;
+      const a = ca * parseFloat(cs.opacity);
+      const bg = surfaceOf(el.parentElement || el);
+      const fg = parts.slice(0, 3).map((v, i) => v * a + bg[i] * (1 - a));
+      const r = (Math.max(lum(fg), lum(bg)) + .05) / (Math.min(lum(fg), lum(bg)) + .05);
+      return { label, darker: lum(fg) < lum(bg), ratio: +r.toFixed(2) };
+    };
+    const one = [
+      read('.card .meta .fin', 'head'),
+      read('.card .cons-head span', 'pool label'),
+      read('.card .pcount', 'pool count'),
+      read('.card .gutter span', 'gutter @'),
+    ].filter(Boolean);
+    /* AND WHAT WHITE WOULD ACTUALLY MEASURE on that paper, read off the
+       card rather than quoted from a note. */
+    const surf = surfaceOf(document.querySelector('.card .cons'));
+    const wr = (Math.max(lum([255, 255, 255]), lum(surf)) + .05)
+             / (Math.min(lum([255, 255, 255]), lum(surf)) + .05);
+    return { one, whiteOnPaper: +wr.toFixed(2) };
+  });
+
+  const dimInk = all.filter(x => x.lost);
+  ok('an unselected side writes in DARK ink, which is the decision',
+     dimInk.length > 0 && dimInk.every(x => x.team.raw !== WHITE && x.city.raw !== WHITE),
+     JSON.stringify(dimInk.slice(0, 2).map(x => x.code + ' ' + x.team.raw)));
+  ok('so white ink is what selecting a side looks like, and only that',
+     lit.length > 0 && dimInk.length > 0
+       && lit.every(x => x.team.raw === WHITE) && dimInk.every(x => x.team.raw !== WHITE),
+     `${lit.length} lit white, ${dimInk.length} unselected dark`);
+  ok('and the card’s paper bands keep their dark ink too',
+     paper.one.length === 4 && paper.one.every(x => x.darker),
+     JSON.stringify(paper.one.map(x => x.label + ' ' + (x.darker ? 'dark' : 'LIGHT'))));
+  /* THE REASON, MEASURED. This is the number that makes the decision
+     more than a preference: there is no usable white ink on this paper
+     at all. */
+  ok('because white on that paper would be invisible, not faint',
+     paper.whiteOnPaper > 1 && paper.whiteOnPaper < 1.3,
+     `white on the card paper is ${paper.whiteOnPaper}:1`);
+
   ok('no page errors', errors.length === 0, errors[0]);
   await ctx.close();
+}
+
+console.log('\n62. Who has the ball, on a live card');
+{
+  /* WHAT THIS IS. ESPN sends situation.possession on a game in
+     progress, and index.html already fetches that scoreboard once a
+     minute for the score and the clock, so the football is a third
+     value out of a request that was already being made. No Firestore
+     write, no Worker change.
+
+     THE FOUR THINGS THAT WERE DECIDED, each from a rendered sheet, and
+     each of them a separate way to get this wrong:
+       the ball is on the GUTTER side of both panels, mirrored
+       the gaps differ per side, 3 characters unselected and 4 selected
+       the ink is currentColor, so white on the colour and dark on cream
+       it appears ONLY while a game is being played */
+  const px = s => (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const readBalls = page => page.evaluate(() => {
+    const px = s => (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+    const lum = c => .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
+    const cr = (a, b) => { const x = lum(a), y = lum(b);
+      return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+    const surf = el => {
+      for (let n = el; n; n = n.parentElement) {
+        const bg = getComputedStyle(n).backgroundColor;
+        const p = px(bg), a = (bg.match(/[\d.]+/g) || [])[3];
+        if (p.length === 3 && (a === undefined || +a > .9)) return p;
+      }
+      return [255, 255, 255];
+    };
+    const out = [];
+    for (const card of document.querySelectorAll('#slate .card')) {
+      const ball = card.querySelector('.ball');
+      if (!ball) continue;
+      const side = ball.closest('.side');
+      const num = side.querySelector('.scrn');
+      const gut = card.querySelector('.gutter');
+      const cs = getComputedStyle(ball);
+      const bg = surf(ball.parentElement);
+      const parts = (cs.color.match(/[\d.]+/g) || []).map(Number);
+      const ca = parts.length > 3 ? parts[3] : 1;
+      const fg = parts.slice(0, 3).map((v, i) => v * ca + bg[i] * (1 - ca));
+      const br = ball.getBoundingClientRect(), nr = num.getBoundingClientRect(),
+            gr = gut.getBoundingClientRect(), sr = side.getBoundingClientRect();
+      const away = side.classList.contains('l');
+      out.push({
+        club: (side.querySelector('.mark span') || {}).textContent.trim(),
+        away, lit: side.classList.contains('won'),
+        toNumber: +(away ? br.left - nr.right : nr.left - br.right).toFixed(1),
+        /* MEASURED AGAINST THE NUMBER, NOT THE GUTTER, and the first
+           version was measured against the gutter and could not see the
+           bug. "Is the ball left of the gutter" is TRUE for the entire
+           away panel, badge side included, so dropping the mirror left
+           this assertion green: the away ball moved to the far end of
+           the card and the test did not notice. The mirror is really a
+           claim about which side of the SCORE the ball sits on, so that
+           is what this reads. Found by mutation batch 54. */
+        onGutterSide: away ? br.left >= nr.right - 1 : br.right <= nr.left + 1,
+        inside: br.left >= sr.left - .5 && br.right <= sr.right + .5,
+        sameLine: Math.abs((br.top + br.bottom) / 2 - (nr.top + nr.bottom) / 2) < 3,
+        ratio: +cr(fg, bg).toFixed(2),
+        strokes: ball.querySelectorAll('[stroke]').length,
+      });
+    }
+    return out;
+  });
+
+  /* ---- a live slate, both possessions, so BOTH kinds of side appear.
+          Two runs rather than one, and then an assertion that both were
+          actually seen. The first version ran only the alternating
+          fixture and guarded the selected-side gap with `if (li.length)`
+          — and in that fixture no LIT side ever held the ball, so the
+          one assertion covering the 4-character gap never ran and the
+          case passed without it. An assertion that can quietly skip is
+          the same failure as one that grades nothing. ---- */
+  {
+    const runs = [];
+    for (const who of ['home', 'away']) {
+      const { ctx, page, errors } = await open({
+        startISO: new Date(Date.now() - 40 * 60000).toISOString(),
+        weeks: 1, gamesPerWeek: 8, playerCount: 10,
+        espnDetail: '2nd 5:42', espnBall: who });
+      await page.waitForTimeout(2600);
+      runs.push({ balls: await readBalls(page), errors });
+      await ctx.close();
+    }
+    const balls = runs.flatMap(r => r.balls);
+    const errors = runs.flatMap(r => r.errors);
+    ok('a live game shows the football', balls.length > 0, String(balls.length));
+    ok('and the fixture covered a selected side AND an unselected one',
+       balls.some(b => b.lit) && balls.some(b => !b.lit),
+       JSON.stringify(balls.map(b => b.club + (b.lit ? ' lit' : ' unlit'))));
+    /* MIRRORED, which is the thing a first pass gets wrong: the home
+       panel is right-aligned and the away panel left-aligned, so one
+       source order puts the ball on opposite ends of the card. */
+    ok('and it is on the gutter side of whichever panel holds it',
+       balls.every(b => b.onGutterSide),
+       JSON.stringify(balls.filter(b => !b.onGutterSide).slice(0, 2)));
+    ok('on the same line as the score',
+       balls.every(b => b.sameLine), JSON.stringify(balls.slice(0, 2)));
+    /* THE TWO GAPS ARE DIFFERENT ON PURPOSE. The panels are not the
+       same width (flex-grow 1.12 against .94), so one number cannot
+       look even; 3 characters unselected and 4 selected was chosen from
+       a sheet and measured at 4.4px apart to the gutter instead of
+       12.2px. A single gap would pass a looser assertion. */
+    const un = balls.filter(b => !b.lit), li = balls.filter(b => b.lit);
+    ok('the unselected side sits 3 characters out',
+       un.length > 0 && un.every(b => Math.abs(b.toNumber - 36) < 1.5),
+       JSON.stringify(un.map(b => b.club + ' ' + b.toNumber)));
+    ok('and the selected side 4, which is not the same number',
+       li.length > 0 && li.every(b => Math.abs(b.toNumber - 48) < 1.5),
+       JSON.stringify(li.map(b => b.club + ' ' + b.toNumber)));
+    ok('nothing leaves its panel at that distance',
+       balls.every(b => b.inside), JSON.stringify(balls.slice(0, 2)));
+    /* WHITE ON THE COLOUR, DARK ON THE PAPER, from one currentColor
+       drawing. Asserting the ratio rather than the hex, because the
+       point is that it is readable on whichever ground it lands on. */
+    ok('it is readable on whichever side it lands on',
+       balls.every(b => b.ratio >= 3),
+       JSON.stringify(balls.map(b => b.club + ' ' + b.ratio)));
+    /* AN OUTLINE, NOT A FILLED OVAL. Filled, the laces have to be drawn
+       in the background colour and vanish on the white side, which is
+       what the first draft did and why it read as a dot. */
+    ok('and it is drawn as an outline, so the laces show on both',
+       balls.every(b => b.strokes >= 2), JSON.stringify(balls[0]));
+    ok('no page errors', errors.length === 0, errors[0]);
+  }
+
+  /* ---- ESPN sends no situation at all ---- */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: new Date(Date.now() - 40 * 60000).toISOString(),
+      weeks: 1, gamesPerWeek: 6, playerCount: 10,
+      espnDetail: 'Halftime', espnBall: 'none' });
+    await page.waitForTimeout(2600);
+    const balls = await readBalls(page);
+    ok('no situation from ESPN means no football at all',
+       balls.length === 0, String(balls.length));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* ---- AND THE ONE THAT MATTERS: possession that GOES AWAY ----
+
+     This is the bug that would look like a feature. A guard of
+     `if (own)` around the write passes every check above, because a
+     fixture that never had possession and never gets it looks exactly
+     like one that clears correctly. The failure only appears in a
+     SEQUENCE: the ball is held, then ESPN stops sending `situation` at
+     halftime or between drives, and the last holder keeps wearing the
+     football until the week rolls over.
+
+     Reported by mutation batch 56 as uncaught, which was right: there
+     was no fixture for the state.
+
+     THE 21 SECONDS ARE THE PRICE OF REACHING IT. The app polls ESPN
+     once a minute and refuses any pull within 20 seconds of the last
+     one (ESPN_FLOOR). espnLoop() is idempotent while its timer is
+     alive, so the only way to force a second poll is to let the timer
+     be torn down — which happens when the visible week has nothing
+     live — and then come back past the floor. Hence: switch to a week
+     with no live game, wait out the floor, switch back. One case in the
+     suite pays this, and it is the only route to the one bug here that
+     a user would actually notice. */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: new Date(Date.now() - 40 * 60000).toISOString(),
+      weeks: 2, gamesPerWeek: 6, playerCount: 10,
+      espnDetail: '2nd 5:42', espnBall: 'home' });
+    await page.waitForTimeout(2600);
+    const before = await readBalls(page);
+    ok('a held ball is on the card to start with', before.length > 0, String(before.length));
+
+    /* ESPN stops sending it, exactly as it does at halftime. */
+    await page.evaluate(() => {
+      window.__espn = (window.__espn || []).map(e => {
+        const c = e.competitions[0];
+        delete c.situation;
+        return e;
+      });
+    });
+    /* Away to a week with nothing live, so the poll timer is dropped. */
+    await page.click('.wk[data-wk="2"]').catch(() => {});
+    await page.waitForTimeout(21000);
+    await page.click('.wk[data-wk="1"]').catch(() => {});
+    await page.waitForTimeout(2600);
+    const after = await readBalls(page);
+    ok('and it clears when ESPN stops sending one, rather than sticking',
+       after.length === 0, JSON.stringify(after.map(b => b.club)));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+
+  /* ---- before kickoff, and after the server says final ---- */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: new Date(Date.now() + 3 * 864e5).toISOString(),
+      weeks: 1, gamesPerWeek: 6, playerCount: 10, espnBall: 'home' });
+    await page.waitForTimeout(1400);
+    const balls = await readBalls(page);
+    ok('a game that has not kicked off never shows one',
+       balls.length === 0, String(balls.length));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
+  /* ---- AND THE WHISTLE, which also needed a sequence ----
+
+     A week that is already final never polls ESPN at all: espnWanted()
+     filters to live-and-unfinished, so ESPN_BALL stays empty and no
+     football appears whether the isFinal() guard is there or not. That
+     fixture passed with the guard removed, and mutation batch 57 said
+     so.
+
+     The state that matters is a game that was LIVE, recorded a
+     possession, and then goes final underneath it: the card keeps its
+     score forever, so a football left on it would sit there until the
+     week rolled over. __pushWeek is the watcher hook the stub already
+     exposes, so the whistle can be blown without a reload. */
+  {
+    const { ctx, page, errors } = await open({
+      startISO: new Date(Date.now() - 40 * 60000).toISOString(),
+      weeks: 1, gamesPerWeek: 6, playerCount: 10,
+      espnDetail: '4th 0:41', espnBall: 'home' });
+    await page.waitForTimeout(2600);
+    const before = await readBalls(page);
+    ok('a live game has the football before the whistle',
+       before.length > 0, String(before.length));
+    await page.evaluate(() => {
+      window.__pushWeek(window.__weekGames().map(g => ({
+        ...g, status: 'final', awayScore: 17, homeScore: 13, winner: g.away })));
+    });
+    await page.waitForTimeout(900);
+    const after = await readBalls(page);
+    ok('and a finished game drops it, however stale ESPN is',
+       after.length === 0, JSON.stringify(after.map(b => b.club)));
+    ok('no page errors', errors.length === 0, errors[0]);
+    await ctx.close();
+  }
 }
 
 /* ------------------------------------------------------------------ */

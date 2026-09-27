@@ -313,11 +313,27 @@ secrets. No Firebase console.**
 
 ### Verified before shipping
 
-1371 checks across nineteen suites, 0 failed. 53 mutations across 40
-batches; the three that cover this change were re-run after the
-correction and each one is caught by the assertion named for it,
-including the inverted batch 44, which now hides the badge's colour bar
-and must be caught. Audit 38 of 38. Both zips byte-verified against the
+1375 checks across nineteen suites, 0 failed. 55 mutations across 42
+batches; the five that cover the card writing were each re-run and each
+one is caught by the assertion named for it, including the inverted
+batch 44, which hides the badge's colour bar and must be caught, and the
+two new ones that whiten the unselected side and the pool label and must
+also be caught. Audit 38 of 38. Both zips byte-verified against the
 working tree, and every lit panel in the fixture audited pixel by pixel:
 the bar present and painted from the club's own second colour, and city,
 name, score and badge letters all white on all 32 clubs.
+
+### One decision recorded in this release, with no code change
+
+You were asked twice for no dark writing anywhere, so the four ways to
+do that were drawn and measured before anything was built
+(`docs/mockups/paper-ink-1-what-is-dark-390.png` and
+`paper-ink-2-options-390.png`). Your answer was that the dark writing is
+right before a side is selected and white is what selection looks like,
+which is what the app already does, so **nothing in `index.html`
+changed for it.** What did change is that the decision is now guarded:
+regress case 61 fails if an unselected side or a paper band goes white,
+and two mutations exist that make exactly that mistake so the guard has
+to catch them. The one thing still offered and not done is the gutter
+`@`, which measures 3.77:1 against a 4.5:1 floor on every card in the
+app; one line moves it to 5.30:1 and it looks identical.

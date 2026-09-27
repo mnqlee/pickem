@@ -4,7 +4,14 @@
 import http from 'node:http';
 import fs from 'node:fs';
 
-const APP = '/root/work/pickem/index.html';
+/* RESOLVED FROM THIS FILE, NOT HARDCODED. This was an absolute path to
+   one checkout, so running the harness from a second copy of the repo
+   silently graded the FIRST copy's index.html: the server said ready,
+   every test passed, and none of them had looked at the file being
+   worked on. Caught while building this release beside an older tree,
+   by grepping the served HTML for a class that was definitely in the
+   file on disk and definitely not in the response. */
+const APP = new URL('../../index.html', import.meta.url).pathname;
 let plan = {};
 
 const STUB = `
@@ -58,14 +65,22 @@ window.fetch = (u, o) => {
 /* One ESPN event in exactly the shape pullEspn destructures — scores as
    STRINGS, because that is what ESPN sends and parseInt is what the app
    relies on. Pass state 'pre' or 'post' to model the other two. */
-window.__espnEvent = (away, home, as, hs, state) => ({
-  competitions: [{
+window.__espnEvent = (away, home, as, hs, state, poss) => {
+  /* Ids so a test can drive possession by hand as well as through the
+     plan. poss is 'away', 'home', or omitted for no situation at all,
+     which is what ESPN sends outside a live drive. */
+  const ids = { away: 'a1', home: 'h1' };
+  const c = {
     status: { type: { state: state || 'in' } },
     competitors: [
-      { homeAway: 'away', team: { abbreviation: away }, score: as == null ? null : String(as) },
-      { homeAway: 'home', team: { abbreviation: home }, score: hs == null ? null : String(hs) } ]
-  }]
-});
+      { homeAway: 'away', team: { abbreviation: away, id: ids.away },
+        score: as == null ? null : String(as) },
+      { homeAway: 'home', team: { abbreviation: home, id: ids.home },
+        score: hs == null ? null : String(hs) } ]
+  };
+  if (poss) c.situation = { possession: ids[poss] };
+  return { competitions: [c] };
+};
 
 const TEAMS = ['KC','BAL','BUF','CIN','DAL','PHI','SF','DET','GB','MIN','NYJ','MIA',
                'LAC','DEN','SEA','ATL','NO','TB','HOU','IND','JAX','TEN','CLE','PIT',
@@ -181,11 +196,30 @@ function espnAuto(detail){
        the filter silently returns nothing. That is exactly how this hook
        first "worked" while seeding an empty scoreboard. */
     .filter(g => g.kickoff.toMillis() <= now && g.status !== 'final')
-    .map(g => ({ competitions: [{
-      status: { type: { state: 'in', shortDetail: detail } },
-      competitors: [
-        { homeAway: 'away', team: { abbreviation: g.away }, score: '17' },
-        { homeAway: 'home', team: { abbreviation: g.home }, score: '13' } ] }] }));
+    .map((g, i) => {
+      /* TEAM IDS AND A SITUATION, because that is how possession
+         arrives. ESPN's situation.possession is a team ID, not an
+         abbreviation, so a fixture without ids cannot exercise the
+         lookup at all: the app would read undefined, find no match and
+         show no football, and the test would pass for the wrong reason.
+         The ids here are per-event and arbitrary, exactly as they are in
+         the real feed.
+
+         P.espnBall picks who holds it: 'away', 'home', 'none' for a
+         live game ESPN sends no situation for (halftime, between
+         drives), or 'alt' to alternate down the slate so one fixture
+         shows both sides at once. Default is 'home'. */
+      const mode = P.espnBall || 'home';
+      const who = mode === 'alt' ? (i % 2 ? 'away' : 'home') : mode;
+      const ids = { away: '9' + i + '1', home: '9' + i + '2' };
+      const c = {
+        status: { type: { state: 'in', shortDetail: detail } },
+        competitors: [
+          { homeAway: 'away', team: { abbreviation: g.away, id: ids.away }, score: '17' },
+          { homeAway: 'home', team: { abbreviation: g.home, id: ids.home }, score: '13' } ] };
+      if (who === 'away' || who === 'home') c.situation = { possession: ids[who] };
+      return { competitions: [c] };
+    });
 }
 /* Assigned HERE, not up beside the fetch shim, because GAMES does not
    exist yet at that point — and the whole value of this hook is that it

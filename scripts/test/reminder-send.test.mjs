@@ -33,7 +33,7 @@ src = src.replace('async function fsGet(env, path) {',
   'let fsGetImpl = null;\nasync function fsGet(env, path) {\n'
   + '  if (fsGetImpl) return fsGetImpl(env, path);');
 src += `
-export { remind, etSlate, SLATE_NAMES };
+export { remind, etSlate, SLATE_NAMES, TIERS };
 export function __setQuery(f){ fsQueryImpl = f; }
 export function __setGet(f){ fsGetImpl = f; }
 `;
@@ -81,7 +81,34 @@ const run = async (fx, e = env()) => {
   return r.detail || [];
 };
 
-const ONE = { p1: { name: 'Lee', tokens: ['t1'], tz: 'America/New_York' } };
+/* A MEMBER WHO IS AWAKE, WHOEVER RUNS THIS AND WHENEVER.
+
+   remind() refuses to send a non-urgent reminder inside quiet hours:
+   quiet(tz) is true when the member's local hour is 22 or later, or
+   before 7. Every fixture here used to hardcode America/New_York, so
+   between midnight and 7am ET the app correctly stayed silent, the
+   suite got an empty list, and case 1 crashed reading out[0].title. It
+   ran at 00:31 EDT and that is exactly what happened: the test was
+   wrong about the hour, not the app.
+
+   So the zone is chosen at run time from a spread of real zones: the
+   first one whose local hour is comfortably inside the awake window.
+   The planet always has one. The urgent tier ignores quiet hours and
+   does not need this, but using it everywhere keeps one idea in the
+   file instead of two. */
+const AWAKE_TZ = (() => {
+  const zones = ['America/New_York', 'Europe/London', 'Asia/Tokyo',
+                 'Australia/Sydney', 'America/Los_Angeles', 'Asia/Dubai',
+                 'Europe/Berlin', 'Asia/Kolkata', 'Pacific/Auckland',
+                 'America/Sao_Paulo', 'Africa/Nairobi', 'Asia/Shanghai'];
+  for (const tz of zones) {
+    const h = +new Intl.DateTimeFormat('en-US',
+      { timeZone: tz, hour: 'numeric', hour12: false }).format(new Date());
+    if (h >= 8 && h <= 20) return tz;
+  }
+  return 'America/New_York';
+})();
+const ONE = { p1: { name: 'Lee', tokens: ['t1'], tz: AWAKE_TZ } };
 const roster = extra => ({ p1: ONE.p1, ...extra });
 
 /* ---------------------------------------------------------------- */
@@ -107,8 +134,11 @@ console.log('\n1. Three Sunday kickoff times, ONE alert');
      JSON.stringify(out.map(o => o.title)));
   ok('and it counts all three games', out[0] && out[0].n === 3,
      JSON.stringify(out[0]));
+  /* GUARDED, because an empty list is a result and not a reason to
+     throw: the crash hid the real finding behind a TypeError. */
   ok('the title carries the name and the bunch',
-     /^Lee, /.test(out[0].title), out[0].title);
+     !!out[0] && /^Lee, /.test(out[0].title),
+     out[0] ? out[0].title : 'no alert at all');
 }
 
 console.log('\n2. One alert per bunch, with that bunch\u2019s own count');
@@ -127,26 +157,51 @@ console.log('\n2. One alert per bunch, with that bunch\u2019s own count');
      own bunch's unpicked games, no more and no fewer. Expected is
      computed from the fixture with the sender's own etSlate, so the
      test cannot disagree with it about what a bunch is. */
+  /* AND THE EXPECTATION FOLLOWS THE TIER WINDOWS TOO, which is the
+     second half of the same lesson. The b game used to sit 210 minutes
+     after the a games, at +410 from now, which is in the GAP between
+     the 'hours' window (240 to 90) and the 'day' window (1440 to 600).
+     No tier covers it, so the sender was right to say nothing about it
+     and the case failed for expecting an alert nobody should send.
+
+     b now sits inside the 'day' window, and `want` is computed only
+     from games a tier actually covers, using the sender's own TIERS and
+     etSlate. The test cannot disagree with the sender about what a
+     bunch is OR about when one is due. */
   const a = new Date(now + 200 * 60000);
-  const b = new Date(a.getTime() + 210 * 60000);
+  const b = new Date(now + 700 * 60000);
   const games = [
     { _id: 'a1', wk: 2, status: 'scheduled', kickoff: a },
     { _id: 'a2', wk: 2, status: 'scheduled', kickoff: a },
     { _id: 'b1', wk: 2, status: 'scheduled', kickoff: b },
   ];
+  const inAnyTier = g => {
+    const m = (g.kickoff.getTime() - now) / 60000;
+    return M.TIERS.some(([, lo, hi]) => m >= hi && m <= lo);
+  };
   const want = {};
-  for (const g of games) {
+  for (const g of games.filter(inAnyTier)) {
     const k = M.etSlate(g.kickoff.getTime());
     want[k] = (want[k] || 0) + 1;
   }
+  ok('the fixture covers more than one bunch, or says so',
+     Object.keys(want).length >= 1, JSON.stringify(want));
   const out = await run({ games, roster: roster(), picks: [] });
   const got = {};
   for (const o of out) got[o.slate] = o.n;
   ok(`one alert per bunch (${Object.keys(want).length} here)`,
      out.length === Object.keys(want).length,
      JSON.stringify({ want, got }));
+  /* COMPARED BY KEY, NOT BY JSON.stringify. The objects are built in
+     different orders, the fixture's by kickoff and the sender's by
+     whichever bunch its tier loop reached first, so stringify reported
+     {"tnf":2,"other":1} unequal to {"other":1,"tnf":2}: the same
+     answer, failed for its key order. */
+  const sortedKeys = o => Object.keys(o).sort();
   ok('and each one counts exactly its own bunch',
-     JSON.stringify(got) === JSON.stringify(want), JSON.stringify({ want, got }));
+     JSON.stringify(sortedKeys(got)) === JSON.stringify(sortedKeys(want))
+       && sortedKeys(want).every(k => got[k] === want[k]),
+     JSON.stringify({ want, got }));
   ok('no bunch is left without an alert',
      Object.keys(want).every(k => got[k] != null), JSON.stringify({ want, got }));
 }
@@ -189,9 +244,9 @@ console.log('\n5. One alert per member, and only to members with a device');
   const games = [{ _id: 'm1', wk: 2, status: 'scheduled',
                    kickoff: new Date(now + 200 * 60000) }];
   const out = await run({ games, picks: [], roster: {
-    p1: { name: 'Lee', tokens: ['t1'], tz: 'America/New_York' },
-    p2: { name: 'Bob', tokens: ['t2'], tz: 'America/New_York' },
-    p3: { name: 'Mo', tokens: [], tz: 'America/New_York' },
+    p1: { name: 'Lee', tokens: ['t1'], tz: AWAKE_TZ },
+    p2: { name: 'Bob', tokens: ['t2'], tz: AWAKE_TZ },
+    p3: { name: 'Mo', tokens: [], tz: AWAKE_TZ },
   } });
   ok('two reachable members, two alerts', out.length === 2,
      JSON.stringify(out.map(o => o.uid)));
@@ -211,7 +266,7 @@ console.log('\n6. A tier turned off is respected, per member');
                    kickoff: new Date(now + 200 * 60000) }];
   const out = await run({ games, picks: [], roster: {
     p1: { name: 'Lee', tokens: ['t1'], tz: 'America/New_York', prefs: { hours: false } },
-    p2: { name: 'Bob', tokens: ['t2'], tz: 'America/New_York' },
+    p2: { name: 'Bob', tokens: ['t2'], tz: AWAKE_TZ },
   } });
   ok('the member who switched that tier off gets nothing',
      !out.some(o => o.uid === 'p1'), JSON.stringify(out.map(o => o.uid + ':' + o.tier)));

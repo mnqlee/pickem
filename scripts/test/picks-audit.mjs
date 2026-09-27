@@ -292,6 +292,22 @@ const CHECKS = [
                // misreading of "no black writing", and Lee reversed it
                '.side.won .mark::after{display:none}')],
 
+  /* WHO HAS THE BALL. Four decisions, each chosen from a rendered
+     sheet and each a separate way to get it wrong: the football at all,
+     the mirror onto the gutter side, the two different gaps, and the
+     fact that it can only appear on a game being played. */
+  ['possession', 'the football, mirrored, 3 unselected and 4 selected',
+   () => has('const ESPN_BALL=Object.create(null)',
+             'const ballOf=g=>(!isLive(g)||isFinal(g))?null:',
+             '.side.l .scr{flex-direction:row-reverse}',
+             '.side.lost .scr{gap:36px}',
+             '.side.won  .scr{gap:48px}',
+             '<svg class="ball"',
+             'stroke="currentColor"') &&
+         /* NOT A FILL, which is what made the laces vanish on white,
+            and NOT an emoji, which cannot take the panel's colour. */
+         lacks('fill="currentColor"', '\u{1F3C8}')],
+
   ['version routes', 'the page makes no worker calls of its own',
    () => lacks("postMessage('SKIP_WAITING')", 'navigator.serviceWorker.register',
                'caches.keys()', 'new MessageChannel') &&

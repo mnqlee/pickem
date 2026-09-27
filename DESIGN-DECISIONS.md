@@ -797,8 +797,168 @@ asserts those four ranges explicitly rather than letting them drift from
 a decision into an oversight. Variant **D**, a text shadow, changes
 nothing measurable and is on the sheet to be ruled out.
 
+## 3j. The dark ink that stays, and why white IS the selection
+
+**Decided, nothing built.** Sheets:
+`docs/mockups/paper-ink-1-what-is-dark-390.png` and
+`paper-ink-2-options-390.png`, from `scripts/test/mock-paper-ink.mjs`.
+Lee chose **P1**, which is the build as it already stands.
+
+**The question.** Lee asked twice, in the same words both times: *"no
+black writing anywhere on the cards or outside of it, only white."*
+After 3i there is no dark ink on any club colour at all, so the second
+asking had to be about something else, and it was worth finding out
+what before changing anything.
+
+**What was actually left, all of it on the cream paper**, not on a
+colour: the head `FINAL · CAR 34-23`, the gutter `@`, the losing side's
+city, name and score, `HOW THE POOL PICKED`, `13 picks`, and the result
+line. Sheet 1 marks each one on a real card, numbered in a gutter
+beside it rather than over the words, and states the fact that decides
+the whole thing: **white on `#EDE8DE` measures 1.22:1.** Not faint,
+gone. So this was never an ink change. It was a question about the
+paper.
+
+**The four, drawn and measured.** P1 as shipped. **P2**, the card's
+paper becomes the app's own shell tones so every word on the card is
+white, the only variant that literally does what was asked, and it
+needs the result colours re-picked: `--hit #2F6E26` measures 2.39:1 on
+`#2A2724`, so the sheet uses `#6C9966` at 4.52:1. **P3**, only the head
+and the result bar go dark. **P4**, the losing side takes its own club
+colour darkened enough to carry white text. Dark pieces left per
+variant: **P1 18, P2 0, P3 15, P4 12** of 21. P4 costs the exact thing
+that got variant C rejected in 3i, a colour that is not the club's, and
+the sheet shows its own cost: the Bengals' darkened `#D54311` losing
+panel sits directly above the pool bar's true `#FB4F14`.
+
+**Lee's answer, and it reframed the whole thing:**
+
+> "The black is fine on the card, before you select it, once a side is
+> selected it goes white writing."
+
+So the dark ink is not a leftover. **White ink is what selection looks
+like**, and the dark side is the other half of that signal. Whitening
+the paper side would not finish the job, it would delete the job.
+
+**This is now guarded, because it is the mistake I would make next.**
+Regress case 61 section 5 asserts an unselected side writes in dark
+ink, that white appears on the lit side and only there, that the four
+paper bands keep their dark ink, and it reads the white-on-paper ratio
+off the card rather than quoting it from this note. Mutation batch 46
+whitens the unselected side and batch 47 whitens the pool label; both
+have to be caught. Without those, a later pass "completing" the white
+treatment would go in green.
+
+## 3k. Who has the ball, and why it sits on the gutter side
+
+Lee asked for it in one line: "is there a way to put a football or
+indicator to the team that has the ball in its current drive since we
+are already updating the live score?" The app was already polling ESPN
+every 60 seconds for the score and the clock, and the same payload
+carries `situation.possession`, so this costs no new request.
+
+Four mockup sheets settled it, and each round moved one thing.
+
+| sheet | what was asked | what came back |
+|---|---|---|
+| 1 | anything at all | emoji, a dot, a chevron, an outline football |
+| 2 | "the football that has the strings", on the LEFT of the score | the laced outline, drawn in `currentColor` |
+| 3 | "move it more to the left about 4 spaces", and mirror it | the away football moved right of the score, the home football left |
+| 4 | 2, 3, 4 and 5 characters, both sides | **unselected 3, selected 4** |
+
+**The chosen geometry.** The football always sits on the GUTTER side of
+its own panel: right of the away score, left of the home score. Lee put
+the reason plainly when the first mirror attempt got it wrong: "it needs
+to mimick the same as the opposite side." A football that hugs the
+outer edge of one panel and the inner edge of the other reads as two
+different indicators.
+
+**The two gaps, and why they are not one number.** Lee looked at the
+four-way sheet and said "the filled in team selected 3 and 4 look
+different then the unselected team 3 and 4. I like unselected team 3 and
+selected team 4." He is seeing a real thing. The picked panel grows to
+`flex-grow:1.12` and the unpicked shrinks to `.94`, so the same pixel
+gap sits inside two different panel widths and reads tighter on the wide
+one. In Roboto Mono at 21px one space measures **12.0px**, so:
+
+    .side .scr      { gap: 36px }   /* 3 characters, unselected */
+    .side.won  .scr { gap: 48px }   /* 4 characters, selected */
+
+Those are measured widths, not guesses, and regress case 62 measures
+them back off the render at ±1.5px.
+
+**Drawn, not typed.** The football is an inline SVG at 18x12 with
+`stroke="currentColor"` and `fill="none"`, an outline with four laces.
+It inherits the side's ink, so it is white on a lit panel and the club's
+dark ink on paper, with no second colour to keep in step. The emoji was
+rejected on sheet 1: it renders as a different object on every platform
+and carries its own brown against a navy panel.
+
+**It has to go away, and that is the part that breaks.** Two of the four
+mutations written for this were about clearing, not showing:
+
+- `if (pos)` instead of an explicit null would leave the last team that
+  held the ball wearing the football through halftime and into the
+  postgame show. Batch 56.
+- possession has to drop at the whistle. `ballOf()` returns null when
+  the game is final, independently of what ESPN last said. Batch 57.
+
+Both went uncaught on the first run, and both times the code was right
+and the FIXTURE was missing: the "nobody has it" case never had
+possession to lose, and a week that was final from the first frame never
+polls ESPN at all. Case 62 now runs a 21-second sequence that holds the
+ball, strips `situation`, and forces a re-poll, plus a live week pushed
+to final. That is the outcome mutation testing exists to produce.
+
+## 4f. The spreads refresh daily now, and why they did not before
+
+Lee: "I just noticed, when you pill espn spreads, they dont change."
+
+Not a bug, a schedule. The lines were only ever refreshed by
+`pull_lines()` inside `scripts/score_week.py`, which runs on the SCORING
+cadence: Sunday evening, Monday small hours, Tuesday small hours and
+Tuesday midday. So the last number written before a Sunday slate was
+**Tuesday's**, and Wednesday through Saturday every card showed a line
+five days stale. On a game that moved two points during the week, the
+card was simply wrong.
+
+**Where the fix went, and why not into the scorer.** `pullLines()` now
+lives in `worker/live.js`, the Worker that already wakes every five
+minutes on cron and already talks to this exact ESPN scoreboard
+endpoint. Adding a day to the scorer's schedule would mean new GitHub
+Actions runs; adding a guard to a Worker that is already awake costs one
+KV read on most ticks and nothing else.
+
+**The six ways a once-a-day writer goes wrong**, each one a check in
+`scripts/test/lines.test.mjs`:
+
+| rule | what it prevents |
+|---|---|
+| a KV stamp `lines:day`, one UTC day | 288 ESPN calls a day instead of one |
+| a FAILED day is not stamped | one bad afternoon costing a whole day of lines |
+| never create, only patch a game we already have | ESPN renamed WAS to WSH, and a PATCH to an unmatched id inserts a phantom 17th game |
+| no odds is not an empty line | a book pulling a number would blank the card |
+| an unchanged line is not rewritten | 16 pointless writes a day |
+| the patch carries `{ spread }` and nothing else | fsPatch builds its update mask from the keys, so a stray key could overwrite a kickoff, a score, a winner |
+
+The window is nine days, which covers the whole of next week's slate
+from any day of this one.
+
+**The escape hatch.** `GET /__live/lines?force=1&key=...` on the Worker's
+own URL ignores the stamp and
+runs immediately. That exists so the whole path can be proved on upload
+day rather than waited for.
+
 ## 5. Open, not yet decided
 
+- **The gutter `@` is 3.77:1**, found while drawing the paper-ink
+  sheets for 3j. It is
+  `--ink-faint` on `--paper-2` at 15px/700, which is normal text at a
+  4.5:1 floor, on every card in the app rather than only final ones.
+  The token's comment saying 4.6:1 is right about `--paper` and the
+  gutter is painted on `--paper-2`. `--ink-mute` puts it at 5.30:1 and
+  is indistinguishable. A one-line fix, offered and not yet asked for,
+  so it has not been made.
 - `apply_tiebreak` keys unders as `(0, actual − guess)`, which is
   *identical* for two equal guesses, so nothing breaks that tie and
   Firestore's ordering decides it. If two players tie on points **and**
@@ -821,7 +981,7 @@ nothing measurable and is on the sheet to be ruled out.
 ## Built — v1.35.0
 
 Everything below is in the build and checked by
-`scripts/test/picks-audit.mjs` (38 of 38) plus the named cases in
+`scripts/test/picks-audit.mjs` (39 of 39) plus the named cases in
 `scripts/test/regress.ui.test.mjs`.
 
 | item | where it is checked |
@@ -860,3 +1020,5 @@ Everything below is in the build and checked by
 | the archive as a Settings section | case 57 |
 | the week closer and the early exit | `test_status_env.py`, `test_loop_window.py` |
 | the results-notification copy | `test_result_copy.py` |
+| the possession football, mirrored, 3 and 4 characters | audit `possession`, case 62 |
+| the daily line refresh, once a day, spread only | `lines.test.mjs` |

@@ -3,7 +3,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 
-const APP = '/root/work/pickem/index.html';
+/* Resolve against THIS file, not a hardcoded checkout. A hardcoded path
+   once made the release tree's harness grade a different tree entirely. */
+const APP = new URL('../../index.html', import.meta.url).pathname;
 
 // Test control: the page POSTs here to set how /api will behave next.
 let plan = {};

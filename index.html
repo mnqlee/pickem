@@ -422,7 +422,53 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .rec{white-space:nowrap}
 /* Once a game is live the score takes the record's line. Nothing to
    truncate, nothing to wrap, and it clears the skewed gutter entirely. */
-.scr{font-size:21px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:1px}
+.scr{font-size:21px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:1px;
+  display:flex;align-items:center}
+
+/* ---------- WHO HAS THE BALL ----------
+
+   THE BALL SITS ON THE GUTTER SIDE OF BOTH PANELS, which is the whole
+   layout rule and the one thing a first pass gets wrong. The home panel
+   is right-aligned toward its badge, so "before the number" already
+   puts the ball on the gutter side. The away panel is left-aligned
+   toward ITS badge, so the same source order put the ball on the badge
+   side, the opposite end of the card. Reversing the away row fixes it,
+   and the two panels are then mirror images, the way the badges and the
+   names already are.
+
+   THE GAPS ARE DIFFERENT PER SIDE ON PURPOSE, and this is measured, not
+   taste. The panels are not the same width: .side.won is flex-grow 1.12
+   and .side.lost is .94, and their badges are 42px and 34px, so the
+   picked panel renders 172px wide against the other's 148px. The SAME
+   gap therefore lands the ball at a different distance from the gutter
+   on each side, and the gutter is the line the eye compares against
+   because it runs down the middle of the card. Measured at a 48px gap
+   on both: 16.5px from the gutter on the picked side and 4.3px on the
+   other, a 12.2px mismatch, which is exactly what Lee reported seeing.
+
+   THE NUMBERS ARE MULTIPLES OF ONE CHARACTER. The score is Roboto Mono,
+   so a space is the width of a digit: 12px at this size. Lee chose
+   three characters on the unselected side and four on the selected one,
+   by eye, from a sheet showing two, three and four. That combination
+   measures 16.5px and 12.1px to the gutter, a 4.4px mismatch instead of
+   12.2px. His eye and the measurement agreed.
+
+   AND THE GAP IS TO THE NUMBER, NOT TO THE CARD, which is why this is a
+   flex gap and not a position: 7 and 17 sit at the same distance from
+   the ball. What moves with the digit count is where the pair lands
+   relative to the panel edge, which is correct — the gap belongs to the
+   score. */
+.side.l .scr{flex-direction:row-reverse}
+/* The default first, then the two that matter. Before kickoff neither
+   `won` nor `lost` is set, and there is no score row and no football
+   either, so the default never actually renders a ball; it is here so
+   the set is complete rather than relying on that. */
+.side .scr{gap:36px}
+.side.lost .scr{gap:36px}
+.side.won  .scr{gap:48px}
+.pos{display:inline-flex;align-items:center}
+/* currentColor: white on a lit panel, --ink-mute on the cream side. */
+.ball{width:18px;height:12px;flex:0 0 18px;color:inherit}
 
 /* A div, not a <button>. Safari insists on its own intrinsic box for
    buttons and the empty state kept rendering as an inset pill roughly
@@ -2267,6 +2313,25 @@ const ESPN_LIVE=Object.create(null);
    Same isolation as ESPN_LIVE above: display only. Nothing in the
    scoring path may read this. */
 const ESPN_CLOCK=Object.create(null);
+/* WHICH TEAM HAS THE BALL, as a club abbreviation, for a game being
+   played right now.
+
+   THE SAME ISOLATION AS THE TWO MAPS ABOVE, and it matters more here
+   rather than less. Possession is the most volatile thing on the card:
+   it can be wrong within seconds of being right, and this phone reads
+   ESPN once a minute. So nothing in the scoring path may read it,
+   nothing is written to Firestore from it, and it is dropped the moment
+   the server says final. A football frozen on a finished card is a bug
+   that looks like a feature.
+
+   IT IS ALSO ALLOWED TO BE ABSENT, which is the normal case for most of
+   the week: ESPN only sends `situation` while a game is in progress, so
+   this map is empty on a Wednesday and that is not an error. */
+const ESPN_BALL=Object.create(null);
+/* WHO HAS IT, or null. Live and not final, and nothing else: not a game
+   that has yet to kick off, not one the server has written final, and
+   not one ESPN has said nothing about. */
+const ballOf=g=>(!isLive(g)||isFinal(g))?null:(ESPN_BALL[`${g.a}_${g.h}`]||null);
 /* The string to print top-left on a live card, or null to fall back to
    the kickoff time. Only ever for a game that has started and has not
    been written final, so a stale string cannot outlive the game. */
@@ -2586,11 +2651,38 @@ function mark(c){const[,,p,s]=TEAM(c);
    21px/800, which is WCAG large text at 3:1, so it passes regardless.
    DESIGN-DECISIONS section 3i has the full table. */
 
-function side(code,which,cls,bg,ha,sc){const[city,team]=TEAM(code);
+/* THE FOOTBALL, drawn rather than fetched or typed.
+
+   AN OUTLINE, NOT A FILL, and that was a real iteration. Filled, the
+   laces have to be drawn in the background colour, so on the picked
+   panel it was white laces on a white ball: at this size it rendered as
+   a plain oval and read as a dot. Stroked, every line takes the same
+   colour and the laces are always visible.
+
+   EVERY STROKE IS currentColor, WHICH IS THE WHOLE COLOUR SCHEME. The
+   picked panel already writes in #fff and the other side already writes
+   in --ink-mute on the cream paper, so one drawing gives a white ball
+   on the colour and a dark ball on the paper with no rule per side and
+   nothing that can drift apart later.
+
+   NOT AN EMOJI. A football emoji renders as a different picture on
+   every phone, cannot take the panel's colour, and would be the only
+   glyph on the card not drawn by this file. */
+const BALL=`<svg class="ball" viewBox="0 0 24 15" aria-hidden="true" focusable="false">
+  <ellipse cx="12" cy="7.5" rx="10.6" ry="6.1" fill="none"
+           stroke="currentColor" stroke-width="1.7"/>
+  <path d="M7.4 7.5h9.2M9.6 5.3v4.4M12 4.9v5.2M14.4 5.3v4.4"
+        fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+/* `ball` is true only for the side holding it on a game being played.
+   It rides inside .scr so it shares the score's line, which is also why
+   it cannot appear on a card with no score: there is no row to sit in
+   before kickoff, and that is correct. */
+function side(code,which,cls,bg,ha,sc,ball){const[city,team]=TEAM(code);
   return `<button class="side ${which} ${cls}" data-side="${which==='l'?'a':'h'}" ${bg}>
     ${mark(code)}<div class="names"><div class="city">${city}</div>
     <div class="team">${team}</div>
-    ${sc!=null?`<div class="scr mono">${sc}</div>`
+    ${sc!=null?`<div class="scr mono">${ball?`<span class="pos">${BALL}</span>`:''}<span
+       class="scrn">${sc}</span></div>`
               /* RECORDS is only ever populated in DEMO, so on live data
                  rec() returned '' and every one of the 32 sides on a
                  slate printed a dangling "AWAY ·" — a separator with
@@ -2930,9 +3022,13 @@ function renderSlate(){
         <span class="cd ${cdClass(g.kick-Date.now(),isFinal(g))}${
           lc?' nodot':''}" data-cd="${g.id}">${
           L?'In progress':'Locks in '+fmt(g.kick-Date.now())}</span></div>`}
-      <div class="match">${side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null)}
+      ${/* ONE LOOKUP FOR BOTH SIDES, so the two can never disagree about
+            who has it. ballOf() returns null unless the game is being
+            played right now. */''}
+      <div class="match">${(()=>{const bw=ballOf(g);return `${
+        side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null,bw===g.a)}
         <div class="gutter"><span>@</span></div>
-        ${side(g.h,'r',hCls,hBg,'Home',sc?sc[1]:null)}</div>${stake}${
+        ${side(g.h,'r',hCls,hBg,'Home',sc?sc[1]:null,bw===g.h)}`;})()}</div>${stake}${
         L?consensusBar(g):''}${band}${resbar}</div>`;});
   $('#slate').innerHTML=h+tbCard();
 }
@@ -5759,6 +5855,26 @@ async function pullEspn(){
            unchanged string still costs nothing. */
         const det=c.status&&c.status.type&&c.status.type.shortDetail;
         if(det&&ESPN_CLOCK[k]!==det){ESPN_CLOCK[k]=det;changed=true;}
+        /* WHO HAS THE BALL, out of the same response, for free.
+
+           `situation.possession` is a TEAM ID, not an abbreviation, so
+           it has to be resolved through this event's own competitor
+           list. Doing that from `by` rather than from a global table is
+           deliberate: the ids are per-event and the mapping is right
+           there beside them, so there is nothing to keep in step.
+
+           ABSENT IS A VALID ANSWER AND MUST CLEAR, not be ignored.
+           ESPN drops `situation` at the end of a game, at halftime, and
+           between possessions on some feeds. An `if(pos)` guard would
+           leave the last team to hold the ball wearing the football
+           through halftime and into the final whistle, which is worse
+           than showing nothing. So undefined writes undefined. */
+        const sit=c.situation||{};
+        const pid=sit.possession==null?null:String(sit.possession);
+        const own=pid&&by.away.team&&String(by.away.team.id)===pid ? a
+                 :pid&&by.home.team&&String(by.home.team.id)===pid ? h
+                 :null;
+        if(ESPN_BALL[k]!==own){ESPN_BALL[k]=own;changed=true;}
       }catch(_){}
     }
     /* Only repaint when a number actually moved, and only if the week on

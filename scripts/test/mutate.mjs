@@ -601,6 +601,77 @@ const MUTATIONS = [
    `.mark::after{content:'';position:absolute;left:0;right:0;bottom:0;height:6px;background:var(--sec)}
 .side.won .mark::after{display:none}`,
    ['a selected badge keeps its second-colour strip']],
+
+  /* THE PASS THAT "FINISHES THE JOB", which is the one I would make
+     next if nothing stopped me. Lee asked twice for no dark writing
+     anywhere, saw the four options on the paper-ink sheets, and chose:
+     "The black is fine on the card, before you select it, once a side
+     is selected it goes white writing." So white ink IS the selection,
+     and whitening the unselected side deletes the signal rather than
+     completing it. It also renders as almost nothing: white on the
+     card's paper is about 1.2:1. */
+  [46, 'cards: whiten the unselected side too',
+   `.side.lost{flex-grow:.94;background:var(--paper-2);color:var(--ink-mute)}`,
+   `.side.lost{flex-grow:.94;background:var(--paper-2);color:#fff}`,
+   ['an unselected side writes in DARK ink, which is the decision',
+    'so white ink is what selecting a side looks like, and only that']],
+
+  /* AND THE SAME PASS ON THE PAPER BANDS. One rule is enough to prove
+     the guard: if the pool label can go white without a test noticing,
+     so can the head, the count and the result line. */
+  [47, 'cards: whiten the pool label on the cream paper',
+   `.cons-head span{font-size:9px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-soft)}`,
+   `.cons-head span{font-size:9px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+  color:#fff}`,
+   ['and the card’s paper bands keep their dark ink too']],
+
+  /* ---- WHO HAS THE BALL, and the four ways it goes wrong ---- */
+
+  /* THE MIRROR, UNDONE. Both panels keep the same source order, so the
+     ball sits on the gutter side of the home panel and the BADGE side
+     of the away one: the two ends of the card. It is one line, it looks
+     like a tidy-up in a diff, and only an assertion that knows which
+     side of the gutter the ball landed on can see it. */
+  [54, 'possession: drop the mirror, so the away ball sits on the badge side',
+   `.side.l .scr{flex-direction:row-reverse}`,
+   ``,
+   /* BOTH GO RED, and both should: the mirror decides which side of the
+      score the ball sits on, so the gap measurement flips sign with it.
+      Listing only the first one reported the second as unexplained
+      collateral, which is the report doing its job. */
+   ['and it is on the gutter side of whichever panel holds it',
+    'and the selected side 4, which is not the same number']],
+
+  /* ONE GAP FOR BOTH SIDES, which is what Lee looked at and rejected.
+     The panels are not the same width, so a single number lands the
+     ball 12.2px further from the gutter on one side than the other. */
+  [55, 'possession: use the same gap on both sides',
+   `.side.lost .scr{gap:36px}
+.side.won  .scr{gap:48px}`,
+   `.side.lost .scr{gap:48px}
+.side.won  .scr{gap:48px}`,
+   ['the unselected side sits 3 characters out']],
+
+  /* ABSENT POSSESSION IGNORED RATHER THAN CLEARED. This is the bug that
+     would look like a feature: the last team to hold the ball keeps the
+     football through halftime and past the final whistle, because the
+     guard treats "ESPN said nothing" as "nothing changed". */
+  [56, 'possession: keep the last holder when ESPN sends no situation',
+   `        if(ESPN_BALL[k]!==own){ESPN_BALL[k]=own;changed=true;}`,
+   `        if(own&&ESPN_BALL[k]!==own){ESPN_BALL[k]=own;changed=true;}`,
+   /* NOT the "no situation at all" case: that fixture never had a ball
+      to keep, so it looks identical either way. The sequence case is
+      the only one that can see this. */
+   ['and it clears when ESPN stops sending one, rather than sticking']],
+
+  /* THE FOOTBALL ON A FINISHED GAME. ballOf() drops it once the server
+     writes final; without that the card keeps its score forever and the
+     football with it. */
+  [57, 'possession: let the football outlive the final whistle',
+   `const ballOf=g=>(!isLive(g)||isFinal(g))?null:(ESPN_BALL[\`\${g.a}_\${g.h}\`]||null);`,
+   `const ballOf=g=>(!isLive(g))?null:(ESPN_BALL[\`\${g.a}_\${g.h}\`]||null);`,
+   ['and a finished game drops it, however stale ESPN is']],
 ];
 
 function runSuite() {
