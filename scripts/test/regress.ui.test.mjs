@@ -5790,6 +5790,49 @@ console.log('\n62. Who has the ball, on a live card');
     const balls = await readBalls(page);
     ok('no situation from ESPN means no football at all',
        balls.length === 0, String(balls.length));
+
+    /* ---- AND THE SCORE MUST NOT HAVE MOVED, which is the bug the
+       football's own assertions could not see.
+
+       THE DEFECT THIS EXISTS FOR, shipped in v1.39.0 and found only by
+       diffing the build against v1.38.3 and measuring. `.scr` became a
+       flex row and the away side was reversed so the ball would land on
+       the gutter side. A REVERSED ROW PACKS TO THE RIGHT. With a ball
+       present that is invisible, because ball plus gap plus digits
+       already fills the box, so every possession assertion above stayed
+       green. With NO ball the box is wider than the digits and the away
+       score slid 27.6px right of where it had always sat: on every live
+       card the away side was not holding, and on EVERY final card.
+
+       WHY NOTHING CAUGHT IT. Every check written for this feature looked
+       at a card that HAD a football. The regression lives in the card
+       that does not. A feature's tests must also grade what the feature
+       does to everything it did not add.
+
+       THE ASSERTION IS THE PANEL, NOT A PIXEL COUNT. The score starts at
+       the same left edge as the team name above it, because they are the
+       same column of the same panel. That is true at any width, on any
+       club, and it does not have to be re-measured if the layout is ever
+       retuned. */
+    const aligned = await page.evaluate(() => {
+      const out = [];
+      for (const card of document.querySelectorAll('.match')) {
+        for (const side of card.querySelectorAll('.side.l')) {
+          const num = side.querySelector('.scrn');
+          const name = side.querySelector('.team') || side.querySelector('.city');
+          if (!num || !name) continue;
+          const nr = num.getBoundingClientRect(), tr = name.getBoundingClientRect();
+          out.push({ num: +nr.left.toFixed(1), name: +tr.left.toFixed(1),
+                     off: +(nr.left - tr.left).toFixed(1) });
+        }
+      }
+      return out;
+    });
+    ok('the fixture actually has an away score to grade',
+       aligned.length > 0, String(aligned.length));
+    ok('with no football, the away score still starts where the team name does',
+       aligned.every(a => Math.abs(a.off) <= 1.5),
+       JSON.stringify(aligned.filter(a => Math.abs(a.off) > 1.5).slice(0, 3)));
     ok('no page errors', errors.length === 0, errors[0]);
     await ctx.close();
   }

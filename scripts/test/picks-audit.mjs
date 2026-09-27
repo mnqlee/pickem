@@ -299,7 +299,10 @@ const CHECKS = [
   ['possession', 'the football, mirrored, 3 unselected and 4 selected',
    () => has('const ESPN_BALL=Object.create(null)',
              'const ballOf=g=>(!isLive(g)||isFinal(g))?null:',
-             '.side.l .scr{flex-direction:row-reverse}',
+             /* justify-content is part of the rule, not decoration: without
+                it a reversed row packs to the gutter and the away score
+                slides right of its own panel whenever there is no ball. */
+             '.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}',
              '.side.lost .scr{gap:36px}',
              '.side.won  .scr{gap:48px}',
              '<svg class="ball"',

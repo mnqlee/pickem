@@ -53,12 +53,6 @@ export default {
          a throw inside the scores nudge must not take them down with
          it. Two waitUntils, two catches, no shared fate. */
       ctx.waitUntil(guard('nudge', nudgeScores(env)));
-      /* THE LINES PASS, on its own guard for the same reason the nudge
-         has one: reminders are what this Worker exists for, and a throw
-         in a cosmetic refresh must not take them down. It gates itself
-         to once a UTC day in KV, so on all but one tick a day this
-         costs a single KV read. */
-      ctx.waitUntil(guard('lines', pullLines(env)));
     }
     else ctx.waitUntil(guard('scores', scores(env)));
   },
@@ -109,10 +103,6 @@ export default {
       'Letters and digits only is the safe shape.\n', { status: 403 });
 
     if (p === '/__live/scores') return json(await scores(env));
-    /* ?force=1 ignores the once-a-day stamp, which is the only way to
-       prove the whole path works without waiting for tomorrow. */
-    if (p === '/__live/lines')
-      return json(await pullLines(env, u.searchParams.get('force') === '1'));
     if (p === '/__live/remind') return json(await remind(env, true));
     if (p === '/__live/test')   return json(await testPush(env, u.searchParams));
     if (p === '/__live/nudge')
@@ -243,124 +233,6 @@ async function fsGet(env, path) {
   const d = await r.json();
   if (!d || !d.name) { console.log('fsGet: unexpected body for', path); return null; }
   return decDoc(d);
-}
-
-/* ============================================================
-   BETTING LINES — once a day, so a card is not showing Tuesday's number
-   ============================================================
-
-   WHAT WAS WRONG, and it was a schedule rather than a bug. The lines
-   ALREADY refresh: pull_lines() in scripts/score_week.py pulls the
-   current and next week from ESPN and it runs on every scoring run. But
-   the scoring runs are Sunday about 9pm ET, Monday about 3am, Tuesday
-   about 4am and Tuesday about noon ET. So the last refresh before a
-   Sunday slate is TUESDAY, and from Wednesday to Saturday — the whole
-   picking week — every card shows Tuesday's number. Lee spotted it from
-   the outside: "when you pill espn spreads, they dont change."
-
-   WHY HERE AND NOT IN A NEW WORKFLOW. This Worker already wakes every
-   five minutes, already talks to this exact ESPN endpoint with the
-   User-Agent it requires, already holds a Firestore token and already
-   has the KV namespace to remember that it ran. A new GitHub workflow
-   would need the service account wired into it again for a job this
-   small. Nothing new to configure, one wrangler deploy.
-
-   ONCE A DAY, ENFORCED IN KV RATHER THAN BY THE CRON. This Worker's
-   only cron fires every five minutes, so the gate has to live here: a
-   UTC date stamp is written after a successful pass and checked on
-   every tick. (Writing the cron expression out in a block comment ends
-   it early, which is how this file first refused to parse.) The Worker has no schedule
-   of its own to change, and if a day's pass fails the next tick five
-   minutes later retries it rather than waiting until tomorrow.
-
-   AND IT ONLY EVER TOUCHES `spread`. Same rule as scores(): fsPatch is
-   a PATCH and Firestore turns a PATCH on an unknown id into an INSERT,
-   so an abbreviation ESPN has renamed would write a phantom game into
-   the schedule. A game we do not already have is skipped and logged.
-   Nothing here can change a kickoff, a score, a status or a winner. */
-const LINES_LOOKAHEAD_DAYS = 9;
-
-async function pullLines(env, force = false) {
-  const season = env.SEASON || '2026';
-  const { sid, year, stype } = seasonParts(season);
-  const now = Date.now();
-  const stamp = new Date(now).toISOString().slice(0, 10);   // UTC day
-
-  if (!force) {
-    const done = await env.SESSIONS.get('lines:day').catch(() => null);
-    if (done === stamp) return { skipped: 'already ran today' };
-  }
-
-  /* WHICH WEEKS ARE WORTH ASKING ABOUT. The client only shows a line
-     for a game inside eight days (LINE_WINDOW in index.html), because
-     nothing is priced further out, so refreshing beyond that would be
-     writing numbers nobody can see. Nine days here gives the window one
-     day of slack rather than racing it. Normally one or two weeks. */
-  const ahead = new Date(now + LINES_LOOKAHEAD_DAYS * 86400000);
-  const soonGames = await fsQuery(env, `/seasons/${season}`, 'games', [
-    ['kickoff', 'GREATER_THAN', new Date(now)],
-    ['kickoff', 'LESS_THAN', ahead]
-  ]).catch(e => { console.log('lines: games query failed', String(e)); return []; });
-  if (!soonGames.length) return { skipped: 'nothing inside the line window' };
-
-  const weeks = [...new Set(soonGames.map(g => g.wk))];
-  const have = Object.fromEntries(soonGames.map(g => [g._id, g]));
-  let changed = 0, seen = 0;
-  const unmatched = [];
-
-  for (const wk of weeks) {
-    let data;
-    try {
-      const r = await fetch(`${ESPN}?seasontype=${stype}&week=${wk}&dates=${year}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; WeeklyNFLPickem/1.0; +https://nflweeklypickem.com)',
-          'Accept': 'application/json'
-        }
-      });
-      if (!r.ok) {
-        const why = await r.text().then(t => t.slice(0, 160).replace(/\s+/g, ' '))
-                                  .catch(() => '(body unreadable)');
-        console.log('lines: espn', r.status, 'week', wk, '::', why);
-        continue;
-      }
-      data = await r.json();
-    } catch (e) { console.log('lines: espn fetch failed week', wk, String(e)); continue; }
-
-    for (const ev of data.events || []) {
-      try {
-        const c = ev.competitions && ev.competitions[0];
-        if (!c) continue;
-        const by = Object.fromEntries((c.competitors || []).map(t => [t.homeAway, t]));
-        const away = by.away && by.away.team && by.away.team.abbreviation;
-        const home = by.home && by.home.team && by.home.team.abbreviation;
-        if (!away || !home) continue;
-        const gid = `${sid}_W${wk}_${away}_${home}`;
-        const old = have[gid];
-        if (!old) { unmatched.push(gid); continue; }
-
-        /* NO ODDS IS NOT AN EMPTY SPREAD. ESPN drops the odds array for
-           a game it has not priced yet, and writing '' for that would
-           erase a line we already had every time the book pulled it. */
-        const odds = c.odds || [];
-        if (!odds.length) continue;
-        const details = odds[0].details || '';
-        if (!details) continue;
-        seen++;
-        if (old.spread === details) continue;
-        await fsPatch(env, `seasons/${season}/games/${gid}`, { spread: details });
-        changed++;
-      } catch (e) { console.log('lines: event failed', wk, String(e)); }
-    }
-  }
-
-  /* STAMPED ONLY ON A PASS THAT REACHED ESPN. If every week's fetch
-     failed, `seen` is zero and the day is left unstamped so the next
-     tick tries again, rather than recording a run that did nothing. */
-  if (seen) await env.SESSIONS.put('lines:day', stamp, { expirationTtl: 172800 })
-    .catch(e => console.log('lines: stamp failed', String(e)));
-  if (unmatched.length) console.log('lines: unmatched', unmatched.slice(0, 6).join(', '));
-  console.log(`lines: weeks ${weeks.join(',')}, ${seen} priced, ${changed} changed`);
-  return { weeks, seen, changed, unmatched: unmatched.length, stamped: !!seen };
 }
 
 /* ============================================================

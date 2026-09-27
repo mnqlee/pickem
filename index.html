@@ -458,7 +458,16 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    the ball. What moves with the digit count is where the pair lands
    relative to the panel edge, which is correct — the gap belongs to the
    score. */
-.side.l .scr{flex-direction:row-reverse}
+/* justify-content matters because the row is REVERSED. In row-reverse
+   the main start is the RIGHT edge, so the default flex-start packs the
+   contents against the gutter. With a ball that is invisible, because
+   ball plus gap plus digits already fills the box. With NO ball the box
+   is wider than the digits alone, so the score slid 27.6px right of
+   where every other line on this panel starts, on every live card the
+   away side was not holding and on every final card. flex-end packs to
+   the main END, which in a reversed row is the left, so the digits sit
+   where they always did and the ball case is unchanged. Measured both. */
+.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}
 /* The default first, then the two that matter. Before kickoff neither
    `won` nor `lost` is set, and there is no score row and no football
    either, so the default never actually renders a ball; it is here so

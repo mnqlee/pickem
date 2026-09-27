@@ -903,51 +903,83 @@ mutations written for this were about clearing, not showing:
 - possession has to drop at the whistle. `ballOf()` returns null when
   the game is final, independently of what ESPN last said. Batch 57.
 
-Both went uncaught on the first run, and both times the code was right
-and the FIXTURE was missing: the "nobody has it" case never had
+**AND ONE GOT PAST ALL OF IT.** v1.39.0 shipped with the away score
+27.6px right of where it belonged on every card that had a score but no
+football, which is most live cards and every final one. A reversed flex
+row packs to the right, and with a football present that is invisible
+because ball plus gap plus digits already fill the box. Every assertion
+written for this feature looked at a card that HAD a football, so all of
+them stayed green. It was found by diffing the shipped build against
+v1.38.3 and measuring, not by a test. `justify-content:flex-end` fixes
+it in v1.39.1, and case 62 now also grades the card the feature did not
+add anything to. THE LESSON: a feature has to be graded on what it does
+to everything it did not touch.
+
+Both of the clearing mutations went uncaught on the first run, and both
+times the code was right and the FIXTURE was missing: the "nobody has it" case never had
 possession to lose, and a week that was final from the first frame never
 polls ESPN at all. Case 62 now runs a 21-second sequence that holds the
 ball, strips `situation`, and forces a re-poll, plus a live week pushed
 to final. That is the outcome mutation testing exists to produce.
 
-## 4f. The spreads refresh daily now, and why they did not before
+## 4f. The spreads, and the refresh that ESPN would not allow
 
 Lee: "I just noticed, when you pill espn spreads, they dont change."
 
-Not a bug, a schedule. The lines were only ever refreshed by
-`pull_lines()` inside `scripts/score_week.py`, which runs on the SCORING
-cadence: Sunday evening, Monday small hours, Tuesday small hours and
-Tuesday midday. So the last number written before a Sunday slate was
-**Tuesday's**, and Wednesday through Saturday every card showed a line
-five days stale. On a game that moved two points during the week, the
-card was simply wrong.
+Not a bug, a schedule. The lines were only refreshed by `pull_lines()`
+inside `scripts/score_week.py`, which runs on the SCORING cadence, so
+the last number written before a Sunday slate was Tuesday's and every
+card showed it from Wednesday to Saturday.
 
-**Where the fix went, and why not into the scorer.** `pullLines()` now
-lives in `worker/live.js`, the Worker that already wakes every five
-minutes on cron and already talks to this exact ESPN scoreboard
-endpoint. Adding a day to the scorer's schedule would mean new GitHub
-Actions runs; adding a guard to a Worker that is already awake costs one
-KV read on most ticks and nothing else.
+`pullLines()` was built in `worker/live.js`, tested to 21 checks, and
+deployed on 27 September. **It was refused by ESPN within minutes and
+rolled back the same evening.** The log, from Lee's own `wrangler tail`:
 
-**The six ways a once-a-day writer goes wrong**, each one a check in
-`scripts/test/lines.test.mjs`:
+    lines: espn 403 week 3 :: Access Denied
+    lines: weeks 3,4, 0 priced, 0 changed
 
-| rule | what it prevents |
+No data was damaged, because the "no odds must not erase" rule meant
+zero writes. What it did do was retry every five minutes forever, since
+a failed day is deliberately not stamped. **That is 576 refused requests
+a day and it is a real defect**: a retry rule written for a transient
+blip has no business running unchanged against a permanent refusal.
+Whatever replaces this needs a backoff.
+
+**WHY IT WAS REFUSED, proved by four requests from Lee's laptop against
+the same URL in the same minute:**
+
+| User-Agent sent | answer |
 |---|---|
-| a KV stamp `lines:day`, one UTC day | 288 ESPN calls a day instead of one |
-| a FAILED day is not stamped | one bad afternoon costing a whole day of lines |
-| never create, only patch a game we already have | ESPN renamed WAS to WSH, and a PATCH to an unmatched id inserts a phantom 17th game |
-| no odds is not an empty line | a book pulling a number would blank the card |
-| an unchanged line is not rewritten | 16 pointless writes a day |
-| the patch carries `{ spread }` and nothing else | fsPatch builds its update mask from the keys, so a stray key could overwrite a kickoff, a score, a winner |
+| curl's own default | **200** |
+| `curl/8.7.1`, set explicitly | **200** |
+| `Mozilla/5.0 (compatible; WeeklyNFLPickem/1.0; +https://...)` | 403 |
+| `WeeklyNFLPickem/1.0 (+https://...)` | 403 |
+| `pickem-live-worker` | 403 |
+| a full, real Chrome string | 403 |
 
-The window is nine days, which covers the whole of next week's slate
-from any day of this one.
+A real Chrome header is refused while plain curl is allowed, which
+inverts the usual pattern and gives the rule away: **ESPN is matching
+the User-Agent against the TLS fingerprint.** A client whose header
+agrees with its handshake is let through. Anything claiming to be
+something its handshake is not, or that they do not recognise, is not.
 
-**The escape hatch.** `GET /__live/lines?force=1&key=...` on the Worker's
-own URL ignores the stamp and
-runs immediately. That exists so the whole path can be proved on upload
-day rather than waited for.
+**THE CONSEQUENCE, AND IT IS THE WHOLE DECISION.** No header chosen on a
+laptop can be trusted from a Cloudflare Worker, because the Worker has
+its own fingerprint and it is not curl's. Putting `curl/8.7.1` in the
+Worker would be the exact mismatch ESPN is now catching. So the answer
+is not a header.
+
+**Where it goes instead.** `scripts/score_week.py` already talks to this
+endpoint successfully from GitHub Actions every week, using python's
+`requests`, and already contains `pull_lines()`. The daily refresh
+becomes a scheduled Actions job calling code already proven in
+production, on a client ESPN already accepts.
+
+**AND THE SAME HEADER IS IN `scores()`**, at `worker/live.js` line 411,
+so the Worker's own score puller is very likely refused too. It has gone
+unnoticed because scores reach Firestore by two other routes: the
+Actions loop, and each player's phone reading ESPN itself. The Worker
+was the third of three. Losing it lost a backstop, not the feature.
 
 ## 5. Open, not yet decided
 
@@ -1021,4 +1053,4 @@ Everything below is in the build and checked by
 | the week closer and the early exit | `test_status_env.py`, `test_loop_window.py` |
 | the results-notification copy | `test_result_copy.py` |
 | the possession football, mirrored, 3 and 4 characters | audit `possession`, case 62 |
-| the daily line refresh, once a day, spread only | `lines.test.mjs` |
+| the away score still starts where its team name does | case 62, mutation 58 |

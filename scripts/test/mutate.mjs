@@ -634,7 +634,7 @@ const MUTATIONS = [
      like a tidy-up in a diff, and only an assertion that knows which
      side of the gutter the ball landed on can see it. */
   [54, 'possession: drop the mirror, so the away ball sits on the badge side',
-   `.side.l .scr{flex-direction:row-reverse}`,
+   `.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}`,
    ``,
    /* BOTH GO RED, and both should: the mirror decides which side of the
       score the ball sits on, so the gap measurement flips sign with it.
@@ -672,6 +672,25 @@ const MUTATIONS = [
    `const ballOf=g=>(!isLive(g)||isFinal(g))?null:(ESPN_BALL[\`\${g.a}_\${g.h}\`]||null);`,
    `const ballOf=g=>(!isLive(g))?null:(ESPN_BALL[\`\${g.a}_\${g.h}\`]||null);`,
    ['and a finished game drops it, however stale ESPN is']],
+
+  /* THE ONE THAT ACTUALLY SHIPPED BROKEN, v1.39.0, found by diffing the
+     build against v1.38.3 rather than by any test.
+
+     A reversed flex row packs to its main START, which in row-reverse is
+     the RIGHT. With a football present that is invisible: ball plus gap
+     plus digits already fill the box, so every possession assertion in
+     case 62 stayed green. With NO football the box is wider than the
+     digits alone and the away score slid 27.6px right of the team name
+     above it, on every live card the away side was not holding and on
+     every final card in the season.
+
+     The lesson is in the shape of the mutation, not the property: a
+     feature has to be graded on what it does to the cards it did NOT
+     add anything to. */
+  [58, 'possession: let a reversed row pack the away score to the gutter',
+   `.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}`,
+   `.side.l .scr{flex-direction:row-reverse}`,
+   ['with no football, the away score still starts where the team name does']],
 ];
 
 function runSuite() {
