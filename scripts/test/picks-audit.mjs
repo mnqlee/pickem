@@ -311,6 +311,28 @@ const CHECKS = [
             and NOT an emoji, which cannot take the panel's colour. */
          lacks('fill="currentColor"', '\u{1F3C8}')],
 
+  /* HOW OFTEN A WATCHED GAME IS REFRESHED. One request carries the
+     score, the clock and possession, so this single number is the whole
+     live-update rate. */
+  ['live rate', 'a watched game refreshes every 30 seconds',
+   () => has('const ESPN_EVERY=30000', '},ESPN_EVERY);') &&
+         /* AND IT MUST STAY ABOVE THE FLOOR. Below ESPN_FLOOR the floor
+            swallows every other tick, so the real rate is the floor,
+            arriving irregularly, while the constant claims otherwise. A
+            literal 60000 back in the setInterval is the other way this
+            silently reverts. */
+         lacks('},60000);')],
+
+  /* UNSEAL ON THE DATA, NOT ON THE CLOCK. `isLive(g)` alone flips at
+     kickoff, before the reveal query can return a pick, and the cell's
+     answer to "no pick" is the DID NOT PICK dash. That told a whole
+     pool they had all missed a game. */
+  ['reveal honesty', 'a live cell waits for the bound before it unseals',
+   () => has('const shown=r.p===ME||(isLive(g)&&g.kick<=revealBound)') &&
+         /* The margin the app schedules on has to be the one queries
+            actually use, not the widened fallback. */
+         has('P.REVEAL_SKEW_MS')],
+
   ['version routes', 'the page makes no worker calls of its own',
    () => lacks("postMessage('SKIP_WAITING')", 'navigator.serviceWorker.register',
                'caches.keys()', 'new MessageChannel') &&

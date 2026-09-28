@@ -981,6 +981,97 @@ unnoticed because scores reach Firestore by two other routes: the
 Actions loop, and each player's phone reading ESPN itself. The Worker
 was the third of three. Losing it lost a backstop, not the feature.
 
+## 4g. The Grid told the whole pool they had missed a game
+
+Lee sat on the Grid as the Sunday night Rams game locked. The column
+header went LIVE the instant the clock passed kickoff, and then every
+player's cell showed a red dash for over two minutes before the picks
+appeared.
+
+**Nothing was wrong with the data. Two clocks disagreed, and only one of
+them was being asked.**
+
+| what | driven by | when it flips |
+|---|---|---|
+| the cell deciding to show a pick | `isLive(g)`, arithmetic on the phone | exactly at kickoff |
+| the picks themselves | a Firestore query bounded at `now - margin` | a margin later |
+
+The margin is load bearing. The rules only return a pick once
+`revealAt <= request.time` on the SERVER, and Firestore refuses a list
+query outright unless the rule can be proven for every document it could
+return. A phone whose clock runs fast and asks for everything up to "now"
+gets the entire Grid denied rather than fewer rows, which has happened on
+this app before. So the client deliberately asks for less than it is
+entitled to.
+
+**And the cell's answer to "no pick" is the symbol for DID NOT PICK.** So
+for the length of that margin the screen told 28 people that every one of
+them had missed the game. That is the most alarming thing it could have
+said and it was not true.
+
+### Two fixes, and they are separate
+
+**1. Unseal on the data, not on the clock.** The app already records
+`revealBound`, the exact instant the open listener was created with:
+
+    const shown = r.p===ME || (isLive(g) && g.kick <= revealBound);
+
+Sealed dots mean "not revealed yet", which is true. This is the half that
+matters, because it is honest whatever the margin turns out to be.
+
+**2. Stop paying two minutes for a margin almost nobody needs.** The
+margin now starts at **5 seconds** and widens to 120 only when Firestore
+actually refuses the query. **The refusal is the measurement.** A phone
+with a correct clock pays one query and reveals in seconds; a phone with
+a wrong one pays two and still works.
+
+Rejected: measuring the offset from a server `Date` header. It is another
+request, on boot, in the path that must succeed before anything renders,
+to fix a problem the retry handles with no request at all.
+
+**Five seconds, not zero**, because zero would refuse on a device one
+second fast, which is common enough to be the normal case.
+
+### What the tests had to learn
+
+**Every check written for the football looked at a card that had a
+football.** The same blind spot appeared here twice:
+
+- The first version of the "it fills in" assertion counted **your own
+  row**, which is visible at every moment by design. It passed against a
+  build that revealed nobody else at all. Mutation 60 found it.
+- A `page.click(...).catch(() => {})` on the week strip in case 59 meant a
+  swallowed click silently graded the wrong week, failing about one run
+  in five in a way that looked like a real defect. It now asserts the
+  switch happened.
+
+A feature has to be graded on what it does to everything it did not
+touch, and a fixture that can quietly skip is not a fixture.
+
+## 4h. Thirty seconds, and why not fifteen
+
+Lee, after a full Sunday: the football took too long to move to the
+receiving team after a punt.
+
+`ESPN_EVERY` is 30000, down from 60000. **One request carries the score,
+the game clock and possession**, so this single number is the whole
+live-update rate and halving it needs no new request kinds.
+
+**It costs nothing but battery.** The poll never touches Firestore or
+Cloudflare, so there is no read, no write and no bill, and the loop stops
+entirely while the app is off screen.
+
+**Fifteen was asked for and is the wrong number.** `ESPN_FLOOR` is 20000,
+a hard minimum gap that exists to collapse the duplicate triggers iOS
+throws off on a tab switch. At 15000 the floor swallows every other tick,
+so the real rate is about 20 seconds arriving irregularly: slower than it
+claims and less predictable than 30. Lowering the floor to chase it would
+give up a real guard for a few seconds that ESPN's own feed lag mostly
+eats anyway.
+
+**Half the delay is not ours.** ESPN takes its own time to register a
+change of possession. Halving our interval halves our share of it.
+
 ## 5. Open, not yet decided
 
 - **The gutter `@` is 3.77:1**, found while drawing the paper-ink
@@ -1013,7 +1104,7 @@ was the third of three. Losing it lost a backstop, not the feature.
 ## Built — v1.35.0
 
 Everything below is in the build and checked by
-`scripts/test/picks-audit.mjs` (39 of 39) plus the named cases in
+`scripts/test/picks-audit.mjs` (41 of 41) plus the named cases in
 `scripts/test/regress.ui.test.mjs`.
 
 | item | where it is checked |
@@ -1054,3 +1145,6 @@ Everything below is in the build and checked by
 | the results-notification copy | `test_result_copy.py` |
 | the possession football, mirrored, 3 and 4 characters | audit `possession`, case 62 |
 | the away score still starts where its team name does | case 62, mutation 58 |
+| a live cell waits for the reveal bound before it unseals | audit `reveal honesty`, case 43b, mutation 59 |
+| the reveal margin is fast by default and widens only on a refusal | `reveal.test.mjs`, case 43c, mutation 60 |
+| a watched game refreshes every 30 seconds | audit `live rate` |

@@ -1,9 +1,9 @@
 # Tests
 
-1399 checks. Nothing here touches Firebase, Resend, KV or the live site.
+1432 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
-That number is the nineteen suite totals below added up, from a full run
-on 2026-09-27 for v1.39.1. If you change a suite, re-run everything and
+That number is the twenty suite totals below added up, from a full run
+on 2026-09-28 for v1.39.2. If you change a suite, re-run everything and
 re-add — a count carried forward from memory drifts, and quoting a stale
 one is the same class of mistake as a green run that graded a stale file.
 
@@ -11,13 +11,15 @@ one is the same class of mistake as a green run that graded a stale file.
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
     cp ../../worker/auth.js /tmp/auth.mjs      # NOTE: /tmp — see below
 
-    node picks-audit.mjs         #  39 every design choice, still in the build
+    node picks-audit.mjs         #  41 every design choice, still in the build
     node auth.core.test.mjs      #  27 sign-in Worker, happy path and edges
     node auth.stress.test.mjs    #  49 sign-in Worker, adversarial
     node nudge.test.mjs          #  42 reminder scheduling
     node reminder-copy.test.mjs  #  50 the words in every reminder
     node reminder-send.test.mjs  #  22 which reminders get sent, and to whom
     node live-auth.test.mjs      #  20 the live Worker's auth
+    node reveal.test.mjs         #  19 the reveal margin: fast by default,
+                                 #     widening only when Firestore refuses
 
     node serve.mjs &
     node signin.ui.test.mjs      #  48 sign-in screens in a real browser
@@ -27,7 +29,7 @@ one is the same class of mistake as a green run that graded a stale file.
     node polish.ui.test.mjs      #  41 layout, states, degradation, edges
     node season.ui.test.mjs      #  21 full 18-week season, 25-40 players
     node scale.ui.test.mjs       #  21 50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 627 bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 639 bugs that shipped, so they cannot return
     node stress.ui.test.mjs      # 115 a full pool leaned on: see below
     node sw.push.test.mjs        #  33 service worker push, caching, and the message handler
     node shots.mjs all           #     screenshots to /tmp/shots
@@ -44,8 +46,8 @@ one is the same class of mistake as a green run that graded a stale file.
     python test_status_env.py    #  32 the four variables the week closer reads
     python test_loop_window.py   #  49 the Live-scores window's own shell logic
 
-    node mutate-dryrun.mjs       #     do all 60 mutations still apply?
-    node mutate.mjs              #     60 mutations, 46 batches, ~5 hours
+    node mutate-dryrun.mjs       #     do all 62 mutations still apply?
+    node mutate.mjs              #     62 mutations, 48 batches, ~5 hours
 
 The three `shot-*.mjs` scripts grade nothing. They write the sheets in
 `docs/mockups/` that ship in the release zip, out of the REAL app
@@ -86,7 +88,7 @@ silently NOT APPLIED — the batch then runs against unmutated code, every
 expected assertion stays green, and the harness reports that the tests
 failed to catch their bug. That is the right complaint for the wrong
 reason, and it costs a full suite run per batch to discover. The dry run
-checks all 60 in a second.
+checks all 62 in a second.
 
 **A "did not catch" report is usually the expectation list, not the
 app.** Three kinds of mistake produced every such report in v1.34.0 and

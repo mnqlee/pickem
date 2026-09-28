@@ -3254,7 +3254,29 @@ function renderGrid(){
       <div class="plrank mono">${nothingYet?'&middot;':i+1}</div><div class="plmeta"><b>${NAME(r.p)}</b>
       <span class="mono">${nothingYet?'no games scored yet':r.hits+' correct'}</span></div></div></td>`;
     gs.forEach(g=>{
-      const shown=isLive(g)||r.p===ME;
+      /* UNSEAL ON THE DATA, NOT ON THE CLOCK.
+
+         This was `isLive(g)`, which is local arithmetic and flips the
+         instant the phone's clock passes kickoff. The picks arrive by a
+         Firestore query whose bound is revealBound, deliberately behind
+         now, so between those two moments every cell was told to show a
+         pick that could not have arrived and drew `—`, which on this
+         screen means DID NOT PICK.
+
+         Lee watched it happen on a Sunday night kickoff: the column went
+         LIVE and the whole pool went red. Nothing was wrong with the
+         data. The screen was lying, and it lied in the most alarming
+         direction available.
+
+         revealBound is the exact instant the CURRENT listener was opened
+         with, so `g.kick <= revealBound` is precisely "the snapshot on
+         screen is capable of containing this game's picks". Before that,
+         sealed dots, which are true. It is also correct on the paths that
+         used to be the hard ones: on boot revealBound is 0, so cells stay
+         sealed through the first render instead of flashing red; and a
+         week loaded fresh gets a bound well past every old kickoff, so
+         nothing seals that should not. */
+      const shown=r.p===ME||(isLive(g)&&g.kick<=revealBound);
       const p=pickOf(r.p,g.id);
       let cls='hidden',inner='<b>•••</b>';
       if(shown){
@@ -5682,7 +5704,17 @@ function stopLive(){
    prevent. It was fixed for the second game of a Sunday block and broken
    for the first game of every week. */
 /* The skew the reveal queries use, with a literal only as a last resort. */
-const revealSkew=()=>(window.PS&&PS.CLOCK_SKEW_MS)||120000;
+/* THE SKEW THE REVEAL QUERIES ARE ACTUALLY USING RIGHT NOW, which is not
+   a constant any more. firebase-init starts at 5 seconds and widens to
+   CLOCK_SKEW_MS only if this device's clock turns out to be fast enough
+   for Firestore to refuse the query. Reading REVEAL_SKEW_MS keeps the
+   re-subscribe timer and the reveal bound in step with whichever margin
+   is live; reading CLOCK_SKEW_MS would schedule every re-subscribe two
+   minutes late on the phones that never needed the margin, which is
+   nearly all of them. The literal is a last resort for a stub that
+   exports neither. */
+const revealSkew=()=>{const P=window.PS;
+  return (P&&P.REVEAL_SKEW_MS)??(P&&P.CLOCK_SKEW_MS)??120000;};
 
 function scheduleRevealRefresh(){
   clearTimeout(revealTimer);
@@ -5826,6 +5858,35 @@ const espnWanted=()=>(WEEKS[state.week]||[])
    worst case is three requests a minute rather than sixty. */
 const ESPN_FLOOR=20000;
 
+/* HOW OFTEN A PHONE ASKS ESPN WHILE A GAME IS ON SCREEN.
+
+   WAS 60000. Lee watched a Sunday slate and reported the one thing this
+   number controls: after a punt, the football took too long to move to
+   the receiving team. 30 seconds halves our share of that delay.
+
+   OUR SHARE, NOT ALL OF IT. ESPN's own feed takes its time to register a
+   change of possession, so the visible lag is theirs plus ours and only
+   the second half is ours to shorten.
+
+   ONE REQUEST CARRIES ALL THREE. The score, the game clock and
+   possession all come out of the same pullEspn() response, so this
+   interval moves them together and halving it adds no new request kinds,
+   only the same one twice as often.
+
+   IT COSTS NOTHING BUT BATTERY. This poll never touches Firestore or
+   Cloudflare, so there is no read, no write and no bill. The loop also
+   stops entirely while the app is not on screen, so the cost lands only
+   on a phone somebody is actually watching a game on.
+
+   AND IT MUST STAY ABOVE ESPN_FLOOR. At 15000 the floor above would
+   swallow every other tick and the real rate would be ~20s, arriving
+   irregularly — slower than it claims and less predictable than 30. The
+   floor exists to collapse the duplicate triggers iOS throws off on a
+   tab switch, so lowering IT to chase 15s would give up a real guard for
+   a few seconds that ESPN's own lag mostly eats anyway. If this ever
+   goes below ESPN_FLOOR, the two want rethinking together. */
+const ESPN_EVERY=30000;
+
 async function pullEspn(){
   if(DEMO||espnBusy)return;
   if(Date.now()-espnLast<ESPN_FLOOR)return;
@@ -5916,7 +5977,7 @@ function espnLoop(){
     if(document.visibilityState!=='visible')return;   // pockets are free
     if(!espnWanted().length){clearInterval(espnTimer);espnTimer=null;return;}
     pullEspn();
-  },60000);
+  },ESPN_EVERY);
 }
 
 function watchLive(){

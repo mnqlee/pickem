@@ -62,6 +62,59 @@ const SEASON = "2026";
    of freshness; asking for slightly more costs the entire read. */
 const CLOCK_SKEW_MS = 120000;
 
+/* ---------- AND WHY 120 SECONDS IS NOT WHAT WE ASK FOR ANY MORE ----------
+
+   THE COST OF THAT MARGIN, PAID ON EVERY KICKOFF. Asking for
+   `revealAt <= now - 120s` means a pick cannot match its query until two
+   minutes after its game starts. Lee watched a Sunday night kickoff with
+   the Grid open and reported it exactly: the column header went LIVE the
+   instant the clock passed kickoff, because that is local arithmetic,
+   and then every player's cell sat there for over two minutes.
+
+   Worse than slow, it was WRONG. The cell code asks "is this game live"
+   to decide whether to show a pick, finds none because the query cannot
+   have returned one yet, and draws the symbol for DID NOT PICK. For two
+   minutes the Grid told a pool of 28 people that every single one of
+   them had missed the game.
+
+   THE MARGIN ONLY EVER NEEDED TO COVER A CLOCK RUNNING FAST. A device
+   within a few seconds of real time, which is every phone with automatic
+   time, needs almost none of it. 120 seconds was never a measurement; it
+   was the largest number that was obviously safe.
+
+   SO ASK FOR THE SMALL ONE AND LET THE SERVER CORRECT US. Firestore
+   refuses a list query outright when the rule cannot be proven for every
+   document it could return, and it says so with `permission-denied`.
+   That refusal IS the measurement: it means this device's clock is more
+   than FAST_SKEW_MS ahead, so widen to the safe margin and never try the
+   fast one again this session. A phone with a correct clock pays one
+   query; a phone with a wrong one pays two and still works.
+
+   WHY NOT MEASURE THE OFFSET DIRECTLY, with a server Date header: it is
+   another request, on boot, in the path that has to succeed before the
+   app can show anything, to fix a problem this handles with no request
+   at all. The retry is the cheaper instrument.
+
+   FIVE SECONDS, NOT ZERO. Zero would refuse on a device a single second
+   fast, which is common enough to be the normal case rather than the
+   exception, and would mean nearly every phone paying for two queries. */
+const FAST_SKEW_MS = 5000;
+let revealSkewMs = FAST_SKEW_MS;
+
+/* Widen, permanently for this session, and say whether that changed
+   anything. Callers use the answer to decide whether a retry is worth
+   making: a second denial at the safe margin is a different problem and
+   retrying it forever would be a loop. */
+function widenRevealSkew() {
+  if (revealSkewMs >= CLOCK_SKEW_MS) return false;
+  console.warn('reveal: this device clock is more than ' + FAST_SKEW_MS
+    + 'ms fast, widening the reveal margin to ' + CLOCK_SKEW_MS + 'ms');
+  revealSkewMs = CLOCK_SKEW_MS;
+  return true;
+}
+const isDenied = e => /permission-denied/i.test((e && e.code) || '');
+const revealBoundNow = () => Date.now() - revealSkewMs;
+
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 /* DO NOT PROBE THE TRANSPORT. GO STRAIGHT TO THE ONE THAT WORKS.
@@ -566,24 +619,59 @@ async function myPicks(wk) {
       whatever week was on screen when it fired. That is handled by passing
       `wk` back to the caller here. */
 function watchRevealed(wk, cb) {
-  const bound = Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS);
-  const q = query(
-    collection(db, 'pools', poolId, 'picks'),
-    where('wk', '==', wk),
-    where('revealAt', '<=', bound));
+  /* THE UNSUBSCRIBE HAS TO SURVIVE A RETRY. The caller keeps the function
+     this returns and calls it on every week switch, so it cannot be the
+     first listener's own unsubscribe: after a widen-and-retry that one
+     closes a listener that is already closed and leaves the second one
+     running forever, and a week switch then renders two weeks at once.
+     One handle, repointed. */
+  let stop = null;
+  let live = true;
 
   let names = {};
   getMembers()
     .then(ms => { names = Object.fromEntries(ms.map(m => [m.uid, m.name])); })
     .catch(() => {});
 
-  return onSnapshot(q, snap => {
-    const rows = snap.docs
-      .map(d => d.data())
-      .filter(v => v.winner != null)     // skip cleared picks (tombstones)
-      .map(v => ({ ...v, name: names[v.uid] || 'Player' }));
-    cb(rows, wk);
-  }, err => console.warn('watchRevealed', err));
+  const subscribe = () => {
+    const q = query(
+      collection(db, 'pools', poolId, 'picks'),
+      where('wk', '==', wk),
+      where('revealAt', '<=', Timestamp.fromMillis(revealBoundNow())));
+    /* THE REFUSED LISTENER HAS TO BE SHUT BEFORE ITS REPLACEMENT OPENS.
+       Without this the first one is simply abandoned: `stop` is
+       overwritten by the retry and nothing ever closes the original. The
+       SDK does tear down a listener it has failed, but leaning on that
+       is an assumption about somebody else's library sitting underneath
+       the one query the Grid cannot do without. Closing it is one line
+       and removes the question. Caught by reveal.test.mjs, which
+       records whether each fake listener was closed. */
+    let mine = null;
+    const handle = onSnapshot(q, snap => {
+      const rows = snap.docs
+        .map(d => d.data())
+        .filter(v => v.winner != null)     // skip cleared picks (tombstones)
+        .map(v => ({ ...v, name: names[v.uid] || 'Player' }));
+      cb(rows, wk);
+    }, err => {
+      /* A DENIAL HERE IS A MEASUREMENT, NOT A FAULT, the first time.
+         It means this device's clock is further ahead than the fast
+         margin allows, so widen and ask again. widenRevealSkew() returns
+         false once it is already at the safe margin, which is what stops
+         this being a loop: a second denial is a real problem and gets
+         reported like any other. */
+      if (isDenied(err) && live && widenRevealSkew()) {
+        if (mine) mine();
+        subscribe();
+        return;
+      }
+      console.warn('watchRevealed', err);
+    });
+    mine = handle;
+    stop = handle;
+  };
+  subscribe();
+  return () => { live = false; if (stop) stop(); };
 }
 
 /* Sign in with a token minted by the auth Worker. */
@@ -615,12 +703,13 @@ async function getAllWeeks() {
 
 /* Everyone's picks for games that have already kicked off.
    The revealAt filter is what makes the read legal — see firestore.rules. */
-async function getRevealed(wk) {
+async function getRevealed(wk, _retried) {
   const q = query(collection(db, 'pools', poolId, 'picks'),
     where('wk', '==', wk),
     // See CLOCK_SKEW_MS: a fast device clock asking for not-yet-revealed
-    // picks gets the entire query denied, not just those rows.
-    where('revealAt', '<=', Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS)));
+    // picks gets the entire query denied, not just those rows. The margin
+    // starts small and widens on exactly that denial; see FAST_SKEW_MS.
+    where('revealAt', '<=', Timestamp.fromMillis(revealBoundNow())));
   /* SAME SHAPE AS getTiebreaks, SAME TRAP — equality on wk plus an
      inequality on revealAt needs a composite index, and without one this
      rejects with FAILED_PRECONDITION on every call. loadWeek wraps it in
@@ -637,8 +726,14 @@ async function getRevealed(wk) {
       console.error('GRID: composite index missing on picks(wk, revealAt). '
         + 'Deploy it with `firebase deploy --only firestore:indexes`. '
         + 'Firestore says:', e.message);
+    /* Same widen-and-retry as watchRevealed, and `_retried` is what keeps
+       it to one attempt: widenRevealSkew() would already return false on
+       a second pass, but a caller passing its own flag is what makes that
+       readable rather than implied. */
+    if (isDenied(e) && !_retried && widenRevealSkew()) return null;
     throw e;
   });
+  if (res === null) return getRevealed(wk, true);
   const members = await getMembers().catch(() => []);
   const name = Object.fromEntries(members.map(m => [m.uid, m.name]));
   return res.docs
@@ -678,7 +773,7 @@ async function getRevealed(wk) {
 async function getTiebreaks(wk) {
   const q = query(collection(db, 'pools', poolId, 'tiebreaks'),
     where('wk', '==', wk),
-    where('revealAt', '<=', Timestamp.fromMillis(Date.now() - CLOCK_SKEW_MS)));
+    where('revealAt', '<=', Timestamp.fromMillis(revealBoundNow())));
 
   const [res, members, own] = await Promise.all([
     /* LOUD, then degraded. This used to reject the whole function and
@@ -1125,6 +1220,13 @@ window.PS = {
      Anything that waits for a reveal has to know this number. Writing it
      as a literal over there is exactly how the two drift apart. */
   CLOCK_SKEW_MS,
+  /* A GETTER, NOT A NUMBER. index.html schedules its re-subscribe off
+     this and records the bound its listener was opened with, so a plain
+     property copied at module load would keep saying 5000 after a denial
+     widened the real margin to 120000 — and the app would unseal cells
+     115 seconds before their picks could possibly arrive, which is the
+     exact bug this whole change exists to remove. */
+  get REVEAL_SKEW_MS() { return revealSkewMs; },
   get user() { return user; },
   get poolId() { return poolId; }
 };

@@ -2959,6 +2959,130 @@ console.log('\n43. A player who blocked notifications must be sent somewhere rea
 }
 
 /* ------------------------------------------------------------------ */
+console.log('\n43b. A live column must never say NOBODY PICKED while it waits');
+{
+  /* THE BUG, REPORTED FROM A REAL SUNDAY NIGHT KICKOFF. Lee sat on the
+     Grid as the Rams game locked. The column header went LIVE the instant
+     the clock passed kickoff, and then every player's cell showed the DID
+     NOT PICK dash for over two minutes before the picks appeared.
+
+     TWO CLOCKS, AND ONLY ONE OF THEM WAS BEING ASKED. The cell decided
+     whether to show a pick with `isLive(g)`, which is local arithmetic
+     and flips exactly at kickoff. The picks arrive from a Firestore query
+     whose bound is deliberately behind now, because the rules compare
+     revealAt against the SERVER clock and refuse the whole query if the
+     client asks for more than it can prove. So between kickoff and that
+     bound, every cell was told to render a pick that could not possibly
+     have arrived, and drew the symbol meaning the player missed the game.
+
+     Nothing was wrong with the data. The screen told 28 people they had
+     all failed to pick, which is the most alarming thing available to it
+     and was not true.
+
+     SEALED IS THE HONEST SYMBOL. It means "not revealed yet". */
+  const GAP = 6000;
+  const KICK_IN = 3000;
+  const { ctx, page, errors } = await open({
+    startISO: new Date(Date.now() + KICK_IN).toISOString(),
+    weeks: 1, gamesPerWeek: 3, playerCount: 8, revealSkewMs: GAP });
+  const kickAt = Date.now() + KICK_IN;
+  await page.click('[data-tab="grid"]').catch(() => {});
+
+  /* YOUR OWN ROW IS COUNTED SEPARATELY THROUGHOUT. It is visible at every
+     moment by design, so folding it into the totals lets a build that
+     reveals nobody else look identical to one that works. The first
+     version of this reader did exactly that and mutation 60 walked
+     straight through it. */
+  const readGrid = () => page.evaluate(() => {
+    const out = { dash: 0, sealed: 0, filledOthers: 0, filledMine: 0, live: 0 };
+    document.querySelectorAll('#v-grid tbody tr').forEach(tr => {
+      if (tr.classList.contains('poolrow')) return;
+      const isMe = tr.classList.contains('me');
+      tr.querySelectorAll('td:not(.tbtd):not(.tot):not(.pl) .cell').forEach(c => {
+        if (c.classList.contains('none')) out.dash++;
+        else if (c.classList.contains('hidden')) out.sealed++;
+        else if (isMe) out.filledMine++;
+        else out.filledOthers++;
+      });
+    });
+    out.live = document.querySelectorAll('#v-grid .hstate.live, #v-grid .live').length;
+    return out;
+  });
+
+  const pre = await readGrid();
+  ok('the fixture has a grid of cells to grade',
+     pre.sealed + pre.dash + pre.filledOthers > 0, JSON.stringify(pre));
+  ok('before kickoff everything is sealed', pre.dash === 0, JSON.stringify(pre));
+
+  /* Just past kickoff, deliberately well short of the bound. This is the
+     exact window the bug lived in. */
+  await page.waitForTimeout((kickAt - Date.now()) + 900);
+  const during = await readGrid();
+  ok('the fixture really is inside the gap', Date.now() < kickAt + GAP,
+     String(kickAt + GAP - Date.now()) + 'ms left');
+  ok('a kicked-off game shows NO did-not-pick dashes while it waits',
+     during.dash === 0, JSON.stringify(during));
+  ok('it is still showing sealed cells instead',
+     during.sealed > 0, JSON.stringify(during));
+
+  /* AND THEN IT MUST ACTUALLY OPEN. A fix that just sealed forever would
+     pass every assertion above and be worse than the bug.
+
+     WAIT TO AN ABSOLUTE MOMENT, not for a duration: the re-subscribe
+     fires at kickoff + margin + 5s, and a relative wait measured from
+     wherever page load finished lands short of it often enough to flap. */
+  await page.waitForTimeout(Math.max(0, (kickAt + GAP + 5000 + 5000) - Date.now()));
+  const after = await readGrid();
+  ok('once the bound passes the kickoff, the picks fill in on their own',
+     after.filledOthers > 0, JSON.stringify(after));
+  ok('and they are not dashes', after.dash === 0, JSON.stringify(after));
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+console.log('\n43c. The app schedules on the margin queries USE, not the fallback');
+{
+  /* THE WIRING THIS PINS. firebase-init now starts at a 5 second margin
+     and widens to CLOCK_SKEW_MS only when a device's clock turns out to
+     be fast enough for Firestore to refuse. index.html has to read the
+     live value; reading CLOCK_SKEW_MS would schedule every re-subscribe
+     two minutes late on the phones that never needed the margin, which is
+     nearly all of them, and the two-minute wait would be back.
+
+     So: a fast margin of 1.5 seconds with the SAFE one left at the full
+     two minutes. Reading the right number opens the column in seconds.
+     Reading CLOCK_SKEW_MS opens it in 120 and this case sees nothing. */
+  const { ctx, page, errors } = await open({
+    startISO: new Date(Date.now() + 2500).toISOString(),
+    weeks: 1, gamesPerWeek: 2, playerCount: 6,
+    revealSkewMs: 1500, skewMs: 120000 });
+  const kickAt = Date.now() + 2500;
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(Math.max(0, (kickAt + 1500 + 5000 + 5000) - Date.now()));
+  /* NOT YOUR OWN ROW. `shown` is `r.p===ME || ...`, so your own cells are
+     visible regardless of any margin, and counting them made this case
+     pass against a build scheduling on the two-minute fallback. */
+  const filled = await page.evaluate(() => {
+    let n = 0, mine = 0;
+    document.querySelectorAll('#v-grid tbody tr').forEach(tr => {
+      if (tr.classList.contains('poolrow')) return;
+      const isMe = tr.classList.contains('me');
+      tr.querySelectorAll('td:not(.tbtd):not(.tot):not(.pl) .cell').forEach(c => {
+        if (c.classList.contains('hidden') || c.classList.contains('none')) return;
+        if (isMe) mine++; else n++; });
+    });
+    return { others: n, mine };
+  });
+  ok('the fixture has somebody else to reveal', filled.mine >= 0);
+  ok('OTHER players opened within seconds of kickoff, not minutes',
+     filled.others > 0, 'other-player cells filled: ' + filled.others
+       + ' (own row: ' + filled.mine + '), '
+       + Math.round((Date.now() - kickAt) / 1000) + 's after kickoff');
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
 const SKEW = 8000;
 console.log('\n44. The Grid must open itself at kickoff, without a reload');
 {
@@ -5203,9 +5327,39 @@ console.log('\n59. A finished week in which nobody scored crowns nobody');
   await page.waitForTimeout(500);
   await page.click('[data-stand="week"]').catch(() => {});
   await page.waitForTimeout(400);
+  /* A FLAT WAIT HERE WAS A COIN TOSS, and it cost a diagnosis before it
+     was understood. Measured, with the strip and the header sampled every
+     400ms across a real switch:
+
+       t+400ms   strip says week 1   header still the OLD week's countdown
+       t+1200ms  strip says week 1   header finally reads "Week 1 Final"
+
+     Three things happen at different times. state.week changes and
+     renderWeeks() marks the button immediately; loadWeek() then fetches
+     the week, taking most of a second; and the header is only rewritten
+     by tick(), which runs once a second, so it shows the PREVIOUS week's
+     text until the first tick after that fetch lands. A 900ms wait read
+     the header at about 1300ms, right on the boundary, so this case
+     failed perhaps one run in five with the header naming a future game
+     — which reads exactly like a real defect and is not one.
+
+     Waiting on the strip is not enough, as the trace above shows. Waiting
+     for the header to SAY "Final" would make the assertion below
+     tautological. So wait for the header to CHANGE from whatever it was
+     before the click: that proves the app has re-rendered, and leaves the
+     assertion free to fail if it re-rendered the wrong thing. */
+  const headerBefore = await page.evaluate(
+    () => (document.querySelector('#countdown') || {}).textContent);
   // Week 1 is the one that is entirely final in this fixture.
   await page.click('.wk[data-wk="1"]').catch(() => {});
-  await page.waitForTimeout(900);
+  await page.waitForFunction(
+    prev => document.querySelector('.wk[data-wk="1"]')?.classList.contains('on')
+         && (document.querySelector('#countdown') || {}).textContent !== prev,
+    headerBefore, { timeout: 15000 }).catch(() => {});
+  const switched = await page.evaluate(
+    () => !!document.querySelector('.wk[data-wk="1"]')?.classList.contains('on'));
+  ok('the fixture actually switched to week 1', switched);
+  await page.waitForTimeout(400);
   const s = await page.evaluate(() => ({
     rows: document.querySelectorAll('#board .row').length,
     pts: [...document.querySelectorAll('#board .row .pts b')]

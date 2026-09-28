@@ -691,6 +691,34 @@ const MUTATIONS = [
    `.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}`,
    `.side.l .scr{flex-direction:row-reverse}`,
    ['with no football, the away score still starts where the team name does']],
+
+  /* THE REVEAL, AND THE TWO MINUTES IT USED TO COST.
+
+     Reported from a live Sunday night kickoff: the Grid column went LIVE
+     the instant the clock passed kickoff, and then showed the DID NOT
+     PICK dash against every player for over two minutes. The cell asked
+     the local clock; the picks come from a query whose bound sits behind
+     now on purpose. Between those two moments the screen told a pool of
+     28 people that every one of them had missed the game. */
+  [59, 'reveal: unseal a live cell on the clock rather than the data',
+   `const shown=r.p===ME||(isLive(g)&&g.kick<=revealBound);`,
+   `const shown=isLive(g)||r.p===ME;`,
+   ['a kicked-off game shows NO did-not-pick dashes while it waits']],
+
+  /* AND THE OTHER HALF. firebase-init starts at a 5 second margin and
+     widens to CLOCK_SKEW_MS only when a device's clock proves fast
+     enough for Firestore to refuse the query. Reading the fallback here
+     schedules every re-subscribe two minutes late on the phones that
+     never needed it, which is nearly all of them, and the whole wait
+     comes straight back.
+
+     BOTH ASSERTIONS GO RED, and both should: one grades that the column
+     ever opens, the other that it opens in seconds rather than minutes. */
+  [60, 'reveal: schedule on the widened fallback instead of the live margin',
+   `return (P&&P.REVEAL_SKEW_MS)??(P&&P.CLOCK_SKEW_MS)??120000;};`,
+   `return (P&&P.CLOCK_SKEW_MS)??120000;};`,
+   ['once the bound passes the kickoff, the picks fill in on their own',
+    'OTHER players opened within seconds of kickoff, not minutes']],
 ];
 
 function runSuite() {

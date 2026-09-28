@@ -440,7 +440,10 @@ const PSX = window.PS = {
        written against it (case 59, a finished week nobody scored in)
        saw four players on a perfect 136 and could not explain why. */
     if (P.noRevealed) { window.__pushRevealed = (r) => cb(r || [], wk); return; }
-    const bound = Date.now() - PSX.CLOCK_SKEW_MS;
+    /* THE MARGIN A QUERY USES, not the safe fallback. This read
+       CLOCK_SKEW_MS, which is now only the widened value, so the stub
+       revealed two minutes later than the real client does. */
+    const bound = Date.now() - PSX.REVEAL_SKEW_MS;
     (window.__revealBounds ||= []).push(bound);
     const due = GAMES.filter(g => g.wk === wk && g.kickoff.toMillis() <= bound);
     const rows = [];
@@ -474,8 +477,20 @@ const PSX = window.PS = {
        alerts    the health object to report, e.g. {ok:false,reason:'permission'}
        pushError message enablePush() should throw instead of succeeding  */
   /* One definition, read by the app's reveal-refresh timer. P.skewMs lets
-     a test shrink it so a kickoff can be waited out in seconds. */
+     a test shrink it so a kickoff can be waited out in seconds.
+
+     CLOCK_SKEW_MS is now the SAFE margin, the one the real firebase-init
+     falls back to when a device's clock turns out to be fast. It is no
+     longer what a query asks for. */
   CLOCK_SKEW_MS: P.skewMs == null ? 120000 : P.skewMs,
+  /* REVEAL_SKEW_MS IS WHAT A QUERY ACTUALLY USES, and the app reads this
+     one to schedule its re-subscribe and to record the bound its
+     listener was opened with. Modelling it here is not decoration: with
+     the stub exporting only CLOCK_SKEW_MS the app would fall back to the
+     safe margin under test while production used the fast one, and every
+     reveal-timing case would be grading a build nobody runs. */
+  REVEAL_SKEW_MS: P.revealSkewMs == null
+    ? (P.skewMs == null ? 5000 : P.skewMs) : P.revealSkewMs,
   async alertsHealthy(){ log.push('alertsHealthy');
     return window.__alerts || P.alerts || { ok:true }; },
   async enablePush(){ await call('enablePush');
