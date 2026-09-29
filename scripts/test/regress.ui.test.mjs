@@ -4106,8 +4106,19 @@ console.log('\n50. A finished week must not still be pulsing "all locked"');
      so week 1 has to be selected explicitly. My first version of this
      case did not, graded the countdown state against the finished-week
      assertions, and failed for the wrong reason. */
+  /* WAIT FOR THE HEADER TO CHANGE, not for a fixed 800ms. Same trap as
+     case 59, found again on 29 Sep 2026 while building v1.41.0: the
+     week strip flips at once but the header only redraws on the first
+     tick after loadWeek resolves, so a flat wait read the OLD countdown
+     about one run in four, on v1.40.1 as well (reproduced 3 of 12). Not
+     tautological: if the header never changes, this times out and the
+     assertions below grade the stale text and fail. */
+  const before = (await clock()).txt;
   await page.click('.wk[data-wk="1"]');
-  await page.waitForTimeout(800);
+  await page.waitForFunction(t =>
+    (document.getElementById('countdown') || {}).textContent !== t,
+    before, { timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(150);
   const done = await clock();
   ok('a finished week says Final, not "all locked"',
      /week 1\s*·\s*final/i.test(done.txt) && !/locked/i.test(done.txt), done.txt);
@@ -4520,22 +4531,33 @@ console.log('\n53. A live card must say where the game is, and a final one who w
   await B.page.click('.wk[data-wk="1"]');
   await B.page.waitForTimeout(800);
 
-  /* The pool sub-line is on EVERY card now. It used to appear only when
-     a segment was too narrow for its own label, which made every other
-     game a different shape for no reason a player could name. */
+  /* v1.41.0: THE COUNT LINE IS GONE, ON EVERY CARD. Lee struck "27
+     picks" off the finished card, so the pool block is one row shorter
+     everywhere it appears. What must NOT go with it is the pool block
+     being the same shape on all sixteen cards, which is why the line
+     was put on every card in the first place: so assert both, that the
+     old line is nowhere and that every pool block measures the same. */
   const subs = await B.page.evaluate(() => {
     const cards = [...document.querySelectorAll('.card')]
       .filter(c => c.querySelector('.cons'));
     return { withCons: cards.length,
-             withSub: cards.filter(c => c.querySelector('.cons-sub')).length,
-             // and the narrow-segment percentage is still never lost
-             narrow: cards.filter(c => {
-               const segs = [...c.querySelectorAll('.cseg')];
-               return segs.some(sg => !sg.textContent.trim());
-             }).map(c => (c.querySelector('.cons-sub') || {}).textContent || '') };
+             withSub: cards.filter(c => c.querySelector('.cons-sub, .pcount')).length,
+             heights: [...new Set(cards.map(c =>
+               Math.round(c.querySelector('.cons').getBoundingClientRect().height)))] };
   });
-  ok('every card with a pool bar has a sub-line under it',
-     subs.withCons > 1 && subs.withSub === subs.withCons, JSON.stringify(subs));
+  ok('no card carries the old pick-count line',
+     subs.withCons > 1 && subs.withSub === 0, JSON.stringify(subs));
+  ok('and every pool block is the same height',
+     subs.heights.length === 1, JSON.stringify(subs.heights));
+  /* THE WHOLE POINT OF v1.41.0, as one number. Lee picked the tightened
+     card from mockups at 172px (head 20, teams 72, pool 48, result 32)
+     against today's 217. Graded on every finished card on the screen. */
+  const tight = await B.page.evaluate(() => [...document.querySelectorAll('#slate .card')]
+    .filter(c => c.querySelector('.resbar') && c.querySelector('.cons'))
+    .map(c => { const h = e => Math.round(e.getBoundingClientRect().height);
+      return [h(c), h(c.querySelector('.meta')), h(c.querySelector('.cons')), h(c.querySelector('.resbar'))].join('/'); }));
+  ok('a finished card is 172px: head 20, pool 48, result 32',
+     tight.length > 1 && tight.every(x => x === '172/20/48/32'), JSON.stringify([...new Set(tight)]));
   /* VACUOUS UNTIL NOW, and worth recording. This filtered the cards
      holding an unlabelled segment and asserted every one of them showed
      a percentage below — but the default generator splits every game
@@ -4550,11 +4572,53 @@ console.log('\n53. A live card must say where the game is, and a final one who w
   await LOP.page.waitForTimeout(800);
   const nar = await LOP.page.evaluate(() =>
     [...document.querySelectorAll('.card')]
-      .filter(c => [...c.querySelectorAll('.cseg')].some(sg => !sg.textContent.trim()))
-      .map(c => (c.querySelector('.cons-sub') || {}).textContent || ''));
+      .filter(c => [...c.querySelectorAll('.cbar:not(.cons-key) .cseg')].some(sg => !sg.textContent.trim()))
+      .map(c => (c.querySelector('.cons-key b') || {}).textContent || ''));
   ok('the fixture really does produce narrow segments', nar.length > 0, String(nar.length));
-  ok('and a segment too narrow to label still has its percentage below',
+  /* It used to share the count line under the bar. The count is gone;
+     the figure keeps a line under the bar of its own, only on the cards
+     that need one. The W1 case further down grades which end it sits. */
+  ok('and a segment too narrow to label still shows its percentage under the bar',
      nar.length > 0 && nar.every(t => /%/.test(t)), JSON.stringify(nar.slice(0, 4)));
+  /* THE RED TAG IS TALLER THAN THE LABEL, which is why the head row has
+     a fixed height: without it a card whose pool got it wrong grew a
+     couple of pixels and the slate stopped lining up. This fixture has
+     upsets (the default one never does), so this is where it can fail. */
+  /* WEEK 1, where this fixture has upset and non-upset cards of the
+     same shape side by side; the week it opens on happened to put every
+     red tag on one shape, which proves nothing about the tag. */
+  await LOP.page.click('.wk[data-wk="1"]').catch(() => {});
+  await LOP.page.waitForTimeout(900);
+  const lop = await LOP.page.evaluate(() => {
+    /* Cards WITHOUT a narrow figure: a lopsided card is meant to be one
+       line taller, and that is graded separately just below. */
+    const cons = [...document.querySelectorAll('.card .cons')].filter(c => !c.querySelector('.cons-key'));
+    const noted = [...document.querySelectorAll('.card .cons')].filter(c => c.querySelector('.cons-key'));
+    const tag = document.querySelector('.card .upset'), lab = document.querySelector('.card .cseg span');
+    /* Within each shape (with a narrow figure, and without), a card with
+       the red tag and a card without it must measure the same. */
+    const mixed = [cons, noted].filter(g => g.some(c => c.querySelector('.upset'))
+                                          && g.some(c => !c.querySelector('.upset')));
+    return { upsets: [...cons, ...noted].filter(c => c.querySelector('.upset')).length,
+             mixedGroups: mixed.length,
+             heights: [...new Set(cons.map(c => Math.round(c.getBoundingClientRect().height)))],
+             notedHeights: [...new Set(noted.map(c => Math.round(c.getBoundingClientRect().height)))],
+             tagTrim: tag ? getComputedStyle(tag).textBoxTrim : null,
+             labTrim: lab ? getComputedStyle(lab).textBoxTrim : null };
+  });
+  ok('a pool block with the red tag is the same height as one without',
+     lop.upsets > 0 && lop.mixedGroups > 0 && lop.heights.length === 1
+       && lop.notedHeights.length === 1, JSON.stringify(lop));
+  /* THE COST OF NEVER LOSING THE NUMBER, pinned so it cannot creep: a
+     lopsided card is exactly one 15px line taller than the rest. */
+  ok('and a lopsided card is exactly one short line taller, no more',
+     lop.notedHeights.length === 1 && lop.heights.length === 1
+       && lop.notedHeights[0] - lop.heights[0] === 15, JSON.stringify(lop));
+  /* Centred on the capitals, which is what Lee measured as off: capitals
+     have no descenders, so an untrimmed box leaves more room under the
+     words than over them, by an amount that depends on the typeface. */
+  ok('the red tag and the bar labels are trimmed to their capitals',
+     lop.tagTrim === 'trim-both' && lop.labTrim === 'trim-both', JSON.stringify(lop));
   ok('no page errors on the lopsided fixture', LOP.errors.length === 0, LOP.errors[0]);
   await LOP.ctx.close();
 
@@ -4746,11 +4810,35 @@ console.log('\n53c. A final card reports the result as a WIN / LOSS pill (W3)');
     const n = document.querySelector('#slate .stakebar .sb-num');
     return n ? n.offsetHeight : null;
   });
+  /* THE STAKE BAR IS A BUTTON AND KEEPS ITS 44px. v1.41.0 shortened the
+     result bar, which shares the .stakebar class, and the one way that
+     could go wrong is by shrinking the tap target people use to rank a
+     pick. Graded on the unplayed week, where the stake bars are. */
+  const stakeH = await U.page.evaluate(() => [...document.querySelectorAll('#slate .stakebar')]
+    .filter(b => !b.classList.contains('resbar')).map(b => b.offsetHeight));
+  ok('the stake bar is still a 44px tap target',
+     stakeH.length > 0 && stakeH.every(h => h === 44), JSON.stringify([...new Set(stakeH)]));
   await U.ctx.close();
   ok('the rank circle is on screen to compare against', circleH !== null, String(circleH));
-  ok('and the pill is exactly the rank circle\'s height',
-     circleH !== null && decided.every(b => b.wordH === circleH),
+  /* v1.41.0: SMALLER THAN THE CIRCLE NOW, ON PURPOSE. The pill matched
+     the rank circle's 26px because the result bar matched the stake
+     bar's 44px. Lee took the result bar to 32px (it is not a tap target;
+     the stake bar still is, and keeps 44), and a 26px stamp slanted 7
+     degrees fills a 32px bar edge to edge. So the pill is 21px, and the
+     honest assertions are the ones that still hold: it is SMALLER than
+     the circle, it keeps the slant (above), and its slanted box sits
+     inside its bar with room above and below. */
+  const fit = await A.page.evaluate(() => [...document.querySelectorAll('.card .resbar')]
+    .map(bar => { const w = bar.querySelector('.sb-word'); if (!w) return null;
+      const b = bar.getBoundingClientRect(), r = w.getBoundingClientRect();
+      return { top: +(r.top - b.top).toFixed(1), bottom: +(b.bottom - r.bottom).toFixed(1) }; })
+    .filter(Boolean));
+  ok('and the pill is smaller than the rank circle, to fit the shorter bar',
+     circleH !== null && decided.every(b => b.wordH < circleH),
      JSON.stringify([circleH, ...new Set(decided.map(b => b.wordH))]));
+  ok('with its slanted box clear of the bar above and below',
+     fit.length > 0 && fit.every(f => f.top >= 2 && f.bottom >= 2),
+     JSON.stringify(fit.slice(0, 3)));
 
   /* THE COLOUR RULE: green all through on a win, the paper-side red all
      through on a loss — the word, its outline, the points and the line
@@ -5070,7 +5158,7 @@ console.log('\n53b. Everything on a final card must be readable on it');
   await LP.waitForTimeout(800);
   const page2 = LP;
   const chip = await page2.evaluate(() => {
-    const c = document.querySelector('.card .cons-sub .pchip');
+    const c = document.querySelector('.card .cons-key .pchip');
     return c ? { shadow: getComputedStyle(c).boxShadow,
                  w: Math.round(c.getBoundingClientRect().width) } : null;
   });
@@ -5111,13 +5199,19 @@ console.log('\n53b. Everything on a final card must be readable on it');
   const sides = await page2.evaluate(() => {
     const out = [];
     document.querySelectorAll('.cons').forEach((cons, i) => {
-      const note = cons.querySelector('.psmall'); if (!note) return;
-      const bar = cons.querySelector('.cbar');
+      const note = cons.querySelector('.cons-key b'); if (!note) return;
+      const bar = cons.querySelector('.cbar:not(.cons-key)');
       const segs = [...bar.children]; if (segs.length < 2) return;
       const br = bar.getBoundingClientRect(), mid = (br.left + br.right) / 2;
       const small = segs.reduce((m, sg) =>
         sg.getBoundingClientRect().width < m.getBoundingClientRect().width ? sg : m);
-      const sr = small.getBoundingClientRect(), nr = note.getBoundingClientRect();
+      /* THE SQUARE IS THE FIGURE'S ANCHOR, so its side is graded, not the
+         words'. The words hang off the square's inner side and are wide
+         enough that, from a square in the wrong place, they can still
+         reach the right half: mutation 31 walked straight through a
+         version of this check that measured the words. */
+      const anchor = cons.querySelector('.cons-key .pchip') || note;
+      const sr = small.getBoundingClientRect(), nr = anchor.getBoundingClientRect();
       out.push({ i, txt: note.textContent.trim(),
                  sliver: (sr.left + sr.right) / 2 > mid ? 'right' : 'left',
                  note: (nr.left + nr.right) / 2 > mid ? 'right' : 'left' });
@@ -5134,6 +5228,28 @@ console.log('\n53b. Everything on a final card must be readable on it');
   ok('and it names the team whose sliver it is',
      sides.every(x => /^[A-Z]{2,3} \d+%$/.test(x.txt)),
      JSON.stringify(sides.slice(0, 3).map(x => x.txt)));
+  /* LEE'S RULE, v1.41.0: the colour square is the key to a colour, so it
+     sits CENTRED under the sliver it stands for, and the words hang off
+     its inner side. Measured against the real bar, both ways round: the
+     square's centre against the sliver's centre, to half a pixel. */
+  const keys = await page2.evaluate(() => [...document.querySelectorAll('.cons')].map(cons => {
+    const chip = cons.querySelector('.cons-key .pchip'); if (!chip) return null;
+    const segs = [...cons.querySelectorAll('.cbar:not(.cons-key) .cseg')]; if (segs.length < 2) return null;
+    const sm = segs.reduce((m, sg) => sg.getBoundingClientRect().width < m.getBoundingClientRect().width ? sg : m)
+      .getBoundingClientRect();
+    const ch = chip.getBoundingClientRect(), words = cons.querySelector('.cons-key b').getBoundingClientRect();
+    const box = cons.getBoundingClientRect(), left = (sm.left + sm.right) / 2 < (box.left + box.right) / 2;
+    return { off: +(((ch.left + ch.right) / 2) - ((sm.left + sm.right) / 2)).toFixed(2),
+             inner: left ? words.left >= ch.right : words.right <= ch.left,
+             onCard: words.left >= box.left && words.right <= box.right,
+             side: left ? 'left' : 'right' };
+  }).filter(Boolean));
+  ok('the colour square is centred under the sliver it stands for',
+     keys.length > 0 && keys.every(k => Math.abs(k.off) <= 0.5),
+     JSON.stringify(keys.filter(k => Math.abs(k.off) > 0.5).slice(0, 3)));
+  ok('with the words on its inner side, on the card, both ways round',
+     keys.every(k => k.inner && k.onCard) && new Set(keys.map(k => k.side)).size === 2,
+     JSON.stringify(keys.slice(0, 4)));
   /* BOTH WAYS ROUND, or the check passes on a fixture that only ever
      puts the sliver on one side and never exercises the swap. */
   ok('and the fixture covers a narrow left AND a narrow right',
@@ -6008,7 +6124,6 @@ console.log('\n61. White writing on every club, and the ring that makes it work'
     const one = [
       read('.card .meta .fin', 'head'),
       read('.card .cons-head span', 'pool label'),
-      read('.card .pcount', 'pool count'),
       read('.card .gutter span', 'gutter @'),
     ].filter(Boolean);
     /* AND WHAT WHITE WOULD ACTUALLY MEASURE on that paper, read off the
@@ -6028,7 +6143,7 @@ console.log('\n61. White writing on every club, and the ring that makes it work'
        && lit.every(x => x.team.raw === WHITE) && dimInk.every(x => x.team.raw !== WHITE),
      `${lit.length} lit white, ${dimInk.length} unselected dark`);
   ok('and the card’s paper bands keep their dark ink too',
-     paper.one.length === 4 && paper.one.every(x => x.darker),
+     paper.one.length === 3 && paper.one.every(x => x.darker),
      JSON.stringify(paper.one.map(x => x.label + ' ' + (x.darker ? 'dark' : 'LIGHT'))));
   /* THE REASON, MEASURED. This is the number that makes the decision
      more than a preference: there is no usable white ink on this paper

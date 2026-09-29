@@ -147,7 +147,7 @@ const CHECKS = [
              '.sb-pts.l,.sb-pts.none{color:var(--sink)}')],
 
   ['Z1 head', 'a final card is headed FINAL and the score, centred',
-   () => has('.meta.fmeta{justify-content:center}',
+   () => has('.meta.fmeta{justify-content:center;',
              '.meta.fmeta>:first-child{margin-right:0}',
              '<div class="meta fmeta"><span class="fin mono"><b>Final</b>') &&
          // Z2 was a tick, Z3 a dot, Z4 the winner's code in team colour
@@ -159,9 +159,16 @@ const CHECKS = [
          lacks('ptsLbl(w?pts:1)')],
 
   ['W1 sub-line', "the narrow side's figure sits under its own sliver",
-   () => has('.cons-sub.subflex{display:flex', 'justify-content:space-between',
-             'const note=`<span class="psmall"><i class="pchip"',
-             'small[0]===g.a ? note+cnt : cnt+note') &&
+   /* v1.41.0: the count line is gone; the figure keeps a line under the
+      bar only on the cards that need one. That line is an invisible copy
+      of the bar, so the colour square is centred under its own sliver
+      and the words hang off its inner side. */
+   () => has('return `<div class="cbar cons-key"><div class="cseg l" style="width:${c.pa}%">${',
+             '.cbar.cons-key{height:11px;margin-top:4px}',
+             '.cons-key .pchip{position:absolute;left:50%;top:1px;transform:translateX(-50%)}',
+             '.cons-key .cseg.r b{right:calc(50% + 10px)}',
+             '.cons-key .cseg.l b{left:calc(50% + 10px)}',
+             '    <div class="cbar">${seg(c.pa,g.a,\'l\')}${seg(c.ph,g.h,\'r\')}</div>\n    ${note}') &&
          has('.pchip{width:9px;height:9px', 'box-shadow:inset 0 0 0 1px rgba(20,22,26,.30)') &&
          // W2 tinted the words, which measured 3.51:1 on the Chargers
          lacks('.psmall{color:', 'style="color:${TEAM(')],
@@ -179,11 +186,29 @@ const CHECKS = [
      chip pinned to that side rather than plain text at the left — so
      the check is that both shapes exist and that neither is conditional
      on the split. */
-  ['pool sub-line', 'on every card, and it carries the narrow side either way',
-   () => has('<div class="cons-sub mono">${cnt}</div>',
-             '<div class="cons-sub mono subflex">',
+  /* v1.41.0 REPLACES the rule above it in spirit. The sub-line existed
+     so every pool block was the same shape; the count is gone (Lee
+     struck it), and the same-shape promise is now kept by a head row of
+     fixed height, so a card with the red tag measures the same as one
+     without. */
+  ['pool block', 'no count line, and a fixed head row so every block is one shape',
+   () => has('.cons-head{display:flex;align-items:center;justify-content:space-between;gap:8px;',
+             'margin-bottom:4px;height:10px}',
              "const small=c.pa>0&&c.pa<22 ? [g.a,c.pa] : c.ph>0&&c.ph<22 ? [g.h,c.ph] : null") &&
-         lacks("${(c.pa<22||c.ph<22)?`<div class=\"cons-sub")],
+         lacks('cons-sub', 'class="pcount"', '.pcount{')],
+
+  ['tight final', 'the finished card at 172px: head 20, pool 48, result 32',
+   () => has('.meta.fmeta{justify-content:center;padding-top:4px;padding-bottom:4px;color:#3A3935}',
+             '.meta .fin b{font-weight:800;letter-spacing:.09em;text-transform:uppercase;\n  color:#2A2927}',
+             '.cons{background:var(--paper-2);border-top:1px solid var(--rule);padding:6px 11px 7px}',
+             '.cbar{display:flex;height:20px;gap:3px;background:transparent}',
+             '.resbar{cursor:default;border-top:1px solid var(--rule);height:32px}',
+             '.resbar .sb-word{height:21px;border-radius:11px;font-size:10px}')],
+
+  ['centred caps', 'the red tag and the bar labels are centred on the capitals',
+   () => has('@supports (text-box:trim-both cap alphabetic){',
+             '.upset{line-height:1;padding:3.5px 6px;text-box:trim-both cap alphabetic;position:relative;top:-1px}',
+             '.cseg span{line-height:1;text-box:trim-both cap alphabetic}')],
 
   ['1 PT', 'one point is singular, everywhere',
    () => has("const ptsLbl=n=>`${n} ${Math.abs(n)===1?'pt':'pts'}`") &&

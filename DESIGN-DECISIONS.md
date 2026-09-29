@@ -1251,6 +1251,56 @@ good band and that `#v-picks` specifically never moves, so the test and
 the dashboard cannot disagree about what improved. Mutation 66 removes
 the reserved height and both assertions go red at the measured 0.111.
 
+## 4l. The finished card, chosen from pictures
+
+**v1.41.0.** Lee asked why a finished card was twice the height of an
+unplayed one. Measured: 99px untouched, 143px picked, **217px final**,
+which is **two** finished games per phone screen on a Sunday night. The
+app's own note on `.match` says a sports app should show five or six.
+
+**Four redesigns were built and rejected, and that is the lesson.**
+Scoreboard, result-first, ticker and a stamped layout all went in front
+of Lee as full phone mockups, then five variations of the one he liked.
+He turned all of them down and marked up a screenshot of the card as it
+already was: raise this line, this block is too tall, strike "27 picks",
+too much space around the result. He did not want a new card. He wanted
+the existing one without the air in it. Mockups that start from the
+current screen and change only what he circled landed on the second
+try; the redesigns cost four rounds.
+
+**What shipped:** head 26 to 20px with darker ink (FINAL #2A2927, the
+score #3A3935), pool block 75 to 48px, result bar 44 to 32px, count line
+removed. **217px to 172px.** Cream kept after silver, three grays and a
+filled-panel variant were compared side by side on real phone screens.
+
+**The stake bar keeps 44px.** It shares `.stakebar` with the result bar
+and it is the button that ranks a pick. The result bar was 44 only to
+match it. A test grades both numbers.
+
+**The count line had a second job.** A segment under 22% cannot print
+its own label, and "27 picks" was the row where that figure went. It
+took three rounds to place. In the head row first (Lee sent it back);
+then under the bar with the colour square on the outside end; then, his
+final call, the square **centred under the sliver it stands for**, with
+the words on its inner side. That line is built as an invisible second
+copy of the bar, the same `.cbar` and `.cseg` boxes at the same widths,
+so it lays out exactly as the bar does and the square is centred in the
+sliver's own box, measured to a hundredth of a pixel. Only lopsided
+games carry the line, so those cards are 187px and every other one 172.
+
+**Centred on the capitals, not the line box.** Lee measured the red tag
+at 2.7pt over the words and 5.3pt under in one mock, and the bar labels
+sat low. Capitals have no descenders, so an untrimmed line box always
+leaves more room underneath, by an amount that depends on the font. The
+fix is `text-box: trim-both cap alphabetic` with equal padding, which is
+right in any typeface; older browsers keep the previous padding. The
+mock that showed 5.3pt was also not drawing the app's font at all,
+which is worth knowing the next time a mockup's spacing looks off.
+
+**Also fixed, found while testing:** regress case 50 read the header one
+tick early about one run in four, on v1.40.1 too (3 of 12). Same trap as
+case 59; it now waits for the header to change.
+
 ## 5. Open, not yet decided
 
 - **The gutter `@` is 3.77:1**, found while drawing the paper-ink

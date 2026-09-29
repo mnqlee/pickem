@@ -599,16 +599,19 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    item centres itself as a side effect of those cancelling out. It
    rendered right for the wrong reason, which is not a thing to leave
    for the next person editing this file. */
-.meta.fmeta{justify-content:center}
+.meta.fmeta{justify-content:center;padding-top:4px;padding-bottom:4px;color:#3A3935}
 .meta.fmeta>:first-child{margin-right:0}
 .meta .fin{white-space:nowrap;letter-spacing:.01em}
 .meta .fin b{font-weight:800;letter-spacing:.09em;text-transform:uppercase;
-  color:var(--ink-mute)}
+  color:#2A2927}
 
-/* THE RESULT BAR sits exactly where the stake bar sits — same 44px,
-   same paper, same border — so a card does not change height when it
-   goes final. It is not a button, and it is not tappable. */
-.resbar{cursor:default;border-top:1px solid var(--rule)}
+/* THE RESULT BAR sits where the stake bar sits, same paper, same border.
+   It was the same 44px too, and v1.41.0 takes it to 32px: the stake bar
+   is a tap target and needs 44, this is not a button and never was, so
+   the height was only ever there to match. Lee circled the space above
+   and below its one line of writing. */
+.resbar{cursor:default;border-top:1px solid var(--rule);height:32px}
+.resbar .sb-word{height:21px;border-radius:11px;font-size:10px}
 /* A PAPER-SIDE RED, and it is a measured value rather than a shade.
    --stamp #C8342A is 4.32:1 on this card's #EDE8DE — under the 4.5:1
    floor, and this is now a whole line of real information rather than
@@ -638,9 +641,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 /* W1 — the pool sub-line becomes a two-ended row when one side is too
    narrow to label itself. See the note in consensusBar() for why the
    chip carries the colour and the words do not. */
-.cons-sub.subflex{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.psmall{display:inline-flex;align-items:center;gap:5px;font-weight:700}
-.pcount{color:var(--ink-soft)}
+.psmall{display:inline-flex;align-items:center;gap:5px;font-weight:700;white-space:nowrap}
 /* The chip is a graphic, so 3:1 is the bar, and only Cincinnati's
    #FB4F14 fails it against this paper at 2.76:1. The ring is the same
    device .mark carries for the same reason. */
@@ -1541,8 +1542,20 @@ tbody tr.me td.tot{background:#241F1E}
   white-space:nowrap;font-size:10px;
   font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--chalk)}
 /* pool consensus, locked games only */
-.cons{background:var(--paper-2);border-top:1px solid var(--rule);padding:9px 11px 10px}
-.cons-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+/* v1.41.0 TIGHTENED: 9/10 padding to 6/7, 6 to 4 under the head, and a
+   fixed 10px head so a card with the red tag is exactly as tall as one
+   without (the tag is taller than the text and centres over the row). */
+.cons{background:var(--paper-2);border-top:1px solid var(--rule);padding:6px 11px 7px}
+.cons-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin-bottom:4px;height:10px}
+.cbar.cons-key{height:11px;margin-top:4px}
+.cons-key .cseg{background:none;box-shadow:none;overflow:visible;position:relative;transition:none}
+.cons-key .key{position:absolute;inset:0}
+.cons-key .pchip{position:absolute;left:50%;top:1px;transform:translateX(-50%)}
+.cons-key b{position:absolute;top:0;white-space:nowrap;font-size:9.5px;font-weight:700;
+  line-height:11px;color:var(--ink-soft);letter-spacing:0}
+.cons-key .cseg.r b{right:calc(50% + 10px)}
+.cons-key .cseg.l b{left:calc(50% + 10px)}
 .cons-head span{font-size:9px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
   color:var(--ink-soft)}
 .upset{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:.09em;
@@ -1561,7 +1574,7 @@ tbody tr.me td.tot{background:#241F1E}
    A gap fixes every one of them at once and depends on no colour: the
    card shows through between the segments, so there is always a hard
    edge no matter what the two clubs wear. */
-.cbar{display:flex;height:22px;gap:3px;background:transparent}
+.cbar{display:flex;height:20px;gap:3px;background:transparent}
 .cseg{display:flex;align-items:center;color:#fff;font-size:10px;font-weight:800;
   letter-spacing:.03em;transition:width .4s cubic-bezier(.4,0,.2,1);
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);min-width:0;overflow:hidden;white-space:nowrap}
@@ -1569,7 +1582,16 @@ tbody tr.me td.tot{background:#241F1E}
 .cseg.r{justify-content:flex-end;padding-right:8px;border-radius:2px 5px 5px 2px}
 /* A lone segment (a unanimous pool) keeps the full pill shape. */
 .cseg.l:only-child,.cseg.r:only-child{border-radius:5px}
-.cons-sub{margin-top:6px;font-size:9.5px;color:var(--ink-soft);font-weight:600}
+/* OPTICAL CENTRING, font-proof. Capitals have no descenders, so a
+   line box leaves more room under them than over them, and how much
+   depends on the typeface: Lee measured the red tag at 2.7pt over the
+   words and 5.3pt under in one mock. text-box trims the box to cap
+   height and baseline, so equal padding is equal space whatever font
+   the phone draws with. Browsers without it keep the old padding. */
+@supports (text-box:trim-both cap alphabetic){
+  .upset{line-height:1;padding:3.5px 6px;text-box:trim-both cap alphabetic;position:relative;top:-1px}
+  .cseg span{line-height:1;text-box:trim-both cap alphabetic}
+}
 
 /* ---------- THE VERSION CARD, last in Settings ----------
    One row: the number and a sentence on the left, one button on the
@@ -2745,53 +2767,43 @@ function consensusBar(g){
   const seg=(pct,code,side)=>pct===0?'':
     `<div class="cseg ${side}" style="width:${pct}%;background:${TEAM(code)[2]}">${
       pct>=22?`<span>${code} ${pct}%</span>`:''}</div>`;
+  /* v1.41.0: THE COUNT LINE IS GONE, and the narrow figure keeps a line
+     of its own only when there is one. Lee struck "27 picks" off the
+     card: it cost a whole row on every locked game to say something
+     that barely changes all season. The line had a second job, and that
+     job stays: a segment under 22% is too thin to print its own label,
+     so its figure sits UNDER the bar at the sliver's end. That was
+     mocked in the head row first and Lee sent it back under the bar.
+     THE SQUARE IS CENTRED UNDER ITS SLIVER, his call in two steps (first
+     to the outside end, then "centred of the colour it's representing"):
+     it is the key to a colour, so it sits in the middle of the colour it
+     stands for, with the words on its inner side. Only one side
+     can ever be narrow, because the two percentages sum to 100. A
+     lopsided card is therefore 15px taller than the rest, which is the
+     cost of never losing that number. Only one side can ever be narrow,
+     because the two percentages sum to 100. */
+  const small=c.pa>0&&c.pa<22 ? [g.a,c.pa] : c.ph>0&&c.ph<22 ? [g.h,c.ph] : null;
+  /* CENTRED UNDER ITS SLIVER, Lee's refinement. The key row is a second,
+     invisible copy of the bar: the same .cbar and .cseg boxes at the same
+     widths, so it lays out exactly as the bar above it does (the padding,
+     the 3px gap and the flex shrink all included). The square is centred
+     in the narrow box, which is the sliver's own box; the words hang off
+     its inner side. Measuring the sliver in script was the alternative,
+     and would be wrong for a frame on every resize. */
+  const note=small?(()=>{
+    const right=small[0]===g.h;
+    const key=`<span class="key"><i class="pchip" style="background:${TEAM(small[0])[2]}"></i><b class="mono">${
+      small[0]} ${small[1]}%</b></span>`;
+    return `<div class="cbar cons-key"><div class="cseg l" style="width:${c.pa}%">${
+      right?'':key}</div><div class="cseg r" style="width:${c.ph}%">${right?key:''}</div></div>`;
+  })():'';
   return `<div class="cons">
     <div class="cons-head">
       <span>How the pool picked</span>
       ${upset?'<i class="upset">Pool got it wrong</i>':''}
     </div>
     <div class="cbar">${seg(c.pa,g.a,'l')}${seg(c.ph,g.h,'r')}</div>
-    ${/* THE SUB-LINE IS ON EVERY CARD NOW, so the pool block is the same
-          shape on all sixteen instead of growing a fourth line on the
-          lopsided ones — which is what made every other game look
-          different for no reason anybody could name.
-          It still earns its place: the count is always worth saying, and
-          it picks up any percentage the bar could not print, since a
-          segment narrower than 22% drops its own label. So an 8% side is
-          never silently unlabelled, which was the flaw in my first pass
-          at this — the narrow number vanished from both places. */''}
-    ${/* W1 — THE NARROW SIDE'S FIGURE GOES UNDER ITS OWN SLIVER.
-          This line already carried that number. It printed it as plain
-          text at the left, whichever end the sliver was on — so on an
-          8%-on-the-right split the figure sat as far from the segment
-          it describes as the card allows, and nothing connected them.
-          Now it pins to the sliver's side, with a chip in that team's
-          colour, and the pick count takes the other end.
-
-          ONLY ONE SIDE CAN EVER BE NARROW: the two percentages sum to
-          100, so under 22% on one means over 78% on the other. And a
-          unanimous pool has a single segment, so there is no narrow
-          side at all — in that case this is just the count, exactly
-          where it has always been. The DOM order decides which end each
-          takes, so there is no left/right CSS to keep in step.
-
-          THE CHIP CARRIES THE COLOUR AND THE WORDS DO NOT, and that is
-          measured. As TEXT on this card's #EDE8DE paper, seven team
-          primaries fail 4.5:1 — Cincinnati #FB4F14 at 2.76:1, Miami
-          3.24, Carolina 3.30, the Chargers 3.51, Kansas City 3.86,
-          Detroit 4.03, Tampa Bay 4.44. As a CHIP, which is a graphic
-          and wants 3:1, only Cincinnati fails — and the hairline ring
-          covers that, the same device .mark already carries for the
-          same reason. */''}
-    ${(()=>{
-      const cnt=`<span class="pcount">${c.n} pick${c.n===1?'':'s'}</span>`;
-      const small=c.pa>0&&c.pa<22 ? [g.a,c.pa] : c.ph>0&&c.ph<22 ? [g.h,c.ph] : null;
-      if(!small)return `<div class="cons-sub mono">${cnt}</div>`;
-      const note=`<span class="psmall"><i class="pchip" style="background:${
-        TEAM(small[0])[2]}"></i>${small[0]} ${small[1]}%</span>`;
-      return `<div class="cons-sub mono subflex">${
-        small[0]===g.a ? note+cnt : cnt+note}</div>`;
-    })()}
+    ${note}
   </div>`;
 }
 

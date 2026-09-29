@@ -136,10 +136,14 @@ const MUTATIONS = [
     const litH=p?p.winner===g.h:null;`,
    ['the lit side is the team that WON, whoever you took']],
 
-  [3, 'cards: show the pool sub-line only on lopsided games again',
-   `      if(!small)return \`<div class="cons-sub mono">\${cnt}</div>\`;`,
-   `      if(!small)return '';`,
-   ['every card with a pool bar has a sub-line under it']],
+  /* v1.41.0 replaced this one: the sub-line it guarded is gone on
+     purpose, so the mistake to catch now is the count coming back. */
+  [3, 'cards: bring the pick-count line back under the bar',
+   `    <div class="cbar">\${seg(c.pa,g.a,'l')}\${seg(c.ph,g.h,'r')}</div>
+    \${note}`,
+   `    <div class="cbar">\${seg(c.pa,g.a,'l')}\${seg(c.ph,g.h,'r')}</div>
+    \${note}<div class="cons-sub mono"><span class="pcount">\${c.n} picks</span></div>`,
+   ['no card carries the old pick-count line']],
 
   [3, "cards: stop capturing ESPN's clock string",
    `        const det=c.status&&c.status.type&&c.status.type.shortDetail;
@@ -185,7 +189,7 @@ const MUTATIONS = [
      is that a colour this wrong can look merely "a bit faint". */
   [9, 'cards: put the invisible FINAL label back',
    `.meta .fin b{font-weight:800;letter-spacing:.09em;text-transform:uppercase;
-  color:var(--ink-mute)}`,
+  color:#2A2927}`,
    `.meta .fin b{font-weight:800;letter-spacing:.09em;text-transform:uppercase;
   color:var(--chalk)}`,
    ['and its FINAL label clears 4.5:1 against the card']],
@@ -249,9 +253,9 @@ const MUTATIONS = [
 
   // The head, left-aligned: it centred by accident before .fmeta said so.
   [29, 'cards: let the final head centre by accident again',
-   `.meta.fmeta{justify-content:center}
+   `.meta.fmeta{justify-content:center;padding-top:4px;padding-bottom:4px;color:#3A3935}
 .meta.fmeta>:first-child{margin-right:0}`,
-   ``,
+   `.meta.fmeta{padding-top:4px;padding-bottom:4px;color:#3A3935}`,
    ['and every one is centred on its card']],
 
   /* THE UNSTAKED PICK. pay(0,n) is 1, so an unstaked pick that comes in
@@ -285,8 +289,8 @@ const MUTATIONS = [
      before, and on an 8%-on-the-right split it puts the figure as far
      from the segment it describes as the card allows. */
   [31, 'cards: put the narrow-side figure at the left, whichever side it is',
-   `        small[0]===g.a ? note+cnt : cnt+note}</div>\`;`,
-   `        note+cnt}</div>\`;`,
+   "    const right=small[0]===g.h;",
+   "    const right=false;",
    ["the narrow side's figure sits on its own side of the split"]],
 
   [14, 'cards: put the invented word "Live" back in front of the clock',
@@ -775,6 +779,31 @@ const MUTATIONS = [
      it becomes 53px and pushes the whole picks view down 44 pixels,
      under the thumb of anybody reaching for a team. Removing the
      reserved height puts the jump straight back, measured at 0.111. */
+  [67, 'cards: let the head row size itself, so the red tag grows its card',
+   `  margin-bottom:4px;height:10px}`,
+   `  margin-bottom:4px}`,
+   ['a pool block with the red tag is the same height as one without']],
+
+  [68, 'cards: drop the capital trim, so the tag and labels sit off centre again',
+   `@supports (text-box:trim-both cap alphabetic){`,
+   `@supports (text-box:no-such-value){`,
+   ['the red tag and the bar labels are trimmed to their capitals']],
+
+  [69, 'cards: put the result bar back to 44px',
+   `.resbar{cursor:default;border-top:1px solid var(--rule);height:32px}`,
+   `.resbar{cursor:default;border-top:1px solid var(--rule)}`,
+   ['a finished card is 172px: head 20, pool 48, result 32']],
+
+  [71, 'cards: pin the colour square to the outer edge instead of centring it on its sliver',
+   `.cons-key .pchip{position:absolute;left:50%;top:1px;transform:translateX(-50%)}`,
+   `.cons-key .pchip{position:absolute;right:0;top:1px}`,
+   ['the colour square is centred under the sliver it stands for']],
+
+  [70, 'cards: shrink every stake bar with the result bar, tap target and all',
+   `.resbar{cursor:default;border-top:1px solid var(--rule);height:32px}`,
+   `.resbar,.stakebar{cursor:default;border-top:1px solid var(--rule);height:32px}`,
+   ['the stake bar is still a 44px tap target']],
+
   [66, 'layout: stop reserving the week strip height, so the picks view jumps',
    `  scrollbar-width:none;min-height:53px}`,
    `  scrollbar-width:none}`,
