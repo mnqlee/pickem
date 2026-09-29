@@ -768,6 +768,18 @@ const MUTATIONS = [
    `  try{ usageTab(t.dataset.tab); }catch(e){}`,
    `  usageTab(t.dataset.tab);`,
    ['AUDIT: usage anonymity']],
+
+  /* THE LAYOUT SHIFT, WHICH REAL PHONES REPORTED BEFORE ANYBODY LOOKED.
+     Cloudflare measured CLS 0.122 against #v-picks on 29 of 33 loads.
+     The week strip is an empty 9px sliver until the season arrives, then
+     it becomes 53px and pushes the whole picks view down 44 pixels,
+     under the thumb of anybody reaching for a team. Removing the
+     reserved height puts the jump straight back, measured at 0.111. */
+  [66, 'layout: stop reserving the week strip height, so the picks view jumps',
+   `  scrollbar-width:none;min-height:53px}`,
+   `  scrollbar-width:none}`,
+   ['cumulative layout shift is inside the good band',
+    'and the picks view itself never moves']],
 ];
 
 function runSuite() {

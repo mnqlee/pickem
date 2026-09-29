@@ -160,7 +160,25 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .wklab{text-align:center;text-transform:uppercase;color:var(--chalk);
   padding:4px 0 5px;line-height:1;
   font-size:9px;font-weight:800;letter-spacing:.2em}
-.weeks{display:flex;gap:6px;overflow-x:auto;margin:0 -14px 0;padding:0 14px 9px;scrollbar-width:none}
+/* MIN-HEIGHT IS THE WHOLE FIX FOR THE APP'S LAYOUT SHIFT, and the number
+   is arithmetic rather than taste: a .wk button is min-height 44px and
+   this strip carries 9px of bottom padding, so a populated strip is 53px
+   and an empty one is 9.
+
+   MEASURED, FROM REAL PHONES. Cloudflare Web Analytics reported CLS
+   0.122 against #v-picks on 29 of 33 loads, which is very nearly
+   everybody, and reproducing it frame by frame showed exactly one shift:
+
+     t= 40ms   #weeks 130/9  (0 children)   #v-picks at y 140
+     t=171ms   #weeks 130/53 (1 child)      #v-picks at y 184
+
+   The strip is an empty sliver until the season arrives, then it appears
+   and shoves the entire picks view down 44 pixels. Anybody reaching for
+   a team in that window watches the card move out from under their
+   thumb. Reserving the space costs nothing, because the strip always
+   ends up exactly this tall. */
+.weeks{display:flex;gap:6px;overflow-x:auto;margin:0 -14px 0;padding:0 14px 9px;
+  scrollbar-width:none;min-height:53px}
 .weeks::-webkit-scrollbar{display:none}
 .wk{flex:0 0 auto;min-width:46px;min-height:44px;padding:7px 9px;border-radius:8px;
   background:var(--shell-2);border:1px solid transparent;text-align:center;cursor:pointer;

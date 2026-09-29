@@ -52,6 +52,25 @@ async function open(plan = {}, opts = {}) {
       configurable: true,
       value: { permission: p, requestPermission: async () => p } });
   }, opts.notify || 'granted');
+  /* opts.observeShifts: record every layout shift the browser reports,
+     from before the first paint. Installed as an init script because a
+     PerformanceObserver added after load has already missed the shifts
+     that matter, which all happen in the first few hundred ms. */
+  if (opts.observeShifts) await ctx.addInitScript(() => {
+    window.__shifts = [];
+    new PerformanceObserver(list => {
+      for (const e of list.getEntries()) {
+        if (e.hadRecentInput) continue;      // a shift the user caused is not a defect
+        window.__shifts.push({ t: Math.round(e.startTime), value: +e.value.toFixed(4),
+          sources: (e.sources || []).map(sc => {
+            const n = sc.node;
+            if (!n || !n.tagName) return '(node gone)';
+            return n.tagName.toLowerCase() + (n.id ? '#' + n.id : '')
+              + '   y ' + Math.round(sc.previousRect.y) + ' -> ' + Math.round(sc.currentRect.y);
+          }) });
+      }
+    }).observe({ type: 'layout-shift', buffered: true });
+  });
   const page = await ctx.newPage();
   await page.route('**/*', r => r.request().url().startsWith(BASE) ? r.continue() : r.abort());
   const errors = [];
@@ -3244,6 +3263,56 @@ console.log('\n43e. A failed usage write must never reach a player');
      out whatever else it was about to do. */
   ok('the app is still rendered', await page.evaluate(
      () => !!document.querySelector('.tab.on')));
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n43f. The picks view must not jump while somebody is reaching for it');
+{
+  /* FOUND IN PRODUCTION, BY MEASUREMENT, NOT BY LOOKING. Cloudflare Web
+     Analytics reported CLS 0.122 against #v-picks on 29 of 33 real loads
+     across a Sunday, which is very nearly every launch. Reproduced frame
+     by frame against this build:
+
+       t= 40ms   #weeks 130/9  (0 children)   #v-picks at y 140
+       t=171ms   #weeks 130/53 (1 child)      #v-picks at y 184
+
+     The week strip is an empty 9px sliver until the season loads, then
+     it appears at its full 53px and shoves the entire picks view down 44
+     pixels. Anybody reaching for a team in that window watches the card
+     move out from under their thumb, and on a slow connection that
+     window is seconds rather than milliseconds.
+
+     `min-height` on .weeks fixes it, and the number is arithmetic: a .wk
+     button is 44px and the strip has 9px of bottom padding.
+
+     WHY THIS IS GRADED ON THE BROWSER'S OWN NUMBER rather than on a
+     pixel comparison: CLS is what real phones report and what the
+     dashboard shows, so asserting the same quantity means this test and
+     the production measurement cannot disagree about what improved. */
+  const { ctx, page, errors } = await open({
+    startISO: new Date(Date.now() + 3 * 864e5).toISOString(),
+    weeks: 1, gamesPerWeek: 16, playerCount: 12 }, { observeShifts: true });
+  await page.waitForTimeout(3500);
+
+  const shifts = await page.evaluate(() => window.__shifts || []);
+  const cls = shifts.reduce((a, x) => a + x.value, 0);
+  ok('the observer actually ran', Array.isArray(shifts), typeof shifts);
+  /* 0.1 is the browser's own "good" boundary. This build measures about
+     0.004; before the fix it was 0.111, so the threshold has a lot of
+     room either side and is not tuned to today's exact number. */
+  ok('cumulative layout shift is inside the good band',
+     cls < 0.05, 'CLS ' + cls.toFixed(4) + '  ' + JSON.stringify(shifts.slice(0, 2)));
+
+  /* AND THE NAMED ELEMENT SPECIFICALLY. A future change could keep CLS
+     low overall while moving this one, and #v-picks is the tab people
+     are touching. */
+  const movedPicks = shifts.some(x =>
+    (x.sources || []).some(src => /#v-picks/.test(src) && /y (\d+) -> (?!\1\b)/.test(src)));
+  ok('and the picks view itself never moves',
+     !movedPicks, JSON.stringify(shifts.filter(x =>
+       (x.sources || []).some(s => /#v-picks/.test(s))).slice(0, 2)));
+  ok('no page errors', errors.length === 0, errors[0] || '');
   await ctx.close();
 }
 

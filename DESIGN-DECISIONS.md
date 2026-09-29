@@ -1204,6 +1204,53 @@ intermittently is not noise to be waited out. It is a claim that
 something is wrong, and twice I attributed it to the hour rather than
 reading it.
 
+## 4k. The jump under your thumb, found by real phones
+
+Cloudflare Web Analytics, three days including a Sunday slate: **CLS
+0.122 against `#v-picks` on 29 of 33 loads.** Not a sample. Very nearly
+every launch.
+
+Reproduced frame by frame against the real build:
+
+| | `#weeks` | `#v-picks` |
+|---|---|---|
+| **40ms** | height **9px**, 0 children | y = 140 |
+| **171ms** | height **53px**, 1 child | y = **184** |
+
+The week strip is an empty sliver until the season arrives, then it
+appears at full height and **shoves the entire picks view down 44
+pixels**. Anybody reaching for a team in that window watches the card
+move out from under their thumb, and on a slow connection the window is
+seconds rather than milliseconds.
+
+**The fix is one property and the number is arithmetic**, not taste: a
+`.wk` button is `min-height:44px` and the strip carries 9px of bottom
+padding, so a populated strip is always exactly 53px.
+
+    .weeks{ ... min-height:53px}
+
+**Measured before and after: CLS 0.1108 to 0.0038.** The browser's own
+"good" boundary is 0.1.
+
+### Why this one is worth recording beyond the fix
+
+**Nothing in the app was broken and no test could have found it.** Every
+element rendered correctly, every number was right, and the suite was
+green throughout. The defect only exists in the gap between two paints,
+which is invisible unless something is watching the browser's own
+layout-shift reports.
+
+**It took production telemetry to see it at all.** This is the first
+defect in this app that arrived as a measurement from other people's
+phones rather than from Lee noticing something or a test going red. That
+is the argument for having turned Web Analytics on, in one finding.
+
+**And it is now guarded on the same quantity production reports.** Case
+43f observes real layout-shift entries and asserts the total stays in the
+good band and that `#v-picks` specifically never moves, so the test and
+the dashboard cannot disagree about what improved. Mutation 66 removes
+the reserved height and both assertions go red at the measured 0.111.
+
 ## 5. Open, not yet decided
 
 - **The gutter `@` is 3.77:1**, found while drawing the paper-ink
@@ -1236,7 +1283,7 @@ reading it.
 ## Built — v1.35.0
 
 Everything below is in the build and checked by
-`scripts/test/picks-audit.mjs` (42 of 42) plus the named cases in
+`scripts/test/picks-audit.mjs` (43 of 43) plus the named cases in
 `scripts/test/regress.ui.test.mjs`.
 
 | item | where it is checked |
@@ -1282,3 +1329,4 @@ Everything below is in the build and checked by
 | a watched game refreshes every 30 seconds | audit `live rate` |
 | the usage row carries no identity, ever | audit `usage anonymity`, case 43d, mutations 61-64, firestore.rules |
 | only on-screen time is counted | case 43d, mutation 62 |
+| the week strip holds its height before it fills | audit `no jump`, case 43f, mutation 66 |

@@ -351,6 +351,12 @@ const CHECKS = [
          has('try{ usageTab(t.dataset.tab); }catch(e){}') &&
          lacks('uid:usage', 'uid:(PS.user', 'PS.user.uid,', 'email:usage')],
 
+  /* THE ONE DEFECT REAL PHONES FOUND BEFORE ANYBODY LOOKED. Without the
+     reserved height the week strip appears at 53px and shoves the picks
+     view down 44px on essentially every launch. */
+  ['no jump', 'the week strip holds its height before it fills',
+   () => has('scrollbar-width:none;min-height:53px}')],
+
   ['version routes', 'the page makes no worker calls of its own',
    () => lacks("postMessage('SKIP_WAITING')", 'navigator.serviceWorker.register',
                'caches.keys()', 'new MessageChannel') &&
