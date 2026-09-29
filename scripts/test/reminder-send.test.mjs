@@ -175,20 +175,50 @@ console.log('\n2. One alert per bunch, with that bunch\u2019s own count');
     { _id: 'a2', wk: 2, status: 'scheduled', kickoff: a },
     { _id: 'b1', wk: 2, status: 'scheduled', kickoff: b },
   ];
-  const inAnyTier = g => {
+  /* GROUPED BY BUNCH **AND TIER**, which is how the sender groups.
+
+     THE DAY-OF-THE-WEEK BUG THIS FIXES, and it only ever appeared on a
+     Monday. `want` was keyed by slate name alone, so it counted one
+     bunch whenever both fixture kickoffs happened to land on the same
+     day — which on a Monday they do, both becoming 'mnf'. The sender
+     correctly emitted TWO alerts, one for the 'hours' tier and one for
+     'day', and the case failed reporting want and got as the identical
+     {"mnf":3}: the same answer, failed for counting it differently.
+
+     It looked exactly like a real defect in the sender and it was a
+     fixture that disagreed with the sender about what an alert is. One
+     alert is a bunch in a tier, not a bunch. */
+  const tierOf = g => {
     const m = (g.kickoff.getTime() - now) / 60000;
-    return M.TIERS.some(([, lo, hi]) => m >= hi && m <= lo);
+    const t = M.TIERS.find(([, lo, hi]) => m >= hi && m <= lo);
+    return t ? t[0] : null;
   };
-  const want = {};
-  for (const g of games.filter(inAnyTier)) {
-    const k = M.etSlate(g.kickoff.getTime());
-    want[k] = (want[k] || 0) + 1;
+  /* TWO GROUPINGS, BECAUSE THE SENDER USES TWO, and conflating them is
+     the whole reason this case used to fail on Mondays.
+
+       an ALERT is one bunch in one tier   -> how many messages go out
+       a COUNT is one bunch                -> the "N games unpicked" in it
+
+     A Monday puts both fixture kickoffs in the same bunch but different
+     tiers: two alerts, each correctly saying 3 unpicked, because the
+     bunch really does have three games nobody has picked. The old
+     fixture keyed everything by bunch alone, expected one alert, and
+     reported want and got as the identical {"mnf":3} while failing. */
+  const wantAlerts = new Set();      // bunch|tier -> one message each
+  const wantN = {};                  // bunch      -> unpicked in that bunch
+  for (const g of games) {
+    const slate = M.etSlate(g.kickoff.getTime());
+    wantN[slate] = (wantN[slate] || 0) + 1;
+    const tier = tierOf(g);
+    if (tier) wantAlerts.add(slate + '|' + tier);
   }
+  const want = {};
+  for (const k of wantAlerts) want[k] = wantN[k.split('|')[0]];
   ok('the fixture covers more than one bunch, or says so',
      Object.keys(want).length >= 1, JSON.stringify(want));
   const out = await run({ games, roster: roster(), picks: [] });
   const got = {};
-  for (const o of out) got[o.slate] = o.n;
+  for (const o of out) got[o.slate + '|' + o.tier] = o.n;
   ok(`one alert per bunch (${Object.keys(want).length} here)`,
      out.length === Object.keys(want).length,
      JSON.stringify({ want, got }));

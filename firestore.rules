@@ -156,6 +156,48 @@ service cloud.firestore {
       }
 
       // ---------- TIEBREAKS ----------
+      /* HOW THE APP IS USED, WITH NOTHING ABOUT WHO USED IT.
+
+         One row per session: how long the app was on screen, how that
+         time split across the five tabs, and whether it was opened from
+         the Home Screen or a browser tab. No uid, no name, no email, and
+         the document id is minted fresh on every launch and never
+         stored, so two sessions by the same person cannot be joined up
+         afterwards by anyone, including whoever holds the service
+         account.
+
+         THE KEY LIST IS THE WHOLE POINT OF THIS RULE. hasOnly() means a
+         later edit to index.html that starts attaching a uid does not
+         quietly begin tracking individuals; the write is refused. The
+         anonymity is a property of the database rather than a promise
+         that depends on everybody who touches the client remembering it.
+
+         READ IS DENIED TO EVERYONE, the owner included, so there is no
+         screen anywhere in the app that could show who was where. The
+         aggregate is assembled by scripts/usage_report.py under the
+         admin credentials, which bypass rules by design.
+
+         DELETE IS DENIED for the same reason it is on picks: nothing
+         here should be quietly removable from a client.
+
+         WRITE IS OPEN TO ANY MEMBER because there is no owner to check
+         against. The worst a determined member can do is write nonsense
+         about a session that did not happen, which skews a curiosity and
+         reaches nothing that scores a week. */
+      match /usage/{sessionId} {
+        allow create, update: if isMember(poolId)
+          && request.resource.data.keys().hasOnly(
+               ['mode', 'started', 'updated', 'visibleMs', 'tabs', 'wk'])
+          && request.resource.data.mode in ['browser', 'standalone']
+          && request.resource.data.visibleMs is int
+          && request.resource.data.visibleMs >= 0
+          // Six hours, the same ceiling the client clamps a segment to.
+          && request.resource.data.visibleMs <= 21600000
+          && request.resource.data.tabs is map
+          && request.resource.data.wk is int;
+        allow read, delete: if false;
+      }
+
       // One guess per person per week. Locks and reveals with the
       // week's final game, exactly like a pick.
       match /tiebreaks/{tbId} {

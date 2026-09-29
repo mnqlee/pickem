@@ -333,6 +333,24 @@ const CHECKS = [
             actually use, not the widened fallback. */
          has('P.REVEAL_SKEW_MS')],
 
+  /* ANONYMOUS BY CONSTRUCTION. The usage row carries no identity, and
+     the promise decays the moment a field is added without anything
+     objecting. Three guards: the security rule's key list, regress case
+     43d, and this. */
+  ['usage anonymity', 'the usage row carries no identity, ever',
+   () => has('function usageBank()', 'PS.recordUsage(') &&
+         /* Visible time only. Without this a phone in a pocket reports
+            the night on whatever tab was last on screen. */
+         has('usage.since=null;     // stops the clock') &&
+         /* THE TAB SWITCH MUST NOT BE ABLE TO DIE FOR A COUNTER. The
+            call sits inside the most-pressed control in the app; if it
+            throws there, the two statements after it never run and the
+            tab is dead. Asserted here rather than in the browser suite
+            because usageTab is module-scoped and cannot be made to throw
+            from outside without breaking half the app on the way. */
+         has('try{ usageTab(t.dataset.tab); }catch(e){}') &&
+         lacks('uid:usage', 'uid:(PS.user', 'PS.user.uid,', 'email:usage')],
+
   ['version routes', 'the page makes no worker calls of its own',
    () => lacks("postMessage('SKIP_WAITING')", 'navigator.serviceWorker.register',
                'caches.keys()', 'new MessageChannel') &&

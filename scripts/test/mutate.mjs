@@ -719,6 +719,55 @@ const MUTATIONS = [
    `return (P&&P.CLOCK_SKEW_MS)??120000;};`,
    ['once the bound passes the kickoff, the picks fill in on their own',
     'OTHER players opened within seconds of kickoff, not minutes']],
+
+  /* HOW THE APP IS USED. Four ways to get an anonymous usage row wrong,
+     and the first two are the ones that would go unnoticed because the
+     numbers would still look plausible. */
+
+  /* Bank AFTER the switch and every segment lands on the tab being
+     opened rather than the one being left. The totals still add up, the
+     report still renders, and every conclusion drawn from it is wrong. */
+  [61, 'usage: bank a segment against the tab being opened, not the one left',
+   `function usageTab(next){ usageBank(); usage.tab=next; }`,
+   `function usageTab(next){ usage.tab=next; usageBank(); }`,
+   ['picks holds the most time, because it was open longest']],
+
+  /* Leave the clock running across a background and a phone in a pocket
+     reports the whole night on whatever tab was last showing, which
+     inverts the thing being measured. */
+  [62, 'usage: keep the clock running while the app is backgrounded',
+   `    usage.since=null;     // stops the clock; nothing accrues while hidden\n    usageFlush();`,
+   `    usageFlush();`,
+   ['time spent in the background is NOT counted']],
+
+  /* THE PROMISE MADE TO THE POOL. Anonymity is the kind of property that
+     decays quietly: a field gets added and nothing objects. This is what
+     objects. firestore.rules refuses the write as well, so the guard is
+     doubled on purpose. */
+  [63, 'usage: attach the uid, which the pool was promised would not happen',
+   `    id:usage.id, mode:usage.mode, started:usage.started,`,
+   `    id:usage.id, mode:usage.mode, started:usage.started, uid:(PS.user&&PS.user.uid),`,
+   ['the row carries no uid, name or email field',
+    'its keys are only the ones the security rule permits']],
+
+  /* It is a curiosity, not a feature. A refused write must never become
+     the player's problem, because everything the pool depends on is
+     written somewhere else entirely. */
+  [64, 'usage: let a refused write escape into the app',
+   `  catch(e){ /* deliberately silent */ }`,
+   `  catch(e){ throw e; }`,
+   ['a rejected usage write raises no page error']],
+
+  /* AND THE ONE THE BROWSER SUITE CANNOT REACH. usageTab is
+     module-scoped, so it cannot be made to throw from a test without
+     breaking half the app on the way past — the first attempt overrode
+     window.usageTab, which is a different function that nobody calls,
+     and passed identically with the guard removed. Graded by the audit
+     instead, which is a source check and honest about being one. */
+  [65, 'usage: unwrap the tracker inside the tab switch',
+   `  try{ usageTab(t.dataset.tab); }catch(e){}`,
+   `  usageTab(t.dataset.tab);`,
+   ['AUDIT: usage anonymity']],
 ];
 
 function runSuite() {

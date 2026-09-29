@@ -1072,6 +1072,138 @@ eats anyway.
 **Half the delay is not ours.** ESPN takes its own time to register a
 change of possession. Halving our interval halves our share of it.
 
+## 4i. How the app is used, and deliberately nothing about who
+
+Lee: "I don't need to know exactly who is on it and how often, just would
+like to know how many people are opening it through browser or home
+screen, how long they spend on it, which tabs they are clicking and how
+long they spend on each tab."
+
+And the question underneath it: **"how long our players sit on the pick
+tab watching the games as they progress."** That is the number that says
+what to improve next season, and nothing in the app could answer it.
+
+### Why Cloudflare Web Analytics is not enough on its own
+
+It is one dashboard toggle and it is worth having: it counts launches,
+by hour, by device, which answers "how many people and when". But a page
+view is one page load, and this is a single page with five tabs.
+Switching from Picks to Grid is not a navigation, so it produces nothing.
+Session length and tab time are outside what it measures at all.
+
+### And why not Google Analytics
+
+It would answer everything. It also means a third-party script on the
+launch path that took real work to make fast, cookies and consent on an
+app used by one family and their friends, and handing Google the
+behaviour of 28 people who did not sign up for that.
+
+### One row per session, in our own Firestore
+
+`pools/{pool}/usage/{sessionId}`, written by the app, read only by
+`scripts/usage_report.py` under the admin credentials.
+
+| field | |
+|---|---|
+| `mode` | `standalone` or `browser`, which answers the Home Screen question |
+| `started`, `updated` | when |
+| `visibleMs` | how long the app was **on screen** |
+| `tabs` | milliseconds per tab, five keys |
+| `wk` | the week being looked at |
+
+**ANONYMOUS BY CONSTRUCTION, NOT BY INTENTION.** There is no uid, no
+name, no email, and the document id is minted fresh on every launch and
+never stored, so two sessions by the same person cannot be joined up
+afterwards by anybody, including whoever holds the service account.
+
+**And the absence is enforced by the database.** The rule allows only
+those six keys, so a later edit that starts attaching a uid is refused by
+Firestore rather than by somebody remembering the promise. Reads are
+denied outright, owner included: there is no screen anywhere in the app
+that could ever show who was where. That is the property worth having,
+because the alternative is a promise that decays the first time a field
+is added and nothing objects.
+
+### The decision that makes the numbers mean anything
+
+**Visible time only.** A phone in a pocket with Picks open would
+otherwise report hours of rapt attention on whatever tab was last
+showing, exactly inverting the thing being measured. The accumulator
+stops on `hidden` and restarts on `visible`, and a single segment longer
+than six hours is dropped rather than banked, because a laptop that
+sleeps with the tab visible fires no event on some platforms and one such
+row would swamp every average.
+
+### Two things the report refuses to do, and both are arithmetic traps
+
+**A launch backgrounded before anything accrued is a VISIT, not a session
+of length zero.** Averaging it in would make "average time on the app" a
+measure of how often people get interrupted.
+
+**A tab nobody opened is absent, not a zero.** If Help is opened once for
+four minutes and ignored in nine other sessions, the average time on Help
+is four minutes. Counting the nine as zeros gives 24 seconds, which
+describes how rarely Help is opened rather than how long it is read. The
+report has a separate column for how many sessions touched it.
+
+### Cost
+
+About one to three writes per session, so roughly 150 a day at this size
+against a free allowance of 20,000. Reading is a script Lee runs, not
+something the app does.
+
+### The blast radius, measured rather than asserted
+
+Lee asked whether this could disturb scoring, picks or anything else.
+Diffed against the live build rather than answered from memory:
+
+| file | existing lines changed |
+|---|---|
+| `index.html` | **1** |
+| `firebase-init.js` | **0** |
+| `firestore.rules` | **0** |
+
+Everything else is addition. The one changed line is in the tab click
+handler, where the two statements that were there still run in the same
+order with the tracker call inserted between them.
+
+**And that call is wrapped**, because the tab switch is the most pressed
+control in the app: if a counter threw there, the two statements after it
+would never run and the tab would be dead. Nothing in it should throw,
+but "should" is what the try is for.
+
+**The obvious test for that guard was written, passed, and was inert.**
+`usageTab` is declared inside a module, so the
+`window.usageTab = () => { throw }` used to break it overrode a different
+function that nobody calls. It passed identically with the guard removed,
+which is the only reason it was caught. There is no injection point from
+a browser test that reaches a module-scoped function without breaking
+half the app on the way past, so the guard is graded by the audit and
+mutation 65 instead. That is a source check rather than a behaviour
+check, and saying so is better than an assertion that grades nothing.
+
+## 4j. And a fixture that only failed on Mondays
+
+`reminder-send.test.mjs` had been reporting 21 of 22 and was written off
+twice as a quiet-hours flake. It was not. It failed at 11:37am ET.
+
+The sender emits **one alert per bunch per TIER**. The fixture counted
+**one alert per bunch**. Those are the same number on most days, because
+two kickoffs six hours apart usually fall in different bunches. On a
+**Monday** they are both `mnf`, so the sender correctly sent two alerts,
+one for the `hours` tier and one for `day`, and the case failed reporting
+want and got as the identical `{"mnf":3}`.
+
+It looked exactly like a defect in the sender and it was a fixture
+disagreeing with the sender about what an alert is. The fixture now
+groups both ways, because the sender does: an alert is a bunch in a tier,
+while the "N games unpicked" count is per bunch.
+
+**The lesson is the one this repo keeps relearning.** A test that fails
+intermittently is not noise to be waited out. It is a claim that
+something is wrong, and twice I attributed it to the hour rather than
+reading it.
+
 ## 5. Open, not yet decided
 
 - **The gutter `@` is 3.77:1**, found while drawing the paper-ink
@@ -1104,7 +1236,7 @@ change of possession. Halving our interval halves our share of it.
 ## Built — v1.35.0
 
 Everything below is in the build and checked by
-`scripts/test/picks-audit.mjs` (41 of 41) plus the named cases in
+`scripts/test/picks-audit.mjs` (42 of 42) plus the named cases in
 `scripts/test/regress.ui.test.mjs`.
 
 | item | where it is checked |
@@ -1148,3 +1280,5 @@ Everything below is in the build and checked by
 | a live cell waits for the reveal bound before it unseals | audit `reveal honesty`, case 43b, mutation 59 |
 | the reveal margin is fast by default and widens only on a refusal | `reveal.test.mjs`, case 43c, mutation 60 |
 | a watched game refreshes every 30 seconds | audit `live rate` |
+| the usage row carries no identity, ever | audit `usage anonymity`, case 43d, mutations 61-64, firestore.rules |
+| only on-screen time is counted | case 43d, mutation 62 |

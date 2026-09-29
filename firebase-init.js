@@ -674,6 +674,45 @@ function watchRevealed(wk, cb) {
   return () => { live = false; if (stop) stop(); };
 }
 
+/* ONE ROW PER SESSION, SAYING HOW THE APP WAS USED AND NOTHING ELSE.
+
+   WHAT IS DELIBERATELY ABSENT: uid, name, email, and any id that
+   survives a page load. `row.id` is minted fresh in index.html on every
+   launch and never stored, so two sessions by the same person cannot be
+   joined afterwards by anybody, including whoever holds the service
+   account.
+
+   AND THE ABSENCE IS ENFORCED BY THE DATABASE. The rule for this
+   collection allows only the six keys written here. A future edit that
+   starts attaching a uid does not quietly begin tracking people; it is
+   refused by Firestore. That is the property worth having, because the
+   alternative is a promise that depends on everyone who touches this
+   file afterwards remembering it.
+
+   merge:false ON PURPOSE. Every flush rewrites the whole row, so a long
+   session is one document that keeps growing rather than a pile to add
+   up later, and a partial write can never leave a row half from one
+   flush and half from another.
+
+   NOBODY CAN READ THESE FROM THE APP, owner included. The rule denies
+   reads outright; scripts/usage_report.py reads them with the admin
+   credentials, which is the only place the aggregate is assembled. */
+async function recordUsage(row) {
+  if (!poolId || !row || !row.id) return;
+  await setDoc(doc(db, 'pools', poolId, 'usage', String(row.id)), {
+    mode: String(row.mode || 'browser'),
+    started: Timestamp.fromMillis(Number(row.started) || Date.now()),
+    updated: serverTimestamp(),
+    visibleMs: Math.max(0, Math.round(Number(row.visibleMs) || 0)),
+    /* Rounded and floored here rather than trusted from the caller: the
+       rule checks types, and a NaN from a clock that jumped backwards
+       would fail the whole write and lose the session. */
+    tabs: Object.fromEntries(Object.entries(row.tabs || {})
+      .map(([k, v]) => [String(k), Math.max(0, Math.round(Number(v) || 0))])),
+    wk: Number(row.wk) || 0
+  });
+}
+
 /* Sign in with a token minted by the auth Worker. */
 async function signInWithToken(token) {
   const cred = await signInWithCustomToken(auth, token);
@@ -1227,6 +1266,7 @@ window.PS = {
      115 seconds before their picks could possibly arrive, which is the
      exact bug this whole change exists to remove. */
   get REVEAL_SKEW_MS() { return revealSkewMs; },
+  recordUsage,
   get user() { return user; },
   get poolId() { return poolId; }
 };

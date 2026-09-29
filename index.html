@@ -4613,7 +4613,18 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.tab').forEach(x=>{
     x.classList.remove('on'); x.setAttribute('aria-selected','false'); });
   t.setAttribute('aria-selected','true');
-  t.classList.add('on');state.tab=t.dataset.tab;
+  t.classList.add('on');
+  /* Bank the time spent on the OUTGOING tab before state.tab moves.
+
+     WRAPPED, BECAUSE THIS IS THE MOST-PRESSED CONTROL IN THE APP. Usage
+     tracking is a curiosity; switching tabs is the app. Nothing in
+     usageTab() should be able to throw, but "should" is what the whole
+     try is for: an anonymous counter must never be in a position to stop
+     somebody reaching their picks. Guarded here rather than inside
+     usageTab so that a throw anywhere in that call, including a future
+     line nobody has written yet, lands in the same net. */
+  try{ usageTab(t.dataset.tab); }catch(e){}
+  state.tab=t.dataset.tab;
   // 'archive' was a sixth view here. It is a section inside #v-settings
   // now, so listing it would look up a #v-archive that no longer exists
   // and throw on every tab switch.
@@ -5763,6 +5774,118 @@ function revealStale(){
   const cut=Date.now()-revealSkew();
   return (WEEKS[state.week]||[]).some(g=>g.kick<=cut && g.kick>revealBound);
 }
+/* ============================================================
+   HOW THE APP IS ACTUALLY USED, and nothing about who is using it.
+
+   THE QUESTION THIS ANSWERS. Lee had no way to tell how many people open
+   the app, whether they open it from the Home Screen or a browser tab,
+   or which screens they actually sit on. Cloudflare Web Analytics counts
+   page loads, which for a single-page app with five tabs means it counts
+   launches and learns nothing else: switching from Picks to Grid is not
+   a navigation. The interesting question is the one it cannot touch —
+   how long a player sits on Picks while the games run.
+
+   ANONYMOUS BY CONSTRUCTION, NOT BY INTENTION. There is no uid here, no
+   name, no email, and the session id is minted fresh on every page load
+   and never stored, so two sessions by the same person cannot be joined
+   up afterwards. That is deliberate and it is also enforced in
+   firestore.rules, which allows only this exact set of keys: a future
+   edit that starts writing a uid is rejected by the database rather than
+   by somebody remembering the rule. The owner cannot read these rows
+   from the app at all; they are readable only by the admin script.
+
+   VISIBLE TIME ONLY, and this is the decision that makes the numbers
+   mean anything. A phone in a pocket with the app open would otherwise
+   report hours of rapt attention on whatever tab was last on screen —
+   precisely inverting the thing being measured. The accumulator stops on
+   `hidden` and starts again on `visible`.
+
+   ONE ROW PER SESSION, REWRITTEN, NOT APPENDED. Every flush overwrites
+   the same document, so a three-hour Sunday is one row that keeps
+   growing rather than ninety rows to add up later.
+
+   WHY IT FLUSHES ON A TIMER AS WELL AS ON THE WAY OUT. iOS can discard a
+   backgrounded Home Screen app without firing `pagehide`, and that is
+   exactly the long session most worth recording. Five minutes is a
+   compromise: at 28 players it is a few hundred writes on a heavy
+   Sunday, against a free allowance of twenty thousand a day. */
+const TABS=['picks','grid','standings','help','settings'];
+/* A LONE ABSURD SEGMENT IS DROPPED RATHER THAN BANKED. A laptop that
+   sleeps with the tab visible fires no visibilitychange on some
+   platforms, so the segment measured on return can be a whole night
+   long, and one such row would swamp every average in the report.
+
+   Six hours, which is the same ceiling the live-score poll uses for a
+   game and one no honest look at a phone reaches. Its own constant
+   rather than LIVE_MAX, which is declared further down this file: the
+   value is the same but borrowing it would make this block depend on
+   evaluation order for nothing. */
+const USAGE_MAX_SEGMENT=6*3600*1000;
+const usage={
+  /* Not crypto, and it does not need to be: this only has to be unlikely
+     to collide with another session in the same pool on the same day. */
+  id:(Date.now().toString(36)+Math.random().toString(36).slice(2,10)),
+  started:Date.now(),
+  mode:(matchMedia('(display-mode: standalone)').matches||navigator.standalone===true)
+       ?'standalone':'browser',
+  tabs:Object.fromEntries(TABS.map(t=>[t,0])),
+  visibleMs:0,
+  /* The instant the current tab last started being both visible and on
+     screen. Null while hidden, which is what makes the arithmetic below
+     unable to count background time even if it is called wrongly. */
+  since:document.visibilityState==='visible'?Date.now():null,
+  tab:'picks',
+  dirty:false,
+  timer:null
+};
+
+/* Bank whatever has accrued on the current tab and reset the clock.
+   Called before every transition, so a tab switch and a background both
+   close out the segment they end rather than the one they start. */
+function usageBank(){
+  if(usage.since==null)return;
+  const d=Date.now()-usage.since;
+  usage.since=Date.now();
+  if(d<=0)return;
+  if(d>USAGE_MAX_SEGMENT)return;
+  usage.tabs[usage.tab]=(usage.tabs[usage.tab]||0)+d;
+  usage.visibleMs+=d;
+  usage.dirty=true;
+}
+
+async function usageFlush(){
+  usageBank();
+  if(!usage.dirty||DEMO)return;
+  usage.dirty=false;
+  /* NEVER LET THIS BREAK THE APP. It is a curiosity, not a feature: if
+     the write fails, is refused, or the function is not there at all,
+     the player must never see it. Everything the pool depends on is
+     already written elsewhere. */
+  try{ await PS.recordUsage({
+    id:usage.id, mode:usage.mode, started:usage.started,
+    visibleMs:usage.visibleMs, tabs:{...usage.tabs}, wk:state.week }); }
+  catch(e){ /* deliberately silent */ }
+}
+
+/* Called from the tab click handler, AFTER state.tab has moved, so the
+   segment just ended is banked against the tab it was actually spent
+   on rather than the one being opened. */
+function usageTab(next){ usageBank(); usage.tab=next; }
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'){
+    usage.since=Date.now();
+  }else{
+    usageBank();
+    usage.since=null;     // stops the clock; nothing accrues while hidden
+    usageFlush();
+  }
+});
+/* pagehide, not unload: unload does not fire reliably on iOS and is
+   actively hostile to the back-forward cache. */
+addEventListener('pagehide',()=>{ usage.since=null; usageFlush(); });
+usage.timer=setInterval(()=>{ if(document.visibilityState==='visible')usageFlush(); },300000);
+
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible')return;
   if(!DEMO && revealStale())watchLive();

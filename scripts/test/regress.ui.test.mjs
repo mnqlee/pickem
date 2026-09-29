@@ -3083,6 +3083,171 @@ console.log('\n43c. The app schedules on the margin queries USE, not the fallbac
 }
 
 /* ------------------------------------------------------------------ */
+console.log('\n43d. How the app is used, and nothing about who used it');
+{
+  /* WHAT THIS IS FOR. Lee had no way to see how many people open the
+     app, whether from the Home Screen or a browser tab, or which screens
+     they sit on. The question he actually cares about is how long a
+     player stays on Picks while the games run, because that is the one
+     that says what to improve next season.
+
+     THE PROMISE THAT MATTERS MORE THAN THE NUMBERS. He asked for this
+     anonymous, and anonymity is the kind of property that decays: a
+     field gets added, nothing objects, and a curiosity has quietly
+     become surveillance of 28 friends. firestore.rules refuses any key
+     outside the six, and this case asserts the client never even tries.
+
+     AND VISIBLE TIME ONLY. A phone in a pocket with Picks open would
+     otherwise report hours of rapt attention on the tab that happened to
+     be showing, which inverts the thing being measured. */
+  const { ctx, page, errors } = await open({
+    startISO: new Date(Date.now() + 3 * 864e5).toISOString(),
+    weeks: 1, gamesPerWeek: 4, playerCount: 6 });
+
+  const usage = () => page.evaluate(() => (window.__usage || []).slice());
+  const flush = () => page.evaluate(() => {
+    /* What backgrounding does, without actually needing a background. */
+    Object.defineProperty(document, 'visibilityState',
+      { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const wake = () => page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState',
+      { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+
+  ok('nothing is written just for opening the app',
+     (await usage()).length === 0, JSON.stringify(await usage()));
+
+  await page.waitForTimeout(1200);          // on Picks, the default tab
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(800);
+  await page.click('[data-tab="standings"]').catch(() => {});
+  await page.waitForTimeout(600);
+  await flush();
+  await page.waitForTimeout(300);
+
+  const rows = await usage();
+  ok('backgrounding writes exactly one row', rows.length === 1,
+     JSON.stringify(rows));
+  const r = rows[0] || {};
+
+  /* ---- THE ANONYMITY, ASSERTED ON THE WHOLE PAYLOAD ---- */
+  const flat = JSON.stringify(r);
+  ok('the row carries no uid, name or email field',
+     !('uid' in r) && !('name' in r) && !('email' in r), Object.keys(r).join());
+  /* A uid in this app is `u_` plus 24 hex, and a name or address would
+     show up as a string with an @ or a space. Asserting on the KEYS
+     alone would miss a value smuggled into `mode` or `id`. */
+  ok('and nothing uid-shaped anywhere in its values',
+     !/u_[0-9a-f]{8}/.test(flat) && !/@/.test(flat), flat.slice(0, 160));
+  ok('its keys are only the ones the security rule permits',
+     Object.keys(r).every(k =>
+       ['id', 'mode', 'started', 'visibleMs', 'tabs', 'wk'].includes(k)),
+     Object.keys(r).join());
+
+  /* ---- THE TIMINGS ---- */
+  ok('it says how the app was opened',
+     r.mode === 'browser' || r.mode === 'standalone', r.mode);
+  ok('it recorded on-screen time', r.visibleMs > 0, r.visibleMs);
+  ok('the tabs it reports are the five real ones',
+     Object.keys(r.tabs || {}).sort().join() ===
+       'grid,help,picks,settings,standings', Object.keys(r.tabs || {}).join());
+  /* THE ATTRIBUTION IS THE WHOLE FEATURE. Time must land on the tab it
+     was spent on, not the one opened next, which is why the handler
+     banks BEFORE state.tab moves. Picks was open longest, so if the
+     banking were off by one the largest number would sit on Grid. */
+  ok('picks holds the most time, because it was open longest',
+     r.tabs.picks > r.tabs.grid && r.tabs.picks > r.tabs.standings,
+     JSON.stringify(r.tabs));
+  ok('grid and standings both recorded something',
+     r.tabs.grid > 0 && r.tabs.standings > 0, JSON.stringify(r.tabs));
+  ok('a tab never opened stays at zero', r.tabs.help === 0, r.tabs.help);
+  const summed = Object.values(r.tabs).reduce((a, b) => a + b, 0);
+  ok('the tabs add up to the on-screen total',
+     Math.abs(summed - r.visibleMs) <= 60, [summed, r.visibleMs]);
+
+  /* ---- AND THE ONE THAT MAKES THE NUMBERS MEAN ANYTHING ---- */
+  const before = r.visibleMs;
+  await page.waitForTimeout(2500);          // 2.5s spent HIDDEN
+  /* FLUSH WITHOUT WAKING FIRST, and that ordering is the whole test.
+
+     The first version of this woke the page and then flushed, which
+     passes whatever the code does: coming back to visible resets the
+     clock, so the background stretch is gone before anything can bank
+     it. Removing the line that stops the clock left this green. Found
+     by mutating exactly that.
+
+     Nor does pagehide work here, for a different reason: that handler
+     stops the clock itself before flushing, so it masks the same defect
+     from the other side. The sequence that actually exposes it is a
+     SECOND visibilitychange while still hidden, which iOS genuinely
+     fires in bursts on an app switch — the code's own comments say so.
+     With the clock left running, that second pass banks the whole
+     background stretch. With it stopped, there is nothing to bank. */
+  await flush();
+  await page.waitForTimeout(300);
+  const after = (await usage()).slice(-1)[0] || {};
+  ok('a second flush rewrites the same session rather than starting one',
+     after.id === r.id, [r.id, after.id]);
+  /* THE DEFECT THIS CATCHES. Leave the clock running across a background
+     and a phone in a pocket reports the whole night on whatever tab was
+     last showing, which inverts the thing being measured. */
+  ok('time spent in the background is NOT counted',
+     (after.visibleMs || 0) - before < 500,
+     'grew by ' + ((after.visibleMs || 0) - before)
+       + 'ms over a 2500ms background');
+  await wake();
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+console.log('\n43e. A failed usage write must never reach a player');
+{
+  /* THE TAB-SWITCH GUARD IS NOT TESTED HERE, AND THAT IS DELIBERATE.
+
+     The usage call sits inside the tab click handler, wrapped in a try
+     so that an anonymous counter can never stop somebody reaching their
+     picks. The obvious test is to make it throw and check the tab still
+     switches — and that test was written, passed, and was then found to
+     be inert: `usageTab` is declared inside a module, so the
+     `window.usageTab = () => { throw }` used to break it overrides
+     nothing at all. It passed identically with the guard REMOVED, which
+     is the only reason it was caught.
+
+     There is no injection point from out here that reaches a
+     module-scoped function without breaking half the app on the way
+     past. So the guard is covered where it can honestly be covered: the
+     audit asserts the call is wrapped, and a mutation that unwraps it
+     turns the audit red. That is a source check, not a behaviour check,
+     and saying so is better than an assertion that grades nothing. */
+  const { ctx, page, errors } = await open({
+    startISO: new Date(Date.now() + 3 * 864e5).toISOString(),
+    weeks: 1, gamesPerWeek: 4, playerCount: 6, usageError: 'nope' });
+  await page.waitForTimeout(900);
+  await page.click('[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState',
+      { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(400);
+  ok('a rejected usage write raises no page error',
+     errors.length === 0, errors[0] || '');
+  const toast = await page.evaluate(() =>
+    (document.body.innerText || '').toLowerCase());
+  ok('and says nothing to the player about it',
+     !/usage|analytic|telemetr/.test(toast));
+  /* AND THE APP IS STILL THERE. A throw inside the handler could take
+     out whatever else it was about to do. */
+  ok('the app is still rendered', await page.evaluate(
+     () => !!document.querySelector('.tab.on')));
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
 const SKEW = 8000;
 console.log('\n44. The Grid must open itself at kickoff, without a reload');
 {

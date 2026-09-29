@@ -497,6 +497,14 @@ const PSX = window.PS = {
     if (P.pushError) throw new Error(P.pushError);
     window.__alerts = { ok:true };   // a real grant heals the next check
     return true; },
+  /* THE USAGE ROW, RECORDED RATHER THAN SENT. Every call is kept on
+     window.__usage so a test can assert the SHAPE as well as the
+     timings — above all that no uid, name or email is anywhere in it,
+     which is the promise made to the pool and the one thing here that
+     cannot be allowed to drift. */
+  async recordUsage(row){ log.push('recordUsage');
+    (window.__usage ||= []).push(JSON.parse(JSON.stringify(row)));
+    if (P.usageError) throw new Error(P.usageError); },
   getBoard(){ return []; }, watchBoard(){}, getShard(){ return null; },
   async getWeek(){ return []; }, async setScoringMode(){},
 
