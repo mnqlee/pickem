@@ -1301,6 +1301,91 @@ which is worth knowing the next time a mockup's spacing looks off.
 tick early about one run in four, on v1.40.1 too (3 of 12). Same trap as
 case 59; it now waits for the header to change.
 
+## 4m. The week 5 polish, ten rounds of pictures
+
+v1.42.0. Every item was chosen by Lee from rendered mockups on the Card
+Polish page, rounds 1 to 10, with today's version beside each option.
+
+**The card.** Scores are Oswald 28px, centred under the team name on both
+sides. The first attempts left the scores at different heights, because
+the unselected side's smaller type made its name block shorter; every
+line in the block now has a fixed height on both sides. The record sits
+under the badge as "(2-2)", counted on the phone from the finals already
+loaded (no read), through the week on screen. The badge sits in a 42px
+box on both sides so the two records land on one line even though the
+unselected badge is 34px. The football hangs 8px beside the score on the
+gutter side; the old 36px and 48px flex gaps belonged to a left-aligned
+score and are gone.
+
+**The team box.** "You took WSH" became a 13px box in the team's colour:
+a tick while the pick stands, a cross once it loses, a dash for a tie.
+Lee asked for advice and was told the box, because one mark tells the
+whole story and the lines get shorter. Help gained one sentence to
+explain it. The box is centred on its words' capital letters with
+text-box trim, after Lee spotted it sitting a pixel low.
+
+**Your rank in the middle (option B).** The @ stays until a pick has a
+rank. While unranked, the stake bar keeps "Tap to stake points" and the
+dashed circle on the right. When a rank is chosen the circle slides from
+the bar into the middle and replaces the @. Red before kickoff (and a
+44px button that opens the rank picker), red while live (not a button),
+grey once final. Cream inside, the colour of the strip it sits on.
+Options A (dashed circle in the middle only) and C (in both places) were
+built as tappable mockups and rejected.
+
+**The live strip.** One line: a greyed padlock and "Locked" on the left,
+your pick on the right. "In progress · locked" is gone; the green clock
+already says it.
+
+**The week so far (C3).** Once a game this week is final and nothing is
+left to do, the bottom bar shows three buttons: your points (opens the
+points sheet), your place with an arrow (opens Standings, This week) and
+the games count (opens what is still to play). The place is your row in
+the same table Standings shows, so the two can never disagree. The
+arrow compares your place now with your place before the latest final,
+both computed the same way. The up arrow's tip sits on the top of "10TH",
+the down arrow's on the bottom, which Lee asked for twice; both are
+drawn shapes pinned to a text box trimmed to its capitals.
+
+**The week strip.** Finished weeks get a gold fade with your points (Y3).
+Numbers are 19.4px for weeks 1 to 9 and 18.5px for 10 to 18 on the same
+46x44 tiles, so the header height that fixed the launch jump in v1.40.1
+is untouched. Finished numbers move left only, so every number sits on
+one line.
+
+**Elsewhere.** No slashed zeros anywhere: Roboto's own "0" (text=0) leads
+every Roboto Mono stack. The header and bottom bar are fully solid; on
+Picks a 10px fade lets cards dissolve under the header. Standings says
+"tied with" and "10th of 33", with points in Oswald on the right.
+
+**Season seals, counted from the weeks.** Lee spotted Craig with one
+1ST on the Season table after winning weeks 3 and 4. The Season seals
+came from weekWins/weekSeconds, counters only the server's week-closing
+run writes, so a late or missed close left the table short while the
+This week tab (computed on the phone) showed the winner. The Season
+table now judges every finished week itself from the same weekSum
+figures, with score_week.py's rule: top score wins and ties share, the
+runner-up is the next distinct score down, nobody is crowned on 0.
+
+**One seal per week, not a count.** Lee chose from the Season Seals
+mockup: two 1st weeks and a 2nd read as 1ST, 1ST, 2ND side by side
+instead of a seal with "2" beside it. Order is every 1st, then every
+2nd, then any perfect-week trophy. Up to three sit apart at full size;
+four to six overlap at a 17px step, each drawn over a disc in the row's
+own background colour (`--sealbg`, per row state) so the overlap reads
+cleanly on the gold, silver and "me" rows. Past six the run shows five
+and a "+N". The run is one `svg role=img` with an aria-label giving the
+counts in words, and it never spills into the points column at 320px.
+
+**How it was verified.** week5.ui.test.mjs is an oracle: it reads the raw
+schedule, picks, roster and banked standings from the stub and recomputes
+every figure in Node from the rules alone, then grades the bar, both
+sheets, Standings, the week strip and the records at fifteen points
+through a week across five pools. It found one real fixture defect on
+the way: the stub's live listener used a different weight rule from its
+first read under the promo fixture, so the pool changed a moment after
+loading.
+
 ## 5. Open, not yet decided
 
 - **The gutter `@` is 3.77:1**, found while drawing the paper-ink

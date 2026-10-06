@@ -277,6 +277,13 @@ const MEMBERS = ROSTER.map((n,i) => ({ uid: 'u_'+i, name: n }));
    pick weight is when somebody taps a team and never opens the tray. */
 const unstakedGame = i => (P.unstaked || 0) > 0 && i < P.unstaked;
 
+/* ONE WEIGHT RULE FOR BOTH THE READ AND THE LISTENER. The listener used
+   the plain (i+mi) rule even under P.promo, so a promo fixture showed one
+   pool on the first read and a different one a moment later. The v1.42.0
+   accounting oracle reads the first and grades the screen, which is how
+   the disagreement surfaced. */
+const revWeight = (i, mi, wk) => unstakedGame(i) ? 0
+  : P.promo ? ((i*7+mi*13+wk)%16)+1 : (i+mi)%16+1;
 const pickFor = (g, i, mi, wk) => {
   if (P.lopsided) {
     if (i % 3 === 0) return mi === 0 ? g.away : g.home;
@@ -387,8 +394,7 @@ const PSX = window.PS = {
       MEMBERS.forEach((m,mi) => { if (g.kickoff.toMillis() < Date.now())
         rows.push({ uid:m.uid, name:m.name, gameId:g.id,
                     winner: pickFor(g, i, mi, wk),
-                    weight: unstakedGame(i) ? 0
-                      : P.promo ? ((i*7+mi*13+wk)%16)+1 : (i+mi)%16+1 }); }));
+                    weight: revWeight(i, mi, wk) }); }));
     return rows; },
   /* P.tbTotals lets a case state the guesses exactly, by roster index.
      The default 44 + i*3 is deliberately all-distinct, which means it can
@@ -453,7 +459,7 @@ const PSX = window.PS = {
     due.forEach((g,i) => MEMBERS.forEach((m,mi) => rows.push({
       uid:m.uid, name:m.name, gameId:g.id,
       winner: pickFor(g, i, mi, wk),
-      weight: unstakedGame(i) ? 0 : (i+mi)%16+1 })));
+      weight: revWeight(i, mi, wk) })));
     if (rows.length) setTimeout(() => cb(rows, wk), 0);
     window.__pushRevealed = (r) => cb(r || rows, wk);
   },

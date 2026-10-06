@@ -18,7 +18,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<!-- v1.42.0 THE PLAIN ZERO. Roboto's own "0" and nothing else (text=0), laid in
+     front of Roboto Mono in every mono stack. Roboto Mono was drawn from Roboto,
+     so every other digit is unchanged and only the slash through the zero goes. -->
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&text=0&display=swap" rel="stylesheet">
 
 <!-- FIRST VISIT: THREE NETWORK HOPS BEFORE SIGN-IN CAN EVEN START.
 
@@ -80,7 +84,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
      line-height change would have hidden content under the indicator. */
   padding-bottom:calc(var(--bar-h) + 32px + var(--safe-b));
   overflow-x:hidden}
-.mono{font-family:'Roboto Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.mono{font-family:'Roboto','Roboto Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
 
 /* Visible keyboard focus. There was none, anywhere in the app. */
 :focus-visible{outline:2.5px solid var(--lock);outline-offset:2px;border-radius:4px}
@@ -268,7 +272,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .stampchip.used{opacity:.5;border-style:dashed;transform:scale(.88)}
 .inplay{margin-top:10px;padding:9px 11px;border-radius:8px;background:var(--shell-2);
   font-size:11.5px;color:var(--chalk);line-height:1.4}
-.inplay b{color:var(--paper);font-family:'Roboto Mono',monospace;font-weight:700}
+.inplay b{color:var(--paper);font-family:'Roboto','Roboto Mono',monospace;font-weight:700}
 .tray-legend{display:flex;justify-content:space-between;margin-top:7px;font-size:9px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--chalk)}
 
@@ -423,7 +427,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .gutter{flex:0 0 42px;position:relative;z-index:2;background:var(--paper-2);
   transform:skewX(-9deg);display:grid;place-items:center;
   box-shadow:1px 0 0 var(--rule),-1px 0 0 var(--rule)}
-.gutter span{transform:skewX(9deg);font-family:'Roboto Mono',monospace;
+.gutter span{transform:skewX(9deg);font-family:'Roboto','Roboto Mono',monospace;
   font-size:15px;font-weight:700;color:var(--ink-faint)}
 .mark{width:42px;height:42px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
   position:relative;overflow:hidden;font-weight:900;font-size:13px;letter-spacing:-.03em;color:#fff;
@@ -485,14 +489,19 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
    away side was not holding and on every final card. flex-end packs to
    the main END, which in a reversed row is the left, so the digits sit
    where they always did and the ball case is unchanged. Measured both. */
-.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}
+
 /* The default first, then the two that matter. Before kickoff neither
    `won` nor `lost` is set, and there is no score row and no football
    either, so the default never actually renders a ball; it is here so
    the set is complete rather than relying on that. */
-.side .scr{gap:36px}
-.side.lost .scr{gap:36px}
-.side.won  .scr{gap:48px}
+
+/* v1.42.0 SUPERSEDES THE GAP RULES DESCRIBED ABOVE. The score is centred
+   under the name now (Oswald, 28px), so the 36px and 48px flex gaps and
+   the reversed away row are gone: the ball is positioned 8px off the
+   number on the gutter side of each panel and never moves the number.
+   See ".scr .pos" in the v1.42.0 block at the end of this stylesheet.
+   The history above is kept because it explains why the ball is on the
+   gutter side at all. */
 .pos{display:inline-flex;align-items:center}
 /* currentColor: white on a lit panel, --ink-mute on the cream side. */
 .ball{width:18px;height:12px;flex:0 0 18px;color:inherit}
@@ -552,8 +561,8 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .sb-num.set{animation:slam .28s cubic-bezier(.2,1.5,.4,1)}
 .sb-num.blank{border-style:dashed;border-color:rgba(200,52,42,.55);
   color:rgba(200,52,42,.6);transform:none;font-size:14px}
-.sb-pts{font-size:12px;font-weight:800;letter-spacing:.01em;color:var(--stamp);
-  font-family:'Roboto Mono',monospace}
+.sb-pts{font-size:11.5px;font-weight:800;letter-spacing:0;color:var(--stamp);
+  font-family:inherit}
 .stakebar.empty{border-top:1px dashed rgba(200,52,42,.45)}
 .stakebar.empty .sb-l{color:var(--stamp)}
 @keyframes slam{0%{transform:rotate(-26deg) scale(2.1);opacity:0}
@@ -666,7 +675,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .tbteams{font-size:15px;font-weight:800;letter-spacing:-.02em;margin-bottom:13px}
 .tbinput{width:132px;padding:12px 8px;border-radius:10px;text-align:center;
   border:2.5px solid var(--stamp);background:transparent;color:var(--ink);
-  font-family:'Roboto Mono',monospace;font-size:30px;font-weight:700;
+  font-family:'Roboto','Roboto Mono',monospace;font-size:30px;font-weight:700;
   font-variant-numeric:tabular-nums;-moz-appearance:textfield}
 .tbinput::-webkit-outer-spin-button,.tbinput::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .tbinput::placeholder{color:rgba(21,23,27,.2)}
@@ -690,7 +699,7 @@ body{background:var(--shell);font-family:'Archivo',system-ui,-apple-system,sans-
 .gridhead h3{margin:0;font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
 .gridhead span{font-size:10.5px;color:var(--chalk);font-weight:600}
 .gridmine{padding:0 var(--pad) 12px;font-size:12px;line-height:1.5;color:var(--chalk)}
-.gridmine b{color:var(--paper);font-family:'Roboto Mono',monospace;font-weight:700}
+.gridmine b{color:var(--paper);font-family:'Roboto','Roboto Mono',monospace;font-weight:700}
 /* The Grid tab fills the screen under the sticky topbar and scrolls
    INSIDE itself, so the page behind it does not move. That is what makes
    the sticky column headers actually stick: they hold against their own
@@ -792,7 +801,7 @@ tbody tr.me .plrank{color:var(--stamp)}
   border:1px solid rgba(250,247,241,.07)}
 .cell b{font-size:11px;font-weight:800;letter-spacing:-.02em;line-height:1}
 .cell i{font-style:normal;font-size:8.5px;font-weight:700;opacity:.65;
-  font-family:'Roboto Mono',monospace}
+  font-family:'Roboto','Roboto Mono',monospace}
 .cell.hidden{border-style:dashed;border-color:rgba(250,247,241,.16);background:transparent;color:var(--chalk-soft)}
 .cell.hidden b{font-size:13px;letter-spacing:.06em}
 .cell.pend{background:var(--shell-3);color:var(--paper)}
@@ -807,7 +816,7 @@ tbody tr.me .plrank{color:var(--stamp)}
    stays neutral: a FILLED green cell was the first attempt and it read
    as a seventeenth correct pick, which the tiebreaker is not. */
 th.tbcol .hm{color:var(--lock)}
-.cell.tbc b{font-size:14px;font-family:'Roboto Mono',monospace}
+.cell.tbc b{font-size:14px;font-family:'Roboto','Roboto Mono',monospace}
 .cell.tbc i{font-size:6.5px;letter-spacing:.04em;font-weight:800;opacity:1;
   font-family:inherit;text-transform:uppercase}
 /* #7FC96F rather than --live: 8.8:1 against this cell versus --live's
@@ -851,7 +860,7 @@ tbody tr.me td.tot{background:#241F1E}
 .lg-tb{background:var(--shell-2);position:relative}
 .legend .lg-tb::after{content:'47';position:absolute;inset:0;
   display:flex;align-items:center;justify-content:center;
-  font-family:'Roboto Mono',monospace;font-size:6.5px;font-weight:700;color:#7FC96F}
+  font-family:'Roboto','Roboto Mono',monospace;font-size:6.5px;font-weight:700;color:#7FC96F}
 
 .empty{margin:26px var(--pad);padding:30px 20px;border-radius:12px;
   border:1.5px dashed rgba(250,247,241,.16);text-align:center}
@@ -1246,7 +1255,7 @@ tbody tr.me td.tot{background:#241F1E}
 .hp-p:last-child{margin-bottom:0}
 .hp-p b{color:var(--paper);font-weight:700}
 .hp-note{margin:11px 0 0;font-size:11.5px;line-height:1.55;color:var(--chalk)}
-.hp-note b{color:var(--lock);font-family:'Roboto Mono',monospace}
+.hp-note b{color:var(--lock);font-family:'Roboto','Roboto Mono',monospace}
 .bdgrow{display:flex;align-items:flex-start;gap:12px;margin-bottom:11px}
 .bdgart{flex:0 0 30px;display:flex;justify-content:center;padding-top:1px}
 .bdgart svg{width:26px;height:26px}
@@ -1254,7 +1263,7 @@ tbody tr.me td.tot{background:#241F1E}
 .hp-table{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
 .hp-cell{background:var(--shell-3);border-radius:6px;padding:7px 4px;text-align:center}
 .hp-cell b{display:block;font-size:14px;font-weight:800;color:var(--stamp);
-  font-family:'Roboto Mono',monospace}
+  font-family:'Roboto','Roboto Mono',monospace}
 .hp-cell span{display:block;font-size:9px;color:var(--chalk);margin-top:2px;letter-spacing:.04em}
 .hp-btn{width:100%;margin:24px 0 8px;padding:14px;border-radius:10px;
   border:1.5px solid rgba(250,247,241,.2);background:transparent;color:var(--paper);
@@ -1303,7 +1312,7 @@ tbody tr.me td.tot{background:#241F1E}
 .mc-nm{font-size:14px;font-weight:800;letter-spacing:-.02em;white-space:nowrap}
 .mc-gut{flex:0 0 32px;background:var(--paper-2);transform:skewX(-9deg);position:relative;z-index:2;
   display:grid;place-items:center;box-shadow:1px 0 0 var(--rule),-1px 0 0 var(--rule)}
-.mc-gut span{transform:skewX(9deg);font-family:'Roboto Mono',monospace;font-size:12px;
+.mc-gut span{transform:skewX(9deg);font-family:'Roboto','Roboto Mono',monospace;font-size:12px;
   font-weight:700;color:rgba(21,23,27,.4)}
 .mc.on .mc-side.l{flex-grow:1.35;background:#E31837;color:#fff}
 .mc.on .mc-side.r{flex-grow:.85;background:var(--paper-2);color:rgba(21,23,27,.35)}
@@ -1328,7 +1337,7 @@ tbody tr.me td.tot{background:#241F1E}
 .ob-facts{display:flex;gap:7px;margin:20px 0 4px}
 .ob-fact{flex:1;background:var(--shell-2);border-radius:9px;padding:11px 8px;text-align:center}
 .ob-fact b{display:block;font-size:19px;font-weight:900;letter-spacing:-.03em;
-  font-family:'Roboto Mono',monospace}
+  font-family:'Roboto','Roboto Mono',monospace}
 .ob-fact span{display:block;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--chalk);margin-top:3px;font-weight:700;line-height:1.3}
 
@@ -1336,7 +1345,7 @@ tbody tr.me td.tot{background:#241F1E}
 .pinrow{display:flex;gap:8px;margin-top:6px}
 .pinbox{flex:1;min-width:0;aspect-ratio:1/1.22;border-radius:10px;text-align:center;
   background:var(--shell-2);border:1.5px solid rgba(250,247,241,.18);color:var(--paper);
-  font-family:'Roboto Mono',monospace;font-size:24px;font-weight:700;padding:0;
+  font-family:'Roboto','Roboto Mono',monospace;font-size:24px;font-weight:700;padding:0;
   -webkit-appearance:none;appearance:none}
 .pinbox:focus{border-color:var(--stamp);outline:none;background:var(--shell-3)}
 .pinbox.filled{border-color:rgba(200,52,42,.6)}
@@ -1459,7 +1468,7 @@ tbody tr.me td.tot{background:#241F1E}
   filter:drop-shadow(0 0 5px rgba(232,184,75,.45))}
 .trowrap{display:inline-flex;align-items:center;gap:2px;margin-left:6px}
 .trox{font-style:normal;font-size:10px;font-weight:800;color:#E8B84B;
-  font-family:'Roboto Mono',monospace}
+  font-family:'Roboto','Roboto Mono',monospace}
 .trolegend{display:flex;align-items:flex-start;gap:9px;margin-top:14px;padding:12px 13px;
   border-radius:10px;background:rgba(232,184,75,.07);border:1px solid rgba(232,184,75,.24)}
 .trolegend .tro{margin-top:1px}
@@ -1468,7 +1477,7 @@ tbody tr.me td.tot{background:#241F1E}
 .med{width:13px;height:13px;fill:#C9C4B8;vertical-align:-2px}
 .medwrap{display:inline-flex;align-items:center;gap:2px;margin-left:5px}
 .medx{font-style:normal;font-size:10px;font-weight:800;color:#C9C4B8;
-  font-family:'Roboto Mono',monospace}
+  font-family:'Roboto','Roboto Mono',monospace}
 .wbw{margin-top:18px;background:var(--shell-2);border-radius:11px;padding:14px}
 .wbw h4{margin:0 0 4px;font-size:10.5px;font-weight:800;letter-spacing:.13em;
   text-transform:uppercase;color:var(--chalk)}
@@ -1494,7 +1503,7 @@ tbody tr.me td.tot{background:#241F1E}
 .nrow b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bsvg{flex:0 0 auto;display:block}
 .bdg{display:inline-flex;align-items:center;gap:2px}
-.bdgx{font-style:normal;font-size:10px;font-weight:800;font-family:'Roboto Mono',monospace}
+.bdgx{font-style:normal;font-size:10px;font-weight:800;font-family:'Roboto','Roboto Mono',monospace}
 .bdgx.gold{color:#E8B84B}.bdgx.silver{color:#B9C1CB}
 
 /* leader */
@@ -1673,9 +1682,188 @@ tbody tr.me td.tot{background:#241F1E}
   .sheet{max-width:620px;left:50%;transform:translateX(-50%) translateY(102%)}
   .sheet.on{transform:translateX(-50%) translateY(0)}
 }
+/* =====================================================================
+   v1.42.0, THE WEEK 5 POLISH. Every rule here was chosen from rendered
+   mockups, round by round (the Card Polish page, rounds 1 to 10), and is
+   grouped by the part of the screen it belongs to. Later rules in this
+   block deliberately override the older ones above them.
+   ===================================================================== */
+
+/* ---- HEADER: SOLID, WITH A SOFT EDGE (finding 2) ----------------------
+   The header was 97% opaque at its foot, so a cream card scrolling under
+   it showed through as a grey box behind the week numbers, and its top
+   edge poked out as a thin white line. Fully solid now. On Picks only, a
+   10px fade under the hairline lets a card dissolve as it slides under
+   instead of being cut. Not on Standings, where the pinned "you" bar sits
+   directly beneath the header and must not be dimmed. */
+.topbar{background:var(--shell)}
+body[data-tab="picks"] .topbar::after{content:'';position:absolute;left:0;right:0;top:100%;height:10px;
+  background:linear-gradient(var(--shell),rgba(20,20,18,0));pointer-events:none}
+/* The bottom bar the same way, and only as much space under it as the
+   phone actually needs: the home-swipe area, or 11px on a phone without
+   one. It used to add the two together. */
+.bar{background:#1A1917;padding-bottom:max(11px, env(safe-area-inset-bottom))}
+
+/* ---- WEEK STRIP ---------------------------------------------------------
+   Bigger numbers on the same 46x44 tiles, so the header keeps its height
+   (the launch-jump fix depends on it). One to nine at 19.4px, ten to
+   eighteen at 18.5px: two digits carry twice the ink, so they read the
+   same size as one at a slightly smaller setting.
+   Finished weeks (Y3): a gold fade from the bottom edge to the top-right
+   corner with your points in it. The number only moves left to make room,
+   so every number in the strip sits on one line. */
+.wk b{font-size:19.4px}
+.wk.two b{font-size:18.5px}
+.wk.y{overflow:hidden}
+.wk .yf{position:absolute;inset:0;width:100%;height:100%;fill:url(#wkfade);pointer-events:none}
+.wk.on .yf{fill:url(#wkfadeOn)}
+.wk.y b{position:relative;transform:translateX(-6px)}
+.wk .yp{position:absolute;right:5px;bottom:4px;font-family:'Oswald',sans-serif;font-size:10px;font-weight:600;
+  line-height:1;color:#E8B84B;letter-spacing:.02em;font-variant-numeric:tabular-nums lining-nums}
+.wk.on .yp{color:#8A5E0C}
+
+/* ---- THE CARD: BADGE, RECORD, NAMES, SCORE ------------------------------ */
+.tile{display:flex;flex-direction:column;align-items:center;gap:3px;flex:0 0 auto}
+/* Both badges sit in the same 42px box, so the records under them land on
+   one line even though the unselected badge is 34px. */
+.mbox{height:42px;display:grid;place-items:center}
+.trec{font-family:'Oswald',sans-serif;font-size:11px;font-weight:500;line-height:1;opacity:.72;
+  white-space:nowrap;font-variant-numeric:tabular-nums lining-nums}
+.side.won .trec{opacity:.9}
+/* Fixed line heights on both panels: the smaller type on the unselected
+   side can no longer lift its score above the other one. */
+.names{flex:1 1 auto;align-items:stretch}
+.side.r .names{align-items:stretch}
+.city{height:12px;line-height:12px}
+.team{height:19px;line-height:19px}
+.side .team.long{font-size:13px;letter-spacing:-.035em}
+.l3{height:29px;display:flex;align-items:center;justify-content:center}
+/* The score: Oswald, centred under the name on both sides. */
+.scr{display:block;position:relative;margin:0;font-family:'Oswald',sans-serif;font-size:28px;font-weight:600;
+  line-height:1;letter-spacing:0;font-variant-numeric:tabular-nums lining-nums}
+/* The football hangs 8px beside the score, on the gutter side of each
+   panel, positioned so it never pushes the number off centre. */
+.scr .pos{position:absolute;top:50%;left:100%;margin-left:8px;transform:translateY(-50%)}
+.side.r .scr .pos{left:auto;right:100%;margin-left:0;margin-right:8px}
+
+/* ---- YOUR RANK IN THE MIDDLE OF THE CARD -------------------------------
+   Cream inside, the colour of the strip it sits on. Red while it can be
+   changed and while the game is on, grey once it is final. */
+.gutter .rkc{position:relative;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;
+  border:2px solid var(--stamp);box-sizing:border-box;background:var(--paper-2);color:var(--stamp);
+  font-style:normal;font-family:'Oswald',sans-serif;font-size:15px;font-weight:600;line-height:1;
+  letter-spacing:0;transform:rotate(-7deg);font-variant-numeric:tabular-nums lining-nums}
+/* Before kickoff the circle is a button, and a 28px circle is too small
+   to hit: it sits in a 44px square tap target that fills the gutter. */
+.gutter .rkt{display:grid;place-items:center;width:44px;height:44px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.gutter .rkc.fin{color:rgba(21,23,27,.48);border-color:rgba(21,23,27,.26)}
+
+/* ---- THE TEAM BOX AND ITS LINE ------------------------------------------
+   The box and its words share one centre line, measured on the capital
+   letters (text-box trim) rather than the whole line of type. */
+.pk{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:3px;margin-right:6px;
+  flex:0 0 auto;color:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15);font-style:normal}
+.pk svg{width:11px;height:11px}
+.sb-l{display:inline-flex;align-items:center;min-width:0}
+.sb-team{color:var(--ink);font-weight:800}
+@supports (text-box:trim-both cap alphabetic){
+  .sb-l .tx,.lockband .tx,#infoSheet .tx{text-box:trim-both cap alphabetic}
+}
+/* Points on the result line: the same font, size and weight as the words. */
+.sb-pts{font-variant-numeric:normal}
+
+/* ---- THE LIVE STRIP: ONE LINE -------------------------------------------- */
+.lockband{height:22px;padding:0 11px;align-items:center;white-space:nowrap}
+.lockband>span{display:inline-flex;align-items:center;min-width:0}
+.lockband .lkd{opacity:.62;flex:0 1 auto;overflow:hidden}
+.lockband .mine,.lockband .miss{flex:0 0 auto}
+.lockband .lk{width:8px;height:9px;margin-right:5px;flex:0 0 auto;fill:currentColor}
+.lockband .pk{width:11px;height:11px;margin-right:5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.45)}
+.lockband .pk svg{width:9px;height:9px}
+
+/* ---- STANDINGS NUMERALS ------------------------------------------------------
+   Points in Oswald, still on the right edge with PTS under them; your
+   place on the pinned bar too. */
+.pts b{font-family:'Oswald',sans-serif;font-size:23px;font-weight:600;letter-spacing:0;
+  font-variant-numeric:tabular-nums lining-nums}
+.mebar .pts b{font-size:23px}
+.mebar .rank{font-family:'Oswald',sans-serif;font-size:19px;font-weight:600;letter-spacing:0}
+
+/* ---- THE WEEK SO FAR (C3) ------------------------------------------------- */
+.c3row{display:flex;gap:6px;flex:1;min-width:0}
+.bar:not(.c3) .c3row{display:none}
+.bar.c3 .progress,.bar.c3 #submitBtn{display:none}
+.cellbtn{flex:1 1 0;min-width:0;position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;
+  line-height:1.05;padding:7px 0 6px;border:0;border-radius:9px;background:var(--shell-3);color:var(--paper);
+  box-shadow:inset 0 0 0 1px rgba(250,247,241,.12);font-family:inherit;cursor:pointer;
+  transition:transform .12s,background .12s;-webkit-appearance:none;appearance:none}
+.cellbtn:active{transform:scale(.95);background:#3A3632}
+.cellbtn small{font-size:7.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--chalk)}
+.cellbtn b{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;text-transform:uppercase;
+  color:var(--paper);white-space:nowrap;font-variant-numeric:tabular-nums lining-nums}
+.cellbtn .cv{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-style:normal;color:var(--chalk);font-size:13px}
+/* 10TH is trimmed to its capitals, so its box runs from the top of the H to
+   the bottom of the H. The up arrow is pinned to the top, the down arrow
+   to the bottom, and both hang outside so 10TH stays centred. */
+.cellbtn .anch2{display:flex;align-items:center;justify-content:center;height:23px}
+.cellbtn .c3n{position:relative;display:inline-block;line-height:1}
+.cellbtn .mv5{position:absolute;left:100%;margin-left:4px;display:inline-flex;gap:2px;font-style:normal;
+  font-family:'Archivo',sans-serif;font-size:10px;font-weight:800;letter-spacing:0;line-height:1;white-space:nowrap}
+.cellbtn .mv5 svg{width:8px;height:7px;flex:0 0 auto;fill:currentColor}
+.cellbtn .mv5 .d{display:inline-block}
+.cellbtn .mv5.up{top:0;align-items:flex-start;color:var(--live)}
+.cellbtn .mv5.dn{bottom:0;align-items:flex-end;color:#E4564A}
+@supports (text-box:trim-both cap alphabetic){
+  .cellbtn .c3n,.cellbtn .mv5 .d{text-box:trim-both cap alphabetic}
+}
+@supports not (text-box:trim-both cap alphabetic){
+  .cellbtn .mv5.up{top:3px} .cellbtn .mv5.dn{bottom:4px}
+}
+
+/* ---- THE TWO SHEETS IT OPENS --------------------------------------------- */
+#infoSheet h3{text-align:center;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--chalk);margin-bottom:4px}
+#infoSheet .big{text-align:center;font-family:'Oswald',sans-serif;font-size:44px;font-weight:600;line-height:1.1;margin:2px 0 10px}
+#infoSheet .big small{font-family:'Archivo',sans-serif;font-size:11px;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--chalk)}
+#infoSheet .cnt{text-align:center;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--chalk);margin:2px 0 12px}
+#infoSheet .cnt b{font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;color:var(--paper);letter-spacing:0;margin:0 1px}
+#infoSheet .slist{display:flex;flex-direction:column;border-top:1px solid rgba(250,247,241,.1)}
+#infoSheet .sl{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 2px;
+  border-bottom:1px solid rgba(250,247,241,.08);font-size:13px;font-weight:700;color:var(--paper)}
+#infoSheet .sl>span{display:inline-flex;align-items:center;min-width:0}
+#infoSheet .sl b{font-weight:800;white-space:nowrap}
+#infoSheet .sl b.ok{color:var(--live)}
+#infoSheet .sl b.no{color:#E4564A}
+#infoSheet .sl b.tie{color:var(--chalk)}
+#infoSheet .sl b.live{color:var(--live)}
+#infoSheet .sl.dim{color:var(--chalk);font-weight:600}
+#infoSheet .sl.next b{color:var(--lock);font-size:12px}
+#infoSheet .sl.sub{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--chalk);padding:8px 2px}
+#infoSheet .pk{box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+.info-done{width:100%;margin-top:12px;height:44px;border:0;border-radius:9px;background:var(--paper);color:var(--ink);
+  font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+#infoSheet .sl.next b.live{color:var(--live)}
+
+/* ---- SEASON SEALS, ONE PER WEEK -------------------------------------------
+   The disc behind a tucked seal takes its row's colour, so the seal under
+   it reads as behind it. Each row type sets the colour its background has
+   where the seals sit. */
+.row{--sealbg:#1E1D1B}
+.row.me{--sealbg:#2A2724}
+.row.lead{--sealbg:#302B1F}
+.row.second{--sealbg:#292927}
+.sealbg{fill:var(--sealbg)}
+
 </style>
 </head>
-<body>
+<body data-tab="picks">
+<!-- v1.42.0 The gold fade on finished weeks. One definition, used by every tile. -->
+<svg width="0" height="0" style="position:absolute;width:0;height:0" aria-hidden="true" focusable="false"><defs>
+  <linearGradient id="wkfade" x1="0" y1="0" x2="1" y2="1"><stop offset=".35" stop-color="#E0A32E" stop-opacity="0"/><stop offset="1" stop-color="#E0A32E" stop-opacity=".5"/></linearGradient>
+  <linearGradient id="wkfadeOn" x1="0" y1="0" x2="1" y2="1"><stop offset=".35" stop-color="#C98F1F" stop-opacity="0"/><stop offset="1" stop-color="#C98F1F" stop-opacity=".55"/></linearGradient>
+</defs></svg>
 
 <div class="topbar">
   <div class="brandrow">
@@ -1782,7 +1970,7 @@ tbody tr.me td.tot{background:#241F1E}
            repeated in a section further down. What survives is the part
            somebody would get WRONG if nobody told them. -->
       <li><b>Pick a winner</b>
-        <span>Tap either team to select your team, if you change your mind tap it again.</span></li>
+        <span>Tap either team to select your team, if you change your mind tap it again. The coloured box beside a team is your pick.</span></li>
       <li><b>Rank it 1 to 16</b>
         <span><b>Rank 1 is the game you'd bet the house on and pays 16 points; rank 16 is your
         coin flip and pays 1 point.</b> Each number is used exactly once.</span></li>
@@ -2087,6 +2275,10 @@ tbody tr.me td.tot{background:#241F1E}
     <div class="psaved" id="psaved">Saved as you tap</div>
   </div>
   <button class="submit" id="submitBtn" disabled>Lock in</button>
+  <!-- v1.42.0 C3, THE WEEK SO FAR. Takes the bar over once a game this
+       week is final and there is nothing left for you to do, which is
+       when "Lock in" had become a dead grey button. -->
+  <div class="c3row" id="c3row"></div>
 </div>
 
 
@@ -2132,6 +2324,16 @@ tbody tr.me td.tot{background:#241F1E}
      (renderBar's `ready` required staked === open.length), so the player
      got a dead button and a nag reading "6 games still need a rank" with
      no way forward from it. A dead end is not a safeguard. -->
+<!-- v1.42.0 The two sheets the week-so-far bar opens. -->
+<div class="sheet" id="infoSheet" role="dialog" aria-modal="true"
+     aria-labelledby="infoTitle" hidden>
+  <div class="grab"></div>
+  <button class="sheet-x" id="infoX" type="button" aria-label="Close">&#10005;</button>
+  <h3 id="infoTitle">Week so far</h3>
+  <div id="infoBody"></div>
+  <button class="info-done" id="infoDone" type="button">Done</button>
+</div>
+
 <div class="sheet" id="fillSheet" role="dialog" aria-modal="true"
      aria-labelledby="fillTitle" hidden>
   <div class="grab"></div>
@@ -2333,7 +2535,32 @@ if(DEMO){
   }
 }
 
-const rec=t=>DEMO?`${hash(t+'w')%4}-${hash(t+'l')%3}`:(RECORDS[t]||'');
+/* v1.42.0 RECORDS, COUNTED FROM THE RESULTS ALREADY ON THE PHONE.
+   Every final game in WEEKS up to and including the week on screen, so a
+   week 2 card shows the records as they stood after week 2 and the
+   current week shows them as they stand now. No read, no stored field to
+   go stale: the same games the cards and standings are built from. A
+   final with no winner is a tie, the same rule result() and score_week
+   use, and a tie prints as W-L-T. Every club on the schedule starts at
+   0-0, so week 1 reads (0-0) rather than nothing. */
+let RECS_NOW={};
+function teamRecords(upto){
+  const r={};
+  const add=(t,k)=>{(r[t]||(r[t]={w:0,l:0,t:0}))[k]++;};
+  Object.keys(WEEKS).forEach(w=>{
+    (WEEKS[w]||[]).forEach(g=>{
+      if(!r[g.a])r[g.a]={w:0,l:0,t:0};
+      if(!r[g.h])r[g.h]={w:0,l:0,t:0};
+      if(Number(w)>Number(upto)||!isFinal(g))return;
+      const R=result(g);
+      if(R===g.a){add(g.a,'w');add(g.h,'l');}
+      else if(R===g.h){add(g.h,'w');add(g.a,'l');}
+      else {add(g.a,'t');add(g.h,'t');}
+    });
+  });
+  return r;
+}
+const rec=t=>{const x=RECS_NOW[t]; return x?(x.t?`${x.w}-${x.l}-${x.t}`:`${x.w}-${x.l}`):'';};
 const isLive=g=>Date.now()>=g.kick;
 /* Demo scores. In production these come straight off the game document
    as awayScore / homeScore, written by the live Worker. */
@@ -2618,10 +2845,18 @@ function renderWeeks(){
   const all=Object.keys(WEEKS).map(Number).sort((a,b)=>a-b);
   for(const w of all){
     const live=WEEKS[w].some(g=>isLive(g)&&!isFinal(g));
-    h+=`<button type="button" class="wk${w===state.week?' on':''}" data-wk="${w}"
+    /* v1.42.0 FINISHED WEEKS WEAR A GOLD FADE AND YOUR POINTS (Y3).
+       A week is finished when every game in it is final. The points are
+       the same figure the Standings "This week" table shows for you,
+       through the same weekSum; a week whose figure is not on the phone
+       yet shows the fade without a number rather than a wrong one. */
+    const done=WEEKS[w].length>0&&WEEKS[w].every(isFinal);
+    const pts=done?weekPtsFor(w):null;
+    h+=`<button type="button" class="wk${w===state.week?' on':''}${done?' y':''}${w>=10?' two':''}" data-wk="${w}"
       ${w===state.week?'aria-current="true"':''}
-      aria-label="Week ${w}${live?', games in progress':''}">
-      ${live?'<span class="live-d"></span>':''}<b>${w}</b></button>`;}
+      aria-label="Week ${w}${live?', games in progress':''}${done?(pts!=null?`, finished, ${pts} points`:', finished'):''}">
+      ${live?'<span class="live-d"></span>':''}${done?WK_FADE:''}<b>${w}</b>${
+        done&&pts!=null?`<small class="yp">${pts}</small>`:''}</button>`;}
   const strip=$('#weeks');
   /* Keep where they had scrolled to. innerHTML= resets scrollLeft, and
      renderWeeks runs from render(), which runs from tick() every second
@@ -2653,6 +2888,16 @@ function renderWeeks(){
   }
 }
 let weeksPlaced=false;
+const WK_FADE='<svg class="yf" viewBox="0 0 46 44" preserveAspectRatio="none" aria-hidden="true"><polygon points="15,44 46,0 46,44"/></svg>';
+/* Your points for a finished week, or null when the phone does not hold
+   them. The loaded week is computed live; any other week comes from the
+   server's banked record, because loadWeek keeps one week of picks and a
+   live calculation of any other week would read zero. */
+function weekPtsFor(w){
+  if(DEMO||Number(w)===Number(state.week))return weekSum(ME,w).pts;
+  const r=((STANDINGS[ME]||{}).weeks||{})[String(w)];
+  return r?(r.pts||0):null;
+}
 
 /* Every team lookup goes through this.
 
@@ -2726,18 +2971,34 @@ const BALL=`<svg class="ball" viewBox="0 0 24 15" aria-hidden="true" focusable="
    It rides inside .scr so it shares the score's line, which is also why
    it cannot appear on a card with no score: there is no row to sit in
    before kickoff, and that is correct. */
+/* v1.42.0 THE TEAM BOX. Your pick, in your team's own colour, with one
+   mark that tells the story: a tick while it stands (picked, locked,
+   won), a cross once it has lost, a dash for a tie. It replaces the words
+   "You took", which said the same thing at three times the width. */
+const PK_TICK='<path d="M2.6 6.3l2.3 2.3 4.6-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>';
+const PK_CROSS='<path d="M3.4 3.4l5.2 5.2M8.6 3.4l-5.2 5.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>';
+const PK_DASH='<path d="M3.2 6h5.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>';
+const pk=(code,how)=>`<i class="pk pk-${how||'ok'}" style="background:${TEAM(code)[2]}" aria-hidden="true"><svg viewBox="0 0 12 12">${
+  how==='x'?PK_CROSS:how==='tie'?PK_DASH:PK_TICK}</svg></i>`;
+/* A padlock, drawn, for the live strip. */
+const LOCK_SVG='<svg class="lk" viewBox="0 0 10 12" aria-hidden="true"><rect x="1" y="5" width="8" height="6.4" rx="1.3"/><path d="M2.9 5V3.6a2.1 2.1 0 0 1 4.2 0V5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+const ordinal=n=>{const v=n%100;return n+((v>=11&&v<=13)?'th':(['th','st','nd','rd'][n%10]||'th'));};
+/* v1.42.0 THE SIDE, REBUILT FOR LEVEL, CENTRED SCORES.
+   City, name and score each sit in a line of FIXED height on both panels,
+   so the smaller type on the unselected side can no longer lift its score
+   above the other one. The score is centred under the name in Oswald, and
+   the football hangs beside it without pushing it off centre. The record
+   sits under the badge, and the badge sits in a 42px box on both sides,
+   so the two records land on one line whichever side is lit. */
 function side(code,which,cls,bg,ha,sc,ball){const[city,team]=TEAM(code);
+  const r=rec(code);
   return `<button class="side ${which} ${cls}" data-side="${which==='l'?'a':'h'}" ${bg}>
-    ${mark(code)}<div class="names"><div class="city">${city}</div>
-    <div class="team">${team}</div>
-    ${sc!=null?`<div class="scr mono">${ball?`<span class="pos">${BALL}</span>`:''}<span
-       class="scrn">${sc}</span></div>`
-              /* RECORDS is only ever populated in DEMO, so on live data
-                 rec() returned '' and every one of the 32 sides on a
-                 slate printed a dangling "AWAY ·" — a separator with
-                 nothing after it. It reads as a rendering bug because it
-                 is one. */
-              :`<div class="rec mono">${ha}${rec(code)?' · '+rec(code):''}</div>`}</div></button>`;}
+    <div class="tile"><div class="mbox">${mark(code)}</div>${r?`<span class="trec">(${r})</span>`:''}</div>
+    <div class="names"><div class="city">${city}</div>
+    <div class="team${team.length>=10?' long':''}">${team}</div>
+    ${sc!=null?`<div class="l3"><span class="scr"><span class="scrn">${sc}</span>${
+       ball?`<span class="pos">${BALL}</span>`:''}</span></div>`
+              :`<div class="rec mono">${ha}</div>`}</div></button>`;}
 
 /* How the pool picked. Only ever computed for games that have kicked
    off — before that, the picks are sealed and this would leak them. */
@@ -2854,6 +3115,7 @@ function renderSlate(){
   };
   queueMicrotask(_restoreTb);
   const gs=[...slate()].sort((a,b)=>a.show-b.show), N=gs.length;
+  RECS_NOW=teamRecords(state.week);
   /* Group by the viewer's local date, not the US one. In Japan the
      Sunday 1pm slate lands on Monday, and the header should say so. */
   const groups={};
@@ -2911,9 +3173,8 @@ function renderSlate(){
       stake=p.weight
         ? `<button type="button" class="stakebar" data-stake="${g.id}"
              aria-label="Rank ${p.weight}, pays ${pay(p.weight,N)} points. Change it.">
-             <span class="sb-l"><b class="sb-ok">&#10003; Submitted</b> &middot; change until kickoff</span>
-             <span class="sb-r"><span class="sb-num set">${p.weight}</span>
-             <span class="sb-pts">${ptsLbl(pay(p.weight,N))}</span></span></button>`
+             <span class="sb-l">${pk(p.winner)}<span class="tx"><b class="sb-team">${p.winner}</b> &middot; change until kickoff</span></span>
+             <span class="sb-r"><span class="sb-pts">${ptsLbl(pay(p.weight,N))}</span></span></button>`
         : `<button type="button" class="stakebar empty" data-stake="${g.id}"
              aria-label="Stake a confidence rank on this pick">
              <span class="sb-l">Tap to stake points</span>
@@ -2930,17 +3191,23 @@ function renderSlate(){
        exists: a live game you did not pick still needs its line to
        stand out on the dark strip, and that is the one place the strip
        carries no fill to lean on. */
+    /* v1.42.0 ONE LINE. "In progress · locked" is gone: the green clock
+       already says the game is on, and every game that has started is
+       locked. The padlock and "Locked" sit quietly on the left, your pick
+       on the right. The rank is in the circle in the middle of the card,
+       so it is not repeated here. */
     const band=(L&&!isFinal(g))?`<div class="lockband">
-      <span>In progress &middot; locked</span>${
+      <span class="lkd">${LOCK_SVG}<span class="tx">Locked</span></span> ${
       /* WHAT THE PICK IS WORTH IF IT HOLDS — provisional, and said so.
          This used to print pay(weight) without consulting isFinal() or
          result(), so a card could read "Final · GB 13-10" on the left
          and "You took DET · rank 1 · 16 pts" on the right. The final
          case is no longer handled here at all, which removes the way
          that could go wrong a second time. */
-      p?`<span>You took ${p.winner}${p.weight?` &middot; Rank ${p.weight}`:''}${
-          p.weight?` &middot; ${ptsLbl(pay(p.weight,N))} if it holds`:''}</span>`
-       :`<span class="miss">No pick &middot; 0 pts</span>`}</div>`:'';
+      p?`<span class="mine">${pk(p.winner)}<span class="tx">${p.winner}${
+          p.weight?` &middot; ${ptsLbl(pay(p.weight,N))} if it holds`
+          :(state.mode==='confidence'?' &middot; Unstaked':'')}</span></span>`
+       :`<span class="miss"><span class="tx">No pick &middot; 0 pts</span></span>`}</div>`:'';
 
     /* THE FINAL CARD'S RESULT BAR — the W3 pill, chosen from rendered
        sheets (docs/mockups/result-badge-W-series.png and the X, Y, Z
@@ -2965,7 +3232,8 @@ function renderSlate(){
        falsy rank. */
     const resbar=isFinal(g)?(()=>{
       const w=p&&p.weight;
-      const took=p?`You took ${p.winner} &middot; ${w?`Rank ${w}`:'Unstaked'}`:'No pick';
+      const took=p?`${pk(p.winner,!R?'tie':p.winner===R?'ok':'x')}<span class="tx">${p.winner} &middot; ${w?`Rank ${w}`:'Unstaked'}</span>`
+        :'<span class="tx">No pick</span>';
       /* A GENUINE TIE DECIDED NOTHING, so it is neither a win nor a
          loss. Neither colour would be true, so the pill says TIE in the
          muted ink rather than picking one. */
@@ -3066,7 +3334,17 @@ function renderSlate(){
             played right now. */''}
       <div class="match">${(()=>{const bw=ballOf(g);return `${
         side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null,bw===g.a)}
-        <div class="gutter"><span>@</span></div>
+        <div class="gutter"><span>${
+          /* v1.42.0 YOUR RANK, IN THE MIDDLE OF THE CARD, once there is one.
+             The @ stays until you have both picked and ranked, so the
+             centre never shows a question mark. Red while it can be
+             changed and while it is being played; tapping it before
+             kickoff opens the same rank picker as the bar. Grey once
+             the game is final. */
+          (state.mode==='confidence'&&p&&p.weight)
+            ? (L ? `<i class="rkc ${isFinal(g)?'fin':'open'}" aria-label="Rank ${p.weight}">${p.weight}</i>`
+               : `<span class="rkt" data-stake="${g.id}" role="button" tabindex="0" aria-label="Rank ${p.weight}. Change it."><i class="rkc open">${p.weight}</i></span>`)
+            : '@'}</span></div>
         ${side(g.h,'r',hCls,hBg,'Home',sc?sc[1]:null,bw===g.h)}`;})()}</div>${stake}${
         L?consensusBar(g):''}${band}${resbar}</div>`;});
   $('#slate').innerHTML=h+tbCard();
@@ -3589,6 +3867,103 @@ function renderInPlay(){
   el.style.display=el.innerHTML?'block':'none';
 }
 
+/* v1.42.0 THE WEEK-SO-FAR FIGURES, all from the same functions Standings
+   uses, so the bar and the Standings tab can never disagree.
+   weekRows() is the This-week table: weekSum for every player, sorted by
+   points then name, exactly as renderBoard sorts it. Your place is your
+   row's position in it, which is what the pinned bar on Standings shows. */
+function weekRows(wk){
+  return PLAYERS.map(p=>({p,...weekSum(p,wk)})).sort((a,b)=>(b.pts-a.pts)||
+    String(NAMES[a.p]||a.p||'').localeCompare(String(NAMES[b.p]||b.p||'')));
+}
+/* Points from the finals on the phone, optionally leaving one game out.
+   Used ONLY for the arrow: the place before the latest final against the
+   place now, both computed the same way, so the arrow cannot be thrown by
+   a banked figure that the "before" side does not have. */
+function weekPtsEx(pl,wk,exId){
+  const N=nGames(wk);let pts=0;
+  (WEEKS[wk]||[]).forEach(g=>{
+    if(!isFinal(g)||g.id===exId)return;
+    const p=pickOf(pl,g.id); if(!p)return;
+    if(p.winner===result(g))pts+=(state.mode==='confidence'?pay(p.weight,N):1);});
+  return pts;
+}
+function weekMove(wk){
+  const fin=(WEEKS[wk]||[]).filter(isFinal);
+  if(fin.length<2)return 0;
+  const last=[...fin].sort((a,b)=>b.kick-a.kick)[0];
+  const place=ex=>PLAYERS.map(p=>({p,pts:weekPtsEx(p,wk,ex)})).sort((a,b)=>(b.pts-a.pts)||
+    String(NAMES[a.p]||a.p||'').localeCompare(String(NAMES[b.p]||b.p||''))).findIndex(r=>r.p===ME);
+  const before=place(last.id), now=place(null);
+  return (before<0||now<0)?0:before-now;
+}
+const C3_UP='<svg viewBox="0 0 8 7" aria-hidden="true"><path d="M4 0L8 7H0z"/></svg>';
+const C3_DN='<svg viewBox="0 0 8 7" aria-hidden="true"><path d="M0 0H8L4 7z"/></svg>';
+function c3Html(){
+  const wk=state.week, gs=slate();
+  const rows=weekRows(wk), mi=rows.findIndex(r=>r.p===ME);
+  const me=mi>=0?rows[mi]:{pts:weekSum(ME,wk).pts};
+  const fin=gs.filter(isFinal).length, mv=weekMove(wk);
+  const arrow=mv>0?`<i class="mv5 up" aria-label="up ${mv}">${C3_UP}<span class="d">${mv}</span></i>`
+    :mv<0?`<i class="mv5 dn" aria-label="down ${-mv}">${C3_DN}<span class="d">${-mv}</span></i>`:'';
+  return `<button type="button" class="cellbtn" data-c3="pts" aria-label="Week ${wk}, ${me.pts} points. Show my week.">
+      <small>Week ${wk}</small><b>${me.pts}</b><small>pts</small><i class="cv">&rsaquo;</i></button>
+    <button type="button" class="cellbtn" data-c3="stand" aria-label="Currently ${mi>=0?ordinal(mi+1):'unplaced'} of ${rows.length}. Open standings.">
+      <small>Currently</small><b class="anch2"><span class="c3n">${mi>=0?ordinal(mi+1):'&ndash;'}${arrow}</span></b><small>of ${rows.length}</small><i class="cv">&rsaquo;</i></button>
+    <button type="button" class="cellbtn" data-c3="games" aria-label="${fin} of ${gs.length} games final. Show what is left.">
+      <small>Games</small><b>${fin}/${gs.length}</b><small>final</small><i class="cv">&rsaquo;</i></button>`;
+}
+function c3PtsSheet(){
+  const wk=state.week, N=nGames(wk), conf=state.mode==='confidence';
+  const gs=[...slate()].sort((a,b)=>a.kick-b.kick);
+  const total=weekSum(ME,wk).pts;
+  let rows='';
+  gs.filter(isFinal).forEach(g=>{
+    const p=pickOf(ME,g.id), R=result(g);
+    if(!p){ rows+=`<div class="sl"><span><span class="tx">No pick &middot; ${g.a} @ ${g.h}</span></span><b class="no">0 pts</b></div>`; return; }
+    const ok=R&&p.winner===R, pts=ok?(conf?pay(p.weight,N):1):0;
+    rows+=`<div class="sl"><span>${pk(p.winner,!R?'tie':ok?'ok':'x')}<span class="tx">${p.winner} &middot; ${
+      conf?(p.weight?`Rank ${p.weight}`:'Unstaked'):`${g.a} @ ${g.h}`}</span></span><b class="${ok?'ok':(!R?'tie':'no')}">${!R?'no score':ptsLbl(pts)}</b></div>`;
+  });
+  const left=gs.filter(g=>!isFinal(g)).length;
+  if(left)rows+=`<div class="sl dim"><span>${left} still to play</span><b></b></div>`;
+  return {title:`Week ${wk} so far`,
+    body:`<div class="big">${total} <small>pts</small></div><div class="slist">${rows}</div>`};
+}
+function c3GamesSheet(){
+  const wk=state.week, N=nGames(wk), conf=state.mode==='confidence';
+  const gs=[...slate()].sort((a,b)=>a.kick-b.kick), fin=gs.filter(isFinal).length;
+  const left=gs.filter(g=>!isFinal(g));
+  let rows='';
+  left.forEach(g=>{
+    const p=pickOf(ME,g.id), L=isLive(g), lc=L?liveClock(g):null;
+    rows+=`<div class="sl next"><span>${g.a} @ ${g.h}</span><b class="${L?'live':''}">${
+      L?esc(lc||'In progress'):`${fDay(g.show).slice(0,3)} ${fT(g.show)}`}</b></div>
+      <div class="sl dim">${p?`<span>${pk(p.winner)}<span class="tx">${p.winner}${conf&&p.weight?` &middot; Rank ${p.weight}`:''}</span></span><b>${
+        conf&&p.weight?`${ptsLbl(pay(p.weight,N))} if it holds`:''}</b>`:'<span><span class="tx">No pick</span></span><b></b>'}</div>`;
+  });
+  return {title:'Games this week',
+    body:`<div class="cnt"><b>${fin}</b> of <b>${gs.length}</b> final</div><div class="slist">${
+      left.length?`<div class="sl sub"><span>Still to play</span><b></b></div>${rows}`
+      :'<div class="sl dim"><span>Every game this week is final.</span><b></b></div>'}</div>`};
+}
+let infoOpener=null;
+function openInfo(kind){
+  const x=kind==='games'?c3GamesSheet():c3PtsSheet();
+  $('#infoTitle').textContent=x.title;
+  $('#infoBody').innerHTML=x.body;
+  infoOpener=document.activeElement;
+  const sh=$('#infoSheet'); sh.hidden=false; $('#scrim').classList.add('on');
+  requestAnimationFrame(()=>{ sh.classList.add('on'); document.body.style.overflow='hidden';
+    try{ $('#infoX').focus({preventScroll:true}); sh.scrollTop=0; }catch{} });
+}
+function closeInfo(){
+  const sh=$('#infoSheet'); if(!sh||sh.hidden)return;
+  $('#scrim').classList.remove('on'); sh.classList.remove('on'); sh.hidden=true;
+  document.body.style.overflow='';
+  if(infoOpener&&document.contains(infoOpener)){ try{ infoOpener.focus(); }catch{} }
+  infoOpener=null;
+}
 function renderBar(){
   const open=slate().filter(g=>!isLive(g));
   const picked=open.filter(g=>state.picks[g.id]).length;
@@ -3639,6 +4014,15 @@ function renderBar(){
   const needPicks=open.length>0&&picked<open.length;
   $('#submitBtn').disabled=(!ready&&!needPicks)||locked;
   $('#submitBtn').textContent=locked?'Locked in':needPicks?'Finish my picks':'Lock in';
+  /* v1.42.0 THE WEEK SO FAR. Once any game this week is final AND nothing
+     is left for you to do (every open game picked, ranked, tiebreaker in),
+     the bar shows your points, your place and the games count instead.
+     Before that it is exactly the bar it always was. */
+  const allDone=!open.length||(picked===open.length&&(!conf||staked===open.length)&&(!tbNeeded||tbDone));
+  const anyFinal=slate().some(isFinal);
+  const c3=anyFinal&&allDone;
+  $('#bar').classList.toggle('c3',c3);
+  $('#c3row').innerHTML=c3?c3Html():'';
   $('#plabel').classList.remove('saved');
   // The scoring-change notice named a fixed week, so it was wrong for 17
   // weeks out of 18. It takes effect NEXT week, whenever "now" is.
@@ -3685,6 +4069,49 @@ function badgeSVG(items){
   const w=Math.max(1,x-GAP);
   return `<svg class="bsvg" width="${w}" height="${S+2}" viewBox="0 0 ${w} ${S+2}"
     role="img">${out}</svg>`;
+}
+
+/* v1.42.0 ONE SEAL PER WEEK, on the Season table. Lee chose it from the
+   Season Seals mockups over one seal with a count beside it: two weeks won
+   is two 1ST seals, and a second place adds a 2ND after them. Order is
+   every 1ST, then every 2ND, then the perfect-week trophy, so the best
+   results always lead.
+   UP TO THREE sit side by side at full size. FOUR TO SIX tuck together,
+   17px apart, so only the dashed rims touch and every label stays whole
+   (13px was tried and hid half of each "1ST"). MORE THAN SIX shows the
+   first five and "+N"; the line under the name still spells out the
+   counts. A tucked seal sits on a disc in its row's own colour
+   (--sealbg) so the one beneath reads as behind it, not drawn through. */
+function sealRun(f,s,p){
+  let list=[...Array(f||0).fill('1st'),...Array(s||0).fill('2nd'),...Array(p||0).fill('trophy')];
+  if(!list.length)return '';
+  const aria=[f?`${f} week${f===1?'':'s'} won`:'',s?`${s} second place${s===1?'':'s'}`:'',
+    p?`${p} perfect week${p===1?'':'s'}`:''].filter(Boolean).join(', ');
+  let more=0;
+  if(list.length>6){more=list.length-5;list=list.slice(0,5);}
+  const lap=list.length>3, step=lap?17:S+4;
+  let out='';
+  /* Drawn last-first so the first seal sits on top of the run. */
+  for(let i=list.length-1;i>=0;i--){
+    const x=i*step, k=list[i];
+    if(k==='trophy'){
+      out+=`<g class="sl-trophy" transform="translate(${x},1) scale(${S/24})" fill="${GOLD}" color="${GOLD}">${TROPHY_D}</g>`;
+      continue;
+    }
+    const col=k==='1st'?GOLD:SILVER;
+    out+=`<g class="sl-${k}" transform="translate(${x},0) scale(${(S/44).toFixed(4)})" color="${col}">${
+      lap?'<circle cx="22" cy="22" r="22.6" class="sealbg"/>':''}<g transform="rotate(-8 22 22)">${SEAL_D}<text x="22" y="27.6" text-anchor="middle"
+          font-size="15" font-weight="900" fill="${col}"
+          font-family="Archivo, sans-serif">${k==='1st'?'1ST':'2ND'}</text></g></g>`;
+  }
+  let w=(list.length-1)*step+S;
+  if(more){
+    out+=`<text class="sl-more" x="${w+4}" y="${(S*0.72).toFixed(1)}" font-size="11" font-weight="800"
+      fill="${GOLD}" font-family="Archivo, sans-serif">+${more}</text>`;
+    w+=24;
+  }
+  return `<svg class="bsvg seals" width="${w}" height="${S+2}" viewBox="0 0 ${w} ${S+2}"
+    role="img" aria-label="${aria}">${out}</svg>`;
 }
 
 /* A perfect week is every game in a completed week called correctly.
@@ -3827,6 +4254,21 @@ function weekLeaders2(w){
   const top=rows[0]?.pts||0;
   const second=rows.find(r=>r.pts<top)?.pts||0;
   return second>0?rows.filter(r=>r.pts===second).map(r=>r.p):[];
+}
+function seasonHonours(){
+  const win={},snd={};
+  Object.keys(WEEKS).forEach(w=>{
+    const gs=WEEKS[w]||[];
+    if(!gs.length||!gs.every(isFinal))return;
+    const rows=PLAYERS.map(p=>({p,pts:weekSum(p,w).pts}));
+    const best=Math.max(0,...rows.map(r=>r.pts));
+    if(!(best>0))return;
+    rows.filter(r=>r.pts===best).forEach(r=>{win[r.p]=(win[r.p]||0)+1;});
+    const lower=rows.filter(r=>r.pts<best).map(r=>r.pts);
+    const sp=lower.length?Math.max(...lower):0;
+    if(sp>0)rows.filter(r=>r.pts===sp).forEach(r=>{snd[r.p]=(snd[r.p]||0)+1;});
+  });
+  return {win,snd};
 }
 function weekWins(pl){
   if(!DEMO)return (STANDINGS[pl]||{}).weekWins||0;   // written by score_week.py
@@ -4051,13 +4493,23 @@ function renderBoard(){
   }
 
   let any=false;
+  /* v1.42.0 SEASON SEALS ARE COUNTED FROM THE WEEKS, not read from a
+     counter. They used to come from weekWins/weekSeconds, which only the
+     server's week-closing run writes. When that run was late (or did not
+     run) the Season table showed fewer seals than the weeks themselves:
+     Craig won weeks 3 and 4 and wore one 1ST. Now every finished week is
+     judged here, from the same weekSum figures the This week table uses,
+     with the same rule as score_week.py: top score wins and ties share,
+     runner-up is the next distinct score down, nobody is crowned on 0. */
+  const HON=(view==='season'&&!DEMO)?seasonHonours():null;
   $('#board').innerHTML=rows.map((r,i)=>{
     /* Seals are SEASON honours — how many weeks this player has won, come
        second in, or run perfect. They belong beside the name in the season
        table and nowhere else: repeating them in a single week's table would
        be answering a question nobody asked of it. */
     const tw=view==='season'?perfectWeeks(r.p):0; if(tw)any=true;
-    const ww=view==='season'?weekWins(r.p):0, w2=view==='season'?weekSeconds(r.p):0;
+    const ww=view==='season'?(DEMO?weekWins(r.p):(HON.win[r.p]||0)):0,
+          w2=view==='season'?(DEMO?weekSeconds(r.p):(HON.snd[r.p]||0)):0;
     /* SEALS ON THIS WEEK TOO, once the week is over.
        They used to be season-only, on the reasoning that repeating a
        season honour inside one week's table answers a question nobody
@@ -4071,8 +4523,7 @@ function renderBoard(){
     const won=isWin(r.p), snd=isSnd(r.p);
     const wSeal=won?badgeSVG([{kind:'1st',n:1}])
       : snd?badgeSVG([{kind:'2nd',n:1}]) : '';
-    const badge=view==='season'?badgeSVG([
-      tw&&{kind:'trophy',n:tw}, ww&&{kind:'1st',n:ww}, w2&&{kind:'2nd',n:w2}]):wSeal;
+    const badge=view==='season'?sealRun(ww,w2,tw):wSeal;
     const sub=view==='week'
       ? (won ? `Won week ${wk} · ${r.hits} of ${r.gp} correct`
         :snd ? `Runner-up · ${r.hits} of ${r.gp} correct`
@@ -4142,7 +4593,7 @@ function renderBoard(){
          level — say so. */
       const dif=mi===0?0:rows[mi-1].pts-r.pts;
       const gap=mi===0?''
-        : dif===0 ? ` · level with ${NAME(rows[mi-1].p)}`
+        : dif===0 ? ` · tied with ${NAME(rows[mi-1].p)}`
         : ` · ${dif} behind ${NAME(rows[mi-1].p)}`;
       /* Same rule as the table: on a finished week this follows the
          honour, so a co-winner who sorted second still reads as having
@@ -4153,7 +4604,7 @@ function renderBoard(){
       meBar.innerHTML=`<div class="rank mono">${mi+1}${mv?`<i class="arrow">${
           mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
         <div class="who"><b>You${lead}</b>
-          <span>${view==='week'?`Week ${wk} · `:''}${mi+1} of ${rows.length}${gap}</span></div>
+          <span>${view==='week'?`Week ${wk} · `:''}${ordinal(mi+1)} of ${rows.length}${gap}</span></div>
         <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>`;
       meBar.classList.remove('hide');
       meBar.classList.toggle('up',mv==='up');
@@ -4611,24 +5062,63 @@ const closeSheet=()=>{
 };
 // Escape closes it, as every dialog must.
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&$('#fillSheet')&&!$('#fillSheet').hidden)closeFillSheet();
+  if(e.key==='Escape'&&$('#infoSheet')&&!$('#infoSheet').hidden)closeInfo();
+  else if(e.key==='Escape'&&$('#fillSheet')&&!$('#fillSheet').hidden)closeFillSheet();
   else if(e.key==='Escape'&&$('#sheet')&&!$('#sheet').hidden)closeSheet();
 });
 // One scrim, two sheets — dismiss whichever is actually up.
 $('#scrim').addEventListener('click',()=>{
-  if($('#fillSheet')&&!$('#fillSheet').hidden)closeFillSheet();
+  if($('#infoSheet')&&!$('#infoSheet').hidden)closeInfo();
+  else if($('#fillSheet')&&!$('#fillSheet').hidden)closeFillSheet();
   else closeSheet();
 });
 $('#sheetX').addEventListener('click',closeSheet);
+$('#infoX').addEventListener('click',closeInfo);
+$('#infoDone').addEventListener('click',closeInfo);
+$('#c3row').addEventListener('click',e=>{
+  const b=e.target.closest('[data-c3]'); if(!b)return;
+  if(b.dataset.c3==='stand'){
+    state.standView='week';
+    const t=document.querySelector('.tab[data-tab="standings"]'); if(t)t.click();
+    return;
+  }
+  openInfo(b.dataset.c3);
+});
 /* Both handlers guard on state.openGame still being a real, picked game.
    The sheet slides out over 280ms and stayed hit-testable the whole time,
    so an impatient second tap ran against `state.picks[null]` and threw —
    killing the render chain, so the card kept showing a stale stake. */
 $('#numgrid').addEventListener('click',e=>{const b=e.target.closest('.num');if(!b||b.disabled)return;
   if(!state.openGame||!state.picks[state.openGame])return;
-  state.picks[state.openGame].weight=+b.dataset.w;closeSheet();
+  const gid=state.openGame, fresh=!state.picks[gid].weight;
+  const blank=fresh?document.querySelector(`.card[data-game="${gid}"] .sb-num.blank`):null;
+  const from=blank?blank.getBoundingClientRect():null;
+  state.picks[gid].weight=+b.dataset.w;closeSheet();
   commitPicks();
-  renderSlate();renderTray();renderGrid();});
+  renderSlate();renderTray();renderGrid();
+  try{ rankArrives(gid,from); }catch(e){}});
+/* v1.42.0 OPTION B, THE MOVE THAT EXPLAINS ITSELF. The first time a pick
+   is ranked, the circle slides out of the bar and into the middle of the
+   card, where the @ was. Re-ranking stamps it in place. Purely visual:
+   the rank is already saved and drawn before this runs, and a phone that
+   asks for reduced motion gets no animation at all. */
+function rankArrives(gid,from){
+  const el=document.querySelector(`.card[data-game="${gid}"] .gutter .rkc`);
+  if(!el||!el.animate)return;
+  if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  if(from){
+    const to=el.getBoundingClientRect();
+    const dx=(from.left+from.width/2)-(to.left+to.width/2), dy=(from.top+from.height/2)-(to.top+to.height/2);
+    el.animate([{transform:`translate(${dx}px,${dy}px) rotate(-7deg) scale(.93)`},
+                {transform:'translate(0,0) rotate(-7deg) scale(1)'}],
+               {duration:460,easing:'cubic-bezier(.2,.8,.2,1)'});
+  }else{
+    el.animate([{transform:'rotate(-26deg) scale(2.1)',opacity:0},
+                {transform:'rotate(-7deg) scale(.9)',opacity:1,offset:.6},
+                {transform:'rotate(-7deg) scale(1)',opacity:1}],
+               {duration:300,easing:'cubic-bezier(.2,1.5,.4,1)'});
+  }
+}
 /* "Take the stamp back" cleared the rank on screen and never wrote it.
    The freed rank could then be assigned to another game, giving that week
    TWO picks with the same weight — which is exactly the condition that
@@ -4655,6 +5145,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
      line nobody has written yet, lands in the same net. */
   try{ usageTab(t.dataset.tab); }catch(e){}
   state.tab=t.dataset.tab;
+  document.body.dataset.tab=state.tab;
   // 'archive' was a sixth view here. It is a section inside #v-settings
   // now, so listing it would look up a #v-archive that no longer exists
   // and throw on every tab switch.

@@ -263,8 +263,9 @@ const MUTATIONS = [
      a number with no explanation. Printing "Rank undefined" is what
      happens if the word is dropped. */
   [30, 'cards: print a rank even when there is not one',
-   `      const took=p?\`You took \${p.winner} &middot; \${w?\`Rank \${w}\`:'Unstaked'}\`:'No pick';`,
-   `      const took=p?\`You took \${p.winner} &middot; Rank \${w}\`:'No pick';`,
+   /* v1.42.0: the words sit after the team box now. */
+   "${p.winner} &middot; ${w?`Rank ${w}`:'Unstaked'}</span>`",
+   "${p.winner} &middot; Rank ${w}</span>`",
    /* THE ASSERTIONS THAT CAN ACTUALLY SEE THIS, arrived at in two steps.
 
       The first version named only "no card ever prints a rank it does
@@ -638,24 +639,27 @@ const MUTATIONS = [
      like a tidy-up in a diff, and only an assertion that knows which
      side of the gutter the ball landed on can see it. */
   [54, 'possession: drop the mirror, so the away ball sits on the badge side',
-   `.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}`,
+   /* v1.42.0: the mirror is the home side's rule now, which moves the
+      ball to the other side of a centred score. */
+   `.side.r .scr .pos{left:auto;right:100%;margin-left:0;margin-right:8px}`,
    ``,
    /* BOTH GO RED, and both should: the mirror decides which side of the
       score the ball sits on, so the gap measurement flips sign with it.
       Listing only the first one reported the second as unexplained
       collateral, which is the report doing its job. */
    ['and it is on the gutter side of whichever panel holds it',
-    'and the selected side 4, which is not the same number']],
+    'the unselected side hangs the ball 8px off the number',
+    'and the selected side the same 8px']],
 
   /* ONE GAP FOR BOTH SIDES, which is what Lee looked at and rejected.
      The panels are not the same width, so a single number lands the
      ball 12.2px further from the gutter on one side than the other. */
-  [55, 'possession: use the same gap on both sides',
-   `.side.lost .scr{gap:36px}
-.side.won  .scr{gap:48px}`,
-   `.side.lost .scr{gap:48px}
-.side.won  .scr{gap:48px}`,
-   ['the unselected side sits 3 characters out']],
+  [55, 'possession: hang the ball the old 36px off the number',
+   /* v1.42.0: one 8px gap now; this puts the v1.39 distance back. */
+   `.scr .pos{position:absolute;top:50%;left:100%;margin-left:8px;`,
+   `.scr .pos{position:absolute;top:50%;left:100%;margin-left:36px;`,
+   ['the unselected side hangs the ball 8px off the number', 'and the selected side the same 8px',
+    'nothing leaves its panel at that distance']],
 
   /* ABSENT POSSESSION IGNORED RATHER THAN CLEARED. This is the bug that
      would look like a feature: the last team to hold the ball keeps the
@@ -691,10 +695,14 @@ const MUTATIONS = [
      The lesson is in the shape of the mutation, not the property: a
      feature has to be graded on what it does to the cards it did NOT
      add anything to. */
-  [58, 'possession: let a reversed row pack the away score to the gutter',
-   `.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}`,
-   `.side.l .scr{flex-direction:row-reverse}`,
-   ['with no football, the away score still starts where the team name does']],
+  [58, 'possession: pack the score to one side instead of centring it',
+   /* v1.42.0: the v1.39 bug was a score drifting off its column with no
+      ball present. The column is a centred line now, and this un-centres
+      it. */
+   `.l3{height:29px;display:flex;align-items:center;justify-content:center}`,
+   `.l3{height:29px;display:flex;align-items:center;justify-content:flex-start}`,
+   ['with no football, the away score still sits centred under its name',
+    'and the ball does not push the score off centre']],
 
   /* THE REVEAL, AND THE TWO MINUTES IT USED TO COST.
 
@@ -785,8 +793,10 @@ const MUTATIONS = [
    ['a pool block with the red tag is the same height as one without']],
 
   [68, 'cards: drop the capital trim, so the tag and labels sit off centre again',
-   `@supports (text-box:trim-both cap alphabetic){`,
-   `@supports (text-box:no-such-value){`,
+   /* v1.42.0 added two more @supports blocks of the same kind, so the
+      find string carries the line under it to stay unique. */
+   `@supports (text-box:trim-both cap alphabetic){\n  .upset{`,
+   `@supports (text-box:no-such-value){\n  .upset{`,
    ['the red tag and the bar labels are trimmed to their capitals']],
 
   [69, 'cards: put the result bar back to 44px',
@@ -809,11 +819,62 @@ const MUTATIONS = [
    `  scrollbar-width:none}`,
    ['cumulative layout shift is inside the good band',
     'and the picks view itself never moves']],
+  /* ---- v1.42.0, THE WEEK 5 POLISH. Graded by week5.ui.test.mjs, whose
+     accounting half is an oracle over the raw data, unless a batch names
+     the regression suite. Assertion names there carry a scenario tag in
+     front ("[w6 12p promo, ...] the place matches the rules"), so an
+     expected name matches a failure that ends with it. ---- */
+  [72, 'bar: show the place one too high', "${mi>=0?ordinal(mi+1):'&ndash;'}${arrow}", "${mi>=0?ordinal(mi):'&ndash;'}${arrow}",
+   ['the place matches the rules'], 'week5'],
+  [73, 'bar: flip the arrow', "return (before<0||now<0)?0:before-now;", "return (before<0||now<0)?0:now-before;",
+   ['the arrow is the move since the latest final'], 'week5'],
+  [74, 'bar: measure the move from the FIRST final, not the latest', "const last=[...fin].sort((a,b)=>b.kick-a.kick)[0];", "const last=[...fin].sort((a,b)=>a.kick-b.kick)[0];",
+   ['the arrow is the move since the latest final'], 'week5'],
+  [75, 'bar: count live games as final', "const fin=gs.filter(isFinal).length, mv=weekMove(wk);", "const fin=gs.filter(isLive).length, mv=weekMove(wk);",
+   ['the games count is finals over games'], 'week5'],
+  [76, 'points sheet: pay a losing pick', "const ok=R&&p.winner===R, pts=ok?(conf?pay(p.weight,N):1):0;", "const ok=R&&p.winner===R, pts=conf?pay(p.weight,N):1;",
+   ['every line pays what the rules say, tick on a win and cross on a loss', 'and the lines add up to the total'], 'week5'],
+  [77, 'records: count games from later weeks too', "if(Number(w)>Number(upto)||!isFinal(g))return;", "if(!isFinal(g))return;",
+   ["every record is the club's results through this week"], 'week5'],
+  [78, 'week strip: show the week before\'s points', "const r=((STANDINGS[ME]||{}).weeks||{})[String(w)];", "const r=((STANDINGS[ME]||{}).weeks||{})[String(w-1)];",
+   ['each finished week shows the banked points Standings uses'], 'week5'],
+  [79, 'bar: take over while picks are still to make', "const c3=anyFinal&&allDone;", "const c3=anyFinal;",
+   ['with games still to pick, the bar keeps its button', 'an open pick has no rank, so the bar keeps asking'], 'week5'],
+  [80, 'circle: stay red once the game is final', "`<i class=\"rkc ${isFinal(g)?'fin':'open'}\" aria-label", "`<i class=\"rkc open\" aria-label",
+   ['and grey once final'], 'week5'],
+  [81, 'circle: replace the @ before there is a rank (option A)', "(state.mode==='confidence'&&p&&p.weight)\n            ? (L ?", "(state.mode==='confidence'&&p)\n            ? (L ?",
+   ['picked but not ranked: the @ stays in the middle'], 'week5'],
+  [82, 'card: let the name line size itself, so the scores drift apart', ".team{height:19px;line-height:19px}", ".team{}",
+   ['both scores on every card start at the same height'], 'week5'],
+  [83, 'card: drop the 42px badge box, so the records drift apart', ".mbox{height:42px;display:grid;place-items:center}", ".mbox{display:grid;place-items:center}",
+   ['and the two records on a card sit on one line'], 'week5'],
+  [84, 'bar: pin the down arrow to the top like the up one', ".cellbtn .mv5.dn{bottom:0;align-items:flex-end;color:#E4564A}", ".cellbtn .mv5.dn{top:0;align-items:flex-end;color:#E4564A}",
+   ["the down arrow's tip is on the bottom of the letters"], 'week5'],
+  [85, 'strip: lift the finished numbers again', ".wk.y b{position:relative;transform:translateX(-6px)}", ".wk.y b{position:relative;transform:translate(-6px,-4px)}",
+   ['every week number sits on one line, faded or not'], 'week5'],
+  [86, 'fonts: drop the plain zero from the mono stack', ".mono{font-family:'Roboto','Roboto Mono'", ".mono{font-family:'Roboto Mono'",
+   ['every mono stack starts with it'], 'week5'],
+  [87, 'header: back to the see-through gradient', ".topbar{background:var(--shell)}", ".topbar{}",
+   ['the header is solid, not a see-through gradient'], 'week5'],
+  [88, 'standings: say "level with" again', "        : dif===0 ? ` · tied with ${NAME(rows[mi-1].p)}`", "        : dif===0 ? ` · level with ${NAME(rows[mi-1].p)}`",
+   ['a level score reads "tied with"'], 'week5'],
+  [89, 'card: put the football back in the row, pushing the score aside', ".scr .pos{position:absolute;top:50%;left:100%;margin-left:8px;transform:translateY(-50%)}", ".scr .pos{margin-left:8px}",
+   ['and the ball does not push the score off centre'], 'regress'],
+  [90, 'standings: read season seals from the server counter again', "const ww=view==='season'?(DEMO?weekWins(r.p):(HON.win[r.p]||0)):0,", "const ww=view==='season'?weekWins(r.p):0,",
+   ["every player's 1st and 2nd seals equal the weeks they won and came second", "and it ignores the server's own counter"], 'week5'],
+  [91, 'standings: give a shared week to only one of the tied players', "rows.filter(r=>r.pts===best).forEach(r=>{win[r.p]=(win[r.p]||0)+1;});", "rows.filter(r=>r.pts===best).slice(0,1).forEach(r=>{win[r.p]=(win[r.p]||0)+1;});",
+   ["every player's 1st and 2nd seals equal the weeks they won and came second"], 'week5'],
+  [92, 'seals: tuck them 13px apart, hiding half of each label', "const lap=list.length>3, step=lap?17:S+4;", "const lap=list.length>3, step=lap?13:S+4;",
+   ['one seal per week: every 1ST, then every 2ND, side by side up to 3, tucked from 4, five and "+N" past 6'], 'week5'],
+  [93, 'seals: never stop at five, however long the run', "if(list.length>6){more=list.length-5;list=list.slice(0,5);}", "if(false){more=list.length-5;list=list.slice(0,5);}",
+   ['one seal per week: every 1ST, then every 2ND, side by side up to 3, tucked from 4, five and "+N" past 6', 'the fixture reaches the "+N" case'], 'week5'],
+  [94, 'seals: put the trophy first again', "let list=[...Array(f||0).fill('1st'),...Array(s||0).fill('2nd'),...Array(p||0).fill('trophy')];", "let list=[...Array(p||0).fill('trophy'),...Array(f||0).fill('1st'),...Array(s||0).fill('2nd')];",
+   ['one seal per week: every 1ST, then every 2ND, side by side up to 3, tucked from 4, five and "+N" past 6'], 'week5'],
 ];
 
-function runSuite() {
+function runSuite(suite = 'regress') {
   try {
-    const out = execFileSync('node', ['regress.ui.test.mjs'],
+    const out = execFileSync('node', [suite === 'week5' ? 'week5.ui.test.mjs' : 'regress.ui.test.mjs'],
       { cwd: new URL('.', import.meta.url).pathname, encoding: 'utf8',
         timeout: 900000, maxBuffer: 1 << 26 });
     return { out, failures: [] };
@@ -845,13 +906,16 @@ for (const batch of batches) {
     console.log(`  applied: ${label}`);
   }
   fs.writeFileSync(APP, src);
-  const { failures } = runSuite();
+  const { failures } = runSuite(ms[0][5] || 'regress');
   fs.writeFileSync(APP, ORIGINAL);
 
   const expected = new Set(ms.flatMap(m => m[4]));
   const got = new Set(failures);
-  const missed = [...expected].filter(e => !got.has(e));
-  const extra  = [...got].filter(g => !expected.has(g));
+  /* A week5 assertion carries a scenario tag in front of its name, so an
+     expected name also matches a failure that ENDS with it. */
+  const hit = (g, e) => g === e || g.endsWith(' ' + e);
+  const missed = [...expected].filter(e => ![...got].some(g => hit(g, e)));
+  const extra  = [...got].filter(g => ![...expected].some(e => hit(g, e)));
 
   console.log(`  ${failures.length} assertions went red`);
   if (missed.length) {

@@ -321,15 +321,14 @@ const CHECKS = [
      sheet and each a separate way to get it wrong: the football at all,
      the mirror onto the gutter side, the two different gaps, and the
      fact that it can only appear on a game being played. */
-  ['possession', 'the football, mirrored, 3 unselected and 4 selected',
+  ['possession', 'the football, mirrored, 8px beside a centred score',
    () => has('const ESPN_BALL=Object.create(null)',
              'const ballOf=g=>(!isLive(g)||isFinal(g))?null:',
-             /* justify-content is part of the rule, not decoration: without
-                it a reversed row packs to the gutter and the away score
-                slides right of its own panel whenever there is no ball. */
-             '.side.l .scr{flex-direction:row-reverse;justify-content:flex-end}',
-             '.side.lost .scr{gap:36px}',
-             '.side.won  .scr{gap:48px}',
+             /* v1.42.0: the score is centred, so the ball is positioned
+                off it rather than packed beside it in a flex row; that is
+                what keeps the number centred whichever side holds it. */
+             '.scr .pos{position:absolute;top:50%;left:100%;margin-left:8px;transform:translateY(-50%)}',
+             '.side.r .scr .pos{left:auto;right:100%;margin-left:0;margin-right:8px}',
              '<svg class="ball"',
              'stroke="currentColor"') &&
          /* NOT A FILL, which is what made the laces vanish on white,

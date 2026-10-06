@@ -2227,8 +2227,17 @@ console.log('\n32. A finished game must say it is submitted, on the card');
     const set = [...document.querySelectorAll('.stakebar:not(.empty) .sb-l')];
     return { n: set.length,
              labels: [...new Set(set.map(e => e.textContent.replace(/\s+/g, ' ').trim()))],
-             okColour: (() => { const e = document.querySelector('.sb-ok');
-               return e ? getComputedStyle(e).color : null; })(),
+             /* v1.42.0: the tick is the team box, in the colour of the
+                team taken, and it must be the team the card has lit. */
+             boxes: [...document.querySelectorAll('.stakebar:not(.empty)')].map(b => {
+               const card = b.closest('.card'), pk = b.querySelector('.pk');
+               const lit = card.querySelector('.side.won');
+               return { code: (b.textContent.match(/\b([A-Z]{2,3}) ·/) || [])[1] || '',
+                        lit: lit ? (lit.querySelector('.mark span') || {}).textContent : '',
+                        tick: !!(pk && pk.classList.contains('pk-ok')),
+                        box: pk ? getComputedStyle(pk).backgroundColor : null,
+                        litBg: lit ? getComputedStyle(lit).backgroundColor : null,
+                        ink: pk ? getComputedStyle(pk).color : null }; }),
              /* A row that overflows its button silently truncates the very
                 reassurance it exists to give. */
              clipped: [...document.querySelectorAll('.stakebar')]
@@ -2238,22 +2247,31 @@ console.log('\n32. A finished game must say it is submitted, on the card');
   /* SUBMITTED, not SAVED. Every form anybody has filled in taught them
      that "saved" is a draft and "submitted" is turned in, so "Saved" left
      standing the exact doubt this line exists to remove. */
-  ok('every staked card says the pick is submitted',
-     bars.labels.length === 1 && /submitted/i.test(bars.labels[0]),
-     JSON.stringify(bars.labels));
+  /* v1.42.0 THE TEAM BOX REPLACED "✓ Submitted". Lee chose it from the
+     round 5 to 8 mockups: a box in the colour of the team taken, with a
+     tick, then the team, then how long there is to change it. The two
+     properties this case exists for still hold and are still graded:
+     it reassures (a ticked box against the team's name, on every staked
+     card) and it does not read as locked (it names kickoff). */
+  ok('every staked card shows a ticked team box and the team taken',
+     bars.boxes.length === bars.n && bars.boxes.every(b => b.tick && b.code && b.code === b.lit),
+     JSON.stringify(bars.boxes.filter(b => !(b.tick && b.code === b.lit)).slice(0, 3)));
+  ok('the box is in the colour of the team it names',
+     bars.boxes.every(b => b.box && b.box === b.litBg),
+     JSON.stringify(bars.boxes.filter(b => b.box !== b.litBg).slice(0, 3)));
   ok('and it does not hedge with the draft word',
-     !/\bsaved\b/i.test(bars.labels[0]), bars.labels[0]);
+     bars.labels.every(l => !/\bsaved\b/i.test(l)), bars.labels[0]);
   ok('and it names how long there is to change it',
-     /until kickoff/i.test(bars.labels[0]), bars.labels[0]);
+     bars.labels.every(l => /· change until kickoff$/i.test(l)), JSON.stringify(bars.labels.slice(0, 3)));
   ok('the word "stake" no longer labels the row',
-     !/your stake/i.test(bars.labels[0]), bars.labels[0]);
+     bars.labels.every(l => !/your stake/i.test(l)), bars.labels[0]);
   ok('nothing is clipped at phone width', bars.clipped === false);
 
   /* --hit (#2F6E26) measures 5.09:1 on the card's #EDE8DE; --live
      (#63B257) measures 2.14 and would have failed. This is the assertion
      that stops somebody "brightening" it later. */
-  ok('the tick uses the dark green that passes contrast, not the bright one',
-     bars.okColour === 'rgb(47, 110, 38)', String(bars.okColour));
+  ok('the tick is drawn in white on the team colour',
+     bars.boxes.every(b => b.ink === 'rgb(255, 255, 255)'), JSON.stringify(bars.boxes[0]));
 
   /* A pick with no rank yet must still ASK, not reassure — otherwise the
      screen tells somebody they are done when they are one tap short. */
@@ -3582,8 +3600,10 @@ console.log('\n46. A live score must appear without waiting on any scheduler');
     /* SCORING MUST BE UNTOUCHED. `winner` and `status` come from the
        server alone, so a score arriving from a browser must not flip
        the game to final or bank anybody's points. */
+    /* v1.42.0: the strip reads "Locked" and your pick "if it holds";
+       "In progress" moved to the green clock above it. */
     ok('the game is still in progress, not final',
-       /in progress/i.test(g0.band) && !/final/i.test(g0.band), g0.band);
+       /^\s*Locked/.test(g0.band) && /if it holds/.test(g0.band) && !/final/i.test(g0.band), g0.band);
     ok('and points are still only "if it holds", never banked',
        !/\+\d+\s*pts/.test(g0.band), g0.band);
 
@@ -4131,8 +4151,15 @@ console.log('\n50. A finished week must not still be pulsing "all locked"');
      the fix had to be surgical — `next` already picks the earliest
      game in the week that has not kicked off, which is why the gold
      countdown correctly survives the gaps BETWEEN games on a Sunday. */
+  /* Same wait as week 1 above. The flat 800ms here read "Week 1 · Final"
+     once on 6 Oct 2026 while building v1.42.0 (the header had not yet
+     redrawn). With this wait the full suite passed 672 of 672. */
+  const beforeSoon = (await clock()).txt;
   await page.click('.wk[data-wk="3"]');
-  await page.waitForTimeout(800);
+  await page.waitForFunction(t =>
+    (document.getElementById('countdown') || {}).textContent !== t,
+    beforeSoon, { timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(150);
   const soon = await clock();
   ok('an upcoming week still counts down to its next kickoff',
      /@/.test(soon.txt) && /\d/.test(soon.txt), soon.txt);
@@ -4644,7 +4671,7 @@ console.log('\n53. A live card must say where the game is, and a final one who w
         cls: sd.className,
         markFilter: getComputedStyle(sd.querySelector('.mark')).filter,
       }));
-      out.push({ winner: m[1], sides, took: (/You took ([A-Z]{2,3})/.exec(bt) || [])[1] || '' });
+      out.push({ winner: m[1], sides, took: (/\b([A-Z]{2,3}) · /.exec(bt) || [])[1] || '' });
       if (out.length === 4) break;
     }
     return out;
@@ -4730,7 +4757,7 @@ console.log('\n53c. A final card reports the result as a WIN / LOSS pill (W3)');
       out.push({
         head: head ? head.textContent.trim() : null,
         winner: head ? (head.textContent.match(/Final\s*·\s*([A-Z]{2,3})/) || [])[1] || null : null,
-        took: left ? (/You took ([A-Z]{2,3})/.exec(left.textContent) || [])[1] || null : null,
+        took: left ? (/\b([A-Z]{2,3}) · /.exec(left.textContent) || [])[1] || null : null,
         unstaked: left ? /Unstaked/.test(left.textContent) : false,
         noPick: left ? /^No pick$/.test(left.textContent.trim()) : false,
         leftTxt: left ? left.textContent.trim() : '',
@@ -4807,7 +4834,8 @@ console.log('\n53c. A final card reports the result as a WIN / LOSS pill (W3)');
                          weeks: 1, gamesPerWeek: 4, playerCount: 8 });
   await U.page.waitForTimeout(700);
   const circleH = await U.page.evaluate(() => {
-    const n = document.querySelector('#slate .stakebar .sb-num');
+    /* v1.42.0: the rank circle lives in the middle of the card now. */
+    const n = document.querySelector('#slate .gutter .rkc');
     return n ? n.offsetHeight : null;
   });
   /* THE STAKE BAR IS A BUTTON AND KEEPS ITS 44px. v1.41.0 shortened the
@@ -4934,7 +4962,7 @@ console.log('\n53c. A final card reports the result as a WIN / LOSS pill (W3)');
       out.push({
         idx: out.length,
         winner: head ? (head.textContent.match(/Final\s*·\s*([A-Z]{2,3})/) || [])[1] || null : null,
-        took: (/You took ([A-Z]{2,3})/.exec(l.textContent) || [])[1] || null,
+        took: (/\b([A-Z]{2,3}) · /.exec(l.textContent) || [])[1] || null,
         left: l.textContent.trim(), pts: p.textContent.trim(),
         word: w.textContent.trim(),
         ink: getComputedStyle(l).color,
@@ -4957,7 +4985,7 @@ console.log('\n53c. A final card reports the result as a WIN / LOSS pill (W3)');
   ok('there are unstaked picks on screen, UN_N of them in each week',
      unst.length === UN_N * 2, String(unst.length));
   ok('an unstaked pick says Unstaked, not a rank',
-     unst.every(b => b.left === `You took ${b.took} · Unstaked`),
+     unst.every(b => b.left === `${b.took} · Unstaked`),
      JSON.stringify(unst.slice(0, 3).map(b => b.left)));
   ok('and never prints a rank it does not have',
      unst.every(b => !/Rank/.test(b.left)),
@@ -5034,7 +5062,7 @@ console.log('\n53c. A final card reports the result as a WIN / LOSS pill (W3)');
      live.every(b => b.fill === DARK && !/\bwon\b|\blost\b/.test(b.cls)),
      JSON.stringify(live.slice(0, 2)));
   ok('it says the game is in progress, not final',
-     live.every(b => /in progress/i.test(b.txt)),
+     live.every(b => /^Locked/.test(b.txt) && (/if it holds|No pick|Unstaked|^Locked[A-Z]{2,3}$/.test(b.txt))),
      JSON.stringify(live.slice(0, 2).map(b => b.txt)));
   ok('and a live card has no result bar, no pill and no final head',
      live.every(b => !b.hasBar && !b.hasPill && !b.hasFinHead),
@@ -6064,7 +6092,9 @@ console.log('\n61. White writing on every club, and the ring that makes it work'
   /* The score line is 21px at weight 800, which is WCAG large text, so
      3:1 is its floor and every club clears it. */
   ok('the score line is large text, and passes its own 3:1 floor',
-     lit.every(x => x.scr.size >= 18.66 && x.scr.weight >= 700 && x.scr.ratio >= 3),
+     /* v1.42.0: 28px Oswald at 600. WCAG large text is 24px at any
+        weight (or 18.66px bold), so 3:1 is still the floor. */
+     lit.every(x => (x.scr.size >= 24 || (x.scr.size >= 18.66 && x.scr.weight >= 700)) && x.scr.ratio >= 3),
      JSON.stringify(lit.slice(0, 2).map(x => `${x.scr.size}px/${x.scr.weight} ${x.scr.ratio}`)));
   const LIGHT = ['CIN', 'MIA', 'CAR', 'LAC'];
   const soft = lit.filter(x => x.team.ratio < 4.5);
@@ -6204,6 +6234,10 @@ console.log('\n62. Who has the ball, on a live card');
         club: (side.querySelector('.mark span') || {}).textContent.trim(),
         away, lit: side.classList.contains('won'),
         toNumber: +(away ? br.left - nr.right : nr.left - br.right).toFixed(1),
+        /* v1.42.0: the ball hangs beside a score that is CENTRED under the
+           team name, and must not push it off centre. */
+        centred: (() => { const mr = side.querySelector('.names').getBoundingClientRect();
+          return Math.abs((nr.left + nr.right) / 2 - (mr.left + mr.right) / 2) <= 1; })(),
         /* MEASURED AGAINST THE NUMBER, NOT THE GUTTER, and the first
            version was measured against the gutter and could not see the
            bug. "Is the ball left of the gutter" is TRUE for the entire
@@ -6232,9 +6266,16 @@ console.log('\n62. Who has the ball, on a live card');
           the same failure as one that grades nothing. ---- */
   {
     const runs = [];
-    for (const who of ['home', 'away']) {
+    /* v1.42.0: 'alt' too. With only home and away, the ball only ever
+       sat on a selected AWAY side or an unselected HOME side, so a bug
+       on one side of the card could hide behind the other (mutation
+       batches 54 and 55 showed it). Alternating covers all four. */
+    for (const who of ['home', 'away', 'alt']) {
+      /* Forty minutes into the SUNDAY window, not Thursday's: Thursday is
+         one game, so one pick and one ball, and two of the four
+         side-and-ball combinations could never occur. */
       const { ctx, page, errors } = await open({
-        startISO: new Date(Date.now() - 40 * 60000).toISOString(),
+        startISO: new Date(Date.now() - (3 * 864e5 + 61200000 + 40 * 60000)).toISOString(),
         weeks: 1, gamesPerWeek: 8, playerCount: 10,
         espnDetail: '2nd 5:42', espnBall: who });
       await page.waitForTimeout(2600);
@@ -6245,7 +6286,7 @@ console.log('\n62. Who has the ball, on a live card');
     const errors = runs.flatMap(r => r.errors);
     ok('a live game shows the football', balls.length > 0, String(balls.length));
     ok('and the fixture covered a selected side AND an unselected one',
-       balls.some(b => b.lit) && balls.some(b => !b.lit),
+       [true, false].every(lit => [true, false].every(away => balls.some(b => b.lit === lit && b.away === away))),
        JSON.stringify(balls.map(b => b.club + (b.lit ? ' lit' : ' unlit'))));
     /* MIRRORED, which is the thing a first pass gets wrong: the home
        panel is right-aligned and the away panel left-aligned, so one
@@ -6261,12 +6302,18 @@ console.log('\n62. Who has the ball, on a live card');
        a sheet and measured at 4.4px apart to the gutter instead of
        12.2px. A single gap would pass a looser assertion. */
     const un = balls.filter(b => !b.lit), li = balls.filter(b => b.lit);
-    ok('the unselected side sits 3 characters out',
-       un.length > 0 && un.every(b => Math.abs(b.toNumber - 36) < 1.5),
+    /* v1.42.0 THE SCORE IS CENTRED NOW, so the ball no longer has to make
+       up for the panels being different widths: it hangs 8px off the
+       number on both sides, and the number stays centred whichever side
+       holds it. The 36/48px pair belonged to the left-aligned score. */
+    ok('the unselected side hangs the ball 8px off the number',
+       un.length > 0 && un.every(b => Math.abs(b.toNumber - 8) < 1.5),
        JSON.stringify(un.map(b => b.club + ' ' + b.toNumber)));
-    ok('and the selected side 4, which is not the same number',
-       li.length > 0 && li.every(b => Math.abs(b.toNumber - 48) < 1.5),
+    ok('and the selected side the same 8px',
+       li.length > 0 && li.every(b => Math.abs(b.toNumber - 8) < 1.5),
        JSON.stringify(li.map(b => b.club + ' ' + b.toNumber)));
+    ok('and the ball does not push the score off centre',
+       balls.every(b => b.centred), JSON.stringify(balls.filter(b => !b.centred).slice(0, 2)));
     ok('nothing leaves its panel at that distance',
        balls.every(b => b.inside), JSON.stringify(balls.slice(0, 2)));
     /* WHITE ON THE COLOUR, DARK ON THE PAPER, from one currentColor
@@ -6324,16 +6371,18 @@ console.log('\n62. Who has the ball, on a live card');
           const num = side.querySelector('.scrn');
           const name = side.querySelector('.team') || side.querySelector('.city');
           if (!num || !name) continue;
-          const nr = num.getBoundingClientRect(), tr = name.getBoundingClientRect();
-          out.push({ num: +nr.left.toFixed(1), name: +tr.left.toFixed(1),
-                     off: +(nr.left - tr.left).toFixed(1) });
+          /* v1.42.0: the score is centred under the name column, so the
+             measure is the two centres, not the two left edges. */
+          const nr = num.getBoundingClientRect(), tr = side.querySelector('.names').getBoundingClientRect();
+          out.push({ num: +((nr.left + nr.right) / 2).toFixed(1), name: +((tr.left + tr.right) / 2).toFixed(1),
+                     off: +((nr.left + nr.right) / 2 - (tr.left + tr.right) / 2).toFixed(1) });
         }
       }
       return out;
     });
     ok('the fixture actually has an away score to grade',
        aligned.length > 0, String(aligned.length));
-    ok('with no football, the away score still starts where the team name does',
+    ok('with no football, the away score still sits centred under its name',
        aligned.every(a => Math.abs(a.off) <= 1.5),
        JSON.stringify(aligned.filter(a => Math.abs(a.off) > 1.5).slice(0, 3)));
     ok('no page errors', errors.length === 0, errors[0]);

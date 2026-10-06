@@ -1,9 +1,9 @@
 # Tests
 
-1499 checks. Nothing here touches Firebase, Resend, KV or the live site.
+1872 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
-That number is the twenty-one suite totals below added up, from a full
-run on 2026-09-28 for v1.40.0. If you change a suite, re-run everything and
+That number is the twenty-two suite totals below added up, from a full
+run on 2026-10-06 for v1.42.0. If you change a suite, re-run everything and
 re-add — a count carried forward from memory drifts, and quoting a stale
 one is the same class of mistake as a green run that graded a stale file.
 
@@ -29,7 +29,11 @@ one is the same class of mistake as a green run that graded a stale file.
     node polish.ui.test.mjs      #  41 layout, states, degradation, edges
     node season.ui.test.mjs      #  21 full 18-week season, 25-40 players
     node scale.ui.test.mjs       #  21 50 players, all 18 weeks, 390 and 320px
-    node regress.ui.test.mjs     # 670 bugs that shipped, so they cannot return
+    node regress.ui.test.mjs     # 672 bugs that shipped, so they cannot return
+    node week5.ui.test.mjs       # 370 v1.42.0: an oracle for every number the
+                                 #     week-so-far bar, its sheets, Standings,
+                                 #     the week strip and the records print,
+                                 #     plus the layout Lee chose from mockups
     node stress.ui.test.mjs      # 115 a full pool leaned on: see below
     node sw.push.test.mjs        #  33 service worker push, caching, and the message handler
     node shots.mjs all           #     screenshots to /tmp/shots
@@ -48,8 +52,9 @@ one is the same class of mistake as a green run that graded a stale file.
     python test_usage_report.py  #  33 the usage aggregate, and that it
                                  #     cannot report anything per person
 
-    node mutate-dryrun.mjs       #     do all 73 mutations still apply?
-    node mutate.mjs              #     73 mutations, 59 batches, ~5 hours
+    node mutate-dryrun.mjs       #     do all 96 mutations still apply?
+    node mutate.mjs              #     96 mutations, 85 batches, ~6 hours
+                                 #     (batches 72-88, 90 and 91 run week5, 81s each)
 
 The three `shot-*.mjs` scripts grade nothing. They write the sheets in
 `docs/mockups/` that ship in the release zip, out of the REAL app
