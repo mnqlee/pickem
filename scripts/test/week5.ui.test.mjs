@@ -392,6 +392,14 @@ console.log('\n6. Ranking a pick: the @ stays until there is a rank, then the ci
     blank: !!document.querySelector(C + ' .stakebar .sb-num.blank') }), C);
   ok('picked but not ranked: the @ stays in the middle', s1.gut === '@', s1.gut);
   ok('and the bar asks, with the dashed circle on the right', /Tap to stake points/.test(s1.bar) && s1.blank, JSON.stringify(s1));
+  /* v1.42.2: the unranked bar is the same 44px full-width strip as the
+     ranked one. The app-wide ".empty" panel style used to leak onto it. */
+  const geo = await page.evaluate(C => { const e = document.querySelector(C + ' .stakebar'),
+    r = e.getBoundingClientRect(), c = e.closest('.card').getBoundingClientRect();
+    return { h: r.height, l: +(r.left - c.left).toFixed(1), rt: +(c.right - r.right).toFixed(1),
+      radius: getComputedStyle(e).borderRadius }; }, C);
+  ok('the unranked bar is 44px, edge to edge, square: not the blank-page panel',
+     geo.h === 44 && geo.l === 0 && geo.rt === 0 && geo.radius === '0px', JSON.stringify(geo));
   await page.click(`${C} .stakebar`); await page.waitForTimeout(450);
   await page.click('#numgrid .num:not([disabled]) >> nth=2'); await page.waitForTimeout(80);
   const anim = await page.evaluate(C => { const r = document.querySelector(C + ' .gutter .rkc');

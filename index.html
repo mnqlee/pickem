@@ -1862,6 +1862,14 @@ body[data-tab="picks"] .topbar::after{content:'';position:absolute;left:0;right:
 .row.second{--sealbg:#292927}
 .sealbg{fill:var(--sealbg)}
 
+/* v1.42.2 THE UNRANKED BAR IS THE SAME 44px STRIP AS THE RANKED ONE.
+   Its "empty" class also matched the app-wide ".empty" blank-page panel,
+   which gave it a 26px margin, 30px padding, rounded corners and centred
+   text: 62px tall, inset 14px and running 14px past the card's edge. It
+   has done so since before v1.41; an older note blamed Safari. */
+.stakebar.empty{margin:0;padding:0 12px;border-radius:0;border:0;
+  border-top:1px dashed rgba(200,52,42,.45);text-align:left}
+
 </style>
 </head>
 <body data-tab="picks">

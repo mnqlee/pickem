@@ -874,6 +874,9 @@ const MUTATIONS = [
      9deg because ".gutter span" straightened it twice. */
   [95, 'circle: straighten the tap target a second time (the oval)', ".gutter .rkt{transform:none}", "",
    ['the circle is round in every state: no lean left over from the slanted strip'], 'week5'],
+  /* v1.42.2: the blank-page ".empty" panel leaking onto the unranked bar. */
+  [96, 'stake bar: let the .empty panel style back onto the unranked bar', ".stakebar.empty{margin:0;padding:0 12px;border-radius:0;border:0;", ".stakebar.empty{",
+   ['the unranked bar is 44px, edge to edge, square: not the blank-page panel'], 'week5'],
 ];
 
 function runSuite(suite = 'regress') {
