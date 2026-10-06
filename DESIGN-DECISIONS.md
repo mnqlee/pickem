@@ -1397,6 +1397,35 @@ the way: the stub's live listener used a different weight rule from its
 first read under the promo fixture, so the pool changed a moment after
 loading.
 
+**v1.43.0, the week so far from the first final.** Lee's worry: a player
+who picks game by game up to each kickoff never had nothing left to do,
+so under v1.42's rule they never saw their points or place all week. From
+mockups (option B, the D2 red card, the Finish Picks Flow built on the real
+app) he chose:
+
+- The boxes show from the first final. Until every open game is picked and
+  ranked and the Monday night total is in, the third box is a red "Picks
+  d/N" (d = games picked and ranked, N = games). It flips to "Games final"
+  once nothing is left. "tiebreak" replaces "finish" when only the total is
+  missing.
+- The red box, each Pick button in the sheet, and Next unpicked all go to
+  the real card, centred and outlined in gold. Not a quick picker: Lee
+  wanted the full card (record, spread, network, lock time) in front of the
+  player while they choose. Order: unpicked first (scores 0), then
+  unranked (scores 1), then the total.
+- One red thing per screen: the sheet has no Finish button of its own,
+  because the bar's red box does that and each matchup has Pick.
+- The arrow after game one carries no number. Before it everyone is level
+  on nothing, so "places moved" has no starting point; up means the game
+  scored for you, down means it scored for someone else and not you.
+- Next unpicked appears only after one of your own saves moved the count
+  on (never on load), waits for "Saved" to clear, and hides on other tabs.
+- The open sheet redraws in place when its content changes, keeping scroll.
+- Wording: "Games not selected" (capital G, Lee's words), "First game locks
+  <weekday> <time>", "Tap to see the matchups and select your team" on one
+  line, with the gap above it measured equal to the gap between the first
+  two lines.
+
 ## 5. Open, not yet decided
 
 - **The gutter `@` is 3.77:1**, found while drawing the paper-ink

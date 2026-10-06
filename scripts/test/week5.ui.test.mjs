@@ -21,6 +21,18 @@ const browser = await chromium.launch();
 let pass = 0, fail = 0; const fails = [];
 const ok = (n, c, x = '') => { if (c) { pass++; console.log('  ok   ' + n); }
   else { fail++; fails.push(n + (x ? ' -> ' + x : '')); console.log('  FAIL ' + n + (x ? '  -> ' + x : '')); } };
+/* A CRASH STILL REPORTS. A bug that removes a button makes the next click
+   throw, and a suite that dies there never prints the failures it had
+   already found, so the mutation runner read "0 red" for two real
+   catches (found building v1.43.0). Report what failed, then the crash. */
+const crashed = e => {
+  fails.push('SUITE CRASHED: ' + String(e && e.message || e).split('\n')[0]);
+  console.log(`\n${pass} passed, ${fail + 1} failed`);
+  console.log('FAILURES:'); fails.forEach(f => console.log('  - ' + f));
+  process.exit(1);
+};
+process.on('unhandledRejection', crashed);
+process.on('uncaughtException', crashed);
 
 const DAY = 864e5, WEEK = 7 * DAY, H = 3600e3, MIN = 60e3;
 const OFF = { thu: 0, sun1: 3*DAY + 61200000, sunLate: 3*DAY + 73800000, mon: 4*DAY + 15000000 };
@@ -72,6 +84,12 @@ function oracle(R, wk) {
     .sort((a, b) => (b.pts - a.pts) || String(a.name).localeCompare(String(b.name)));
   const now = table(null), place = now.findIndex(r => r.uid === R.me) + 1;
   let move = 0;
+  /* v1.43.0: one final in, the arrow says only whether that game scored
+     for you (up) or scored for somebody else and not you (down). */
+  if (fin.length === 1) {
+    const mine = ptsOf(R.me, null), any = R.members.some(m => ptsOf(m.uid, null) > 0);
+    move = mine > 0 ? 'up1' : any ? 'dn1' : 0;
+  }
   if (fin.length >= 2) {
     const last = [...fin].sort((a, b) => b.kick - a.kick)[0];
     move = (table(last.id).findIndex(r => r.uid === R.me) + 1) - place;
@@ -101,15 +119,19 @@ async function readBar(page) {
       big: b.querySelector('.c3n') ? b.querySelector('.c3n').firstChild.textContent
          : b.querySelector('b').textContent }));
     const mv = document.querySelector('#c3row .mv5');
+    const third = document.querySelector('#c3row .cellbtn:nth-child(3)');
     return { c3: bar.classList.contains('c3'), cells: c,
-      move: mv ? (mv.classList.contains('up') ? 1 : -1) * +mv.querySelector('.d').textContent : 0,
+      /* v1.43.0: after the first final the arrow carries no number. */
+      move: !mv ? 0 : !mv.querySelector('.d') ? (mv.classList.contains('up') ? 'up1' : 'dn1')
+        : (mv.classList.contains('up') ? 1 : -1) * +mv.querySelector('.d').textContent,
+      third: third ? third.dataset.c3 : null, thirdRed: !!(third && third.classList.contains('fin')),
       submitShown: getComputedStyle(document.querySelector('#submitBtn')).display !== 'none' };
   });
 }
 
 /* ================================================================ 1-4 */
 console.log('\n1. The week-so-far bar agrees with the rules, through a whole week');
-const seen = { up: 0, down: 0, still: 0, tie: 0, loss: 0, win: 0, unstaked: 0, asks: 0 };
+const seen = { up: 0, down: 0, still: 0, tie: 0, loss: 0, win: 0, unstaked: 0, asks: 0, up1: 0, dn1: 0, holds: 0 };
 const SCEN = [
   { k: 'Thursday night final', off: OFF.thu + 4 * H },
   { k: 'Sunday, early games final, late games live', off: OFF.sun1 + 200 * MIN + 30 * MIN },
@@ -126,15 +148,19 @@ for (const plan of [{ promo: true, playerCount: 12, W: 6 }, { playerCount: 9, W:
     const R = await raw(page, wkOn);
     const O = oracle(R, wkOn);
     const b = await readBar(page);
-    /* An open pick with no rank still needs doing, so the bar must keep
-       asking rather than show the week so far. */
+    /* v1.43.0: the boxes show from the first final whatever is left to
+       do. An open game with no pick or no rank turns the third box into
+       the red Picks box, counting games picked and ranked over all games. */
     const needs = O.games.some(g => g.kick > Date.now() && (!R.mine[g.id] || !R.mine[g.id].weight));
-    if (needs) {
-      ok(`${tag} an open pick has no rank, so the bar keeps asking`, !b.c3 && b.submitShown, JSON.stringify(b));
-      seen.asks++;
-      await ctx.close(); continue;
-    }
     ok(`${tag} the bar has switched to the week so far`, b.c3 && !b.submitShown, JSON.stringify(b));
+    if (!b.c3) { await ctx.close(); continue; }   // nothing below can be graded without the boxes
+    if (needs) {
+      const done = O.games.filter(g => R.mine[g.id] && R.mine[g.id].weight).length;
+      ok(`${tag} an open pick has no rank, so the third box is the red Picks box`,
+         b.third === 'finish' && b.thirdRed && b.cells[2].big === `${done}/${O.n}` && b.cells[2].small.join(' ') === 'Picks finish',
+         JSON.stringify(b.cells[2]) + ' want ' + `${done}/${O.n}`);
+      seen.asks++;
+    }
     ok(`${tag} week points match the rules`, b.cells[0] && +b.cells[0].big === O.myPts,
        `bar ${b.cells[0] && b.cells[0].big} oracle ${O.myPts}`);
     ok(`${tag} the place matches the rules`, b.cells[1] && b.cells[1].big.trim().toLowerCase() === ord(O.place).toLowerCase(),
@@ -142,22 +168,50 @@ for (const plan of [{ promo: true, playerCount: 12, W: 6 }, { playerCount: 9, W:
     ok(`${tag} "of N" is everybody in the pool`, b.cells[1] && b.cells[1].small[1] === `of ${O.players}`,
        JSON.stringify(b.cells[1] && b.cells[1].small));
     ok(`${tag} the arrow is the move since the latest final`, b.move === O.move, `bar ${b.move} oracle ${O.move}`);
-    if (O.move > 0) seen.up++; else if (O.move < 0) seen.down++; else seen.still++;
-    ok(`${tag} the games count is finals over games`,
-       b.cells[2] && b.cells[2].big === `${O.fin.length}/${O.n}`, `${b.cells[2] && b.cells[2].big} vs ${O.fin.length}/${O.n}`);
+    if (O.move === 'up1') seen.up1++; else if (O.move === 'dn1') seen.dn1++;
+    else if (O.move > 0) seen.up++; else if (O.move < 0) seen.down++; else seen.still++;
+    if (!needs) ok(`${tag} the games count is finals over games`,
+       b.third === 'games' && !b.thirdRed && b.cells[2].big === `${O.fin.length}/${O.n}`, `${b.cells[2] && b.cells[2].big} vs ${O.fin.length}/${O.n}`);
 
     /* ---- the points sheet: one line per final, and they add up ---- */
     await page.click('[data-c3="pts"]'); await page.waitForTimeout(450);
     const ps = await page.evaluate(() => ({
       open: !document.querySelector('#infoSheet').hidden,
       big: parseInt(document.querySelector('#infoSheet .big').textContent, 10),
-      lines: [...document.querySelectorAll('#infoSheet .sl:not(.dim)')].map(l => ({
+      head: (document.querySelector('#infoSheet .slist .sl.sub span') || {}).textContent,
+      rows: [...document.querySelectorAll('#infoSheet .slist > .sl[data-g]')].map(l => ({
+        g: l.dataset.g, st: l.dataset.st,
         txt: l.querySelector('span').textContent.replace(/\s+/g, ' ').trim(),
         pts: l.querySelector('b').textContent.trim(),
-        mark: (l.querySelector('.pk') || { className: '' }).className })) }));
+        mark: (l.querySelector('.pk') || { className: '' }).className })),
+      card: document.querySelector('#npCard') ? {
+        n: +document.querySelector('#npHead .n').textContent,
+        l1: document.querySelector('#npHead .l1').textContent.replace(/\s+/g, ' ').trim(),
+        list: [...document.querySelectorAll('#npCard .sl.g3')].map(r => r.dataset.g) } : null }));
     ok(`${tag} the points sheet opens`, ps.open);
     ok(`${tag} its total is the same week total`, ps.big === O.myPts, `${ps.big} vs ${O.myPts}`);
+    const byKick = [...O.games].sort((a, b) => a.kick - b.kick);
+    const wantRows = byKick.filter(g => O.pickOf(O.me, g.id) || g.kick <= Date.now()).map(g => g.id);
+    const wantUn = byKick.filter(g => !O.pickOf(O.me, g.id) && g.kick > Date.now()).map(g => g.id);
+    const nPicks = byKick.filter(g => O.pickOf(O.me, g.id)).length;
+    ok(`${tag} your picks come first, in kickoff order, with any game you missed`,
+       JSON.stringify(ps.rows.map(r => r.g)) === JSON.stringify(wantRows), JSON.stringify(ps.rows.map(r => r.g)).slice(0, 160));
+    ok(`${tag} and the heading counts your picks`, ps.head && ps.head.replace(/\s+/g, ' ').trim() === `Your picks · ${nPicks}`, ps.head);
+    ok(`${tag} games not selected yet are in the red card, in kickoff order`,
+       wantUn.length ? (ps.card && ps.card.n === wantUn.length && JSON.stringify(ps.card.list) === JSON.stringify(wantUn)
+                        && ps.card.l1 === `${wantUn.length} ${wantUn.length === 1 ? 'Game' : 'Games'} not selected`)
+                     : ps.card === null, JSON.stringify(ps.card));
+    ps.lines = ps.rows.filter(r => O.fin.some(g => g.id === r.g));
     ok(`${tag} it lists every final game once`, ps.lines.length === O.fin.length, `${ps.lines.length} vs ${O.fin.length}`);
+    /* A pick still to play says what it pays if it holds. */
+    let holdOk = true, holdWhy = '';
+    ps.rows.filter(r => r.st === 'open' || r.st === 'live').forEach(r => {
+      const p = O.pickOf(O.me, r.g), want = (!p.weight && r.st === 'open') ? 'Not ranked'
+        : `${O.pay(p.weight)} ${O.pay(p.weight) === 1 ? 'pt' : 'pts'} if it holds`;
+      seen.holds++;
+      if (r.pts !== want || !r.txt.startsWith(p.winner)) { holdOk = false; holdWhy ||= JSON.stringify({ r, want }); }
+    });
+    ok(`${tag} each pick still to play shows what it pays if it holds`, holdOk, holdWhy);
     let sum = 0, rowsOk = true, why = '';
     [...O.fin].sort((a, b) => a.kick - b.kick).forEach((g, i) => {
       const L = ps.lines[i] || {}, p = O.pickOf(O.me, g.id);
@@ -174,7 +228,8 @@ for (const plan of [{ promo: true, playerCount: 12, W: 6 }, { playerCount: 9, W:
     ok(`${tag} and the lines add up to the total`, sum === O.myPts, `${sum} vs ${O.myPts}`);
     await page.click('#infoDone'); await page.waitForTimeout(350);
 
-    /* ---- the games sheet ---- */
+    /* ---- the games sheet (only once the third box is Games) ---- */
+    if (b.third === 'games') {
     await page.click('[data-c3="games"]'); await page.waitForTimeout(450);
     const gs = await page.evaluate(() => ({
       cnt: document.querySelector('#infoSheet .cnt').textContent.replace(/\s+/g, ' ').trim(),
@@ -189,6 +244,7 @@ for (const plan of [{ promo: true, playerCount: 12, W: 6 }, { playerCount: 9, W:
          return !p || !p.weight ? true : gs.holds[i] === `${O.pay(p.weight)} ${O.pay(p.weight) === 1 ? 'pt' : 'pts'} if it holds`; }),
        JSON.stringify(gs.holds.slice(0, 3)));
     await page.click('#infoDone'); await page.waitForTimeout(350);
+    }
 
     /* ---- tapping the place opens Standings on This week, and it agrees ---- */
     await page.click('[data-c3="stand"]'); await page.waitForTimeout(700);
@@ -227,26 +283,143 @@ ok('and DOWN at least once', seen.down > 0, JSON.stringify(seen));
 ok('and held you level at least once', seen.still > 0, JSON.stringify(seen));
 ok('the sheets graded wins and losses', seen.win > 0 && seen.loss > 0, JSON.stringify(seen));
 ok('and an unstaked pick that was decided', seen.unstaked > 0, JSON.stringify(seen));
-ok('and the bar kept asking while a rank was missing', seen.asks > 0, JSON.stringify(seen));
+ok('and the red Picks box while a rank was missing', seen.asks > 0, JSON.stringify(seen));
+ok('and the first-final arrow both ways, up and down', seen.up1 > 0 && seen.dn1 > 0, JSON.stringify(seen));
+ok('and picks still to play, with what they pay', seen.holds > 0, JSON.stringify(seen));
 
 /* ================================================================ 5 */
-console.log('\n2. The bar stays the bar until there is nothing left to do');
+console.log('\n2. From the first final: the red Picks box, the jump, the sheet and Next');
 {
-  /* A final is in, but you have not picked the rest: the week-so-far must
-     not hide "Finish my picks". */
+  /* Thursday's game is final, five picked, eleven to go. */
   const { ctx, page, errs } = await open({ startISO: at(6, OFF.thu + 4 * H), myPickCount: 5 });
+  const R = await raw(page, 6), O = oracle(R, 6);
+  const order = [...O.games].sort((a, b) => a.kick - b.kick);
+  const unpicked = () => order.filter(g => g.kick > Date.now() && !R.mine[g.id]);
   const b = await readBar(page);
-  ok('with games still to pick, the bar keeps its button', !b.c3 && b.submitShown, JSON.stringify(b));
-  ok('and the button says what it will do',
-     /finish my picks/i.test(await page.textContent('#submitBtn')), await page.textContent('#submitBtn'));
+  const done = O.games.filter(g => R.mine[g.id] && R.mine[g.id].weight).length;
+  ok('one final in and picks unfinished: the three boxes show', b.c3 && !b.submitShown, JSON.stringify(b));
+  ok('the third box is red and reads Picks, done over games, finish',
+     b.third === 'finish' && b.thirdRed && b.cells[2].big === `${done}/${O.n}` && b.cells[2].small.join(' ') === 'Picks finish',
+     JSON.stringify(b.cells[2]));
+  ok('your points and place are already counting', +b.cells[0].big === O.myPts && b.cells[1].big.toLowerCase() === ord(O.place).toLowerCase(),
+     JSON.stringify(b.cells.slice(0, 2)));
+  ok('the arrow after game one has no number', b.move === O.move && (O.move === 'up1' || O.move === 'dn1'), `${b.move} vs ${O.move}`);
+
+  /* The red box goes straight to the first game still to pick. */
+  const first = unpicked()[0];
+  await page.click('[data-c3="finish"]'); await page.waitForTimeout(1000);
+  const j1 = await page.evaluate(() => { const c = document.querySelector('.card.jumped');
+    return c ? { id: c.dataset.game, top: c.getBoundingClientRect().top, bottom: c.getBoundingClientRect().bottom,
+      tab: document.body.dataset.tab, sheet: !document.querySelector('#fillSheet').hidden } : null; });
+  ok('tapping it lands on the first unpicked game, in kickoff order', j1 && j1.id === first.id, JSON.stringify(j1) + ' want ' + first.id);
+  ok('outlined, on the Picks tab, in view, with no sheet in the way',
+     j1 && j1.tab === 'picks' && !j1.sheet && j1.top > 120 && j1.bottom < 852 - 90, JSON.stringify(j1));
+
+  /* Pick and rank it on the real card; Next appears once Saved has cleared. */
+  const C = `.card[data-game="${first.id}"]`;
+  await page.click(`${C} .side.r`); await page.waitForTimeout(400);
+  await page.click(`${C} .stakebar`); await page.waitForTimeout(500);
+  await page.click('#numgrid .num:not([disabled]) >> nth=0'); await page.waitForTimeout(300);
+  const mid = await page.evaluate(() => ({ next: !document.querySelector('#nextUp').hidden,
+    toast: document.querySelector('#toast').classList.contains('on') }));
+  ok('Next does not sit on top of the Saved note', !(mid.next && mid.toast), JSON.stringify(mid));
+  await page.waitForSelector('#nextUp.on', { timeout: 4000 }).catch(() => {});
+  const second = unpicked().filter(g => g.id !== first.id)[0];
+  const nx = await page.evaluate(() => ({ on: document.querySelector('#nextUp').classList.contains('on'),
+    txt: document.querySelector('#nextUp').textContent.replace(/\s+/g, ' ').trim() }));
+  ok('after the save, Next unpicked names the next game', nx.on && nx.txt === `Next unpicked · ${second.a} @ ${second.h} ›`, JSON.stringify(nx));
+  const b2 = await readBar(page);
+  ok('and the red box has counted it', b2.cells[2].big === `${done + 1}/${O.n}`, b2.cells[2].big);
+  await page.click('#nextUp'); await page.waitForTimeout(1000);
+  ok('Next takes you to that game', await page.evaluate(() => (document.querySelector('.card.jumped') || {}).dataset?.game) === second.id);
+  ok('and gets out of the way', await page.evaluate(() => document.querySelector('#nextUp').hidden));
+
+  /* The points sheet: the red card, closed then open, and Pick. */
+  await page.click('[data-c3="pts"]'); await page.waitForTimeout(500);
+  const un = unpicked().filter(g => g.id !== first.id);
+  const shut = await page.evaluate(() => ({
+    l1: document.querySelector('#npHead .l1').textContent.replace(/\s+/g, ' ').trim(),
+    l2: document.querySelector('#npHead .l2').textContent.replace(/\s+/g, ' ').trim(),
+    l3: document.querySelector('#npHead .l3').textContent.replace(/\s+/g, ' ').trim(),
+    l3h: (() => { const rg = document.createRange(); rg.selectNodeContents(document.querySelector('#npHead .l3').firstChild);
+      return new Set([...rg.getClientRects()].filter(r => r.width > 1).map(r => Math.round(r.top))).size; })(),
+    listShown: getComputedStyle(document.querySelector('#npCard .np-body')).display !== 'none',
+    finishInSheet: /finish my picks/i.test(document.querySelector('#infoSheet').textContent) }));
+  const firstLock = await page.evaluate(k => new Date(k).toLocaleDateString('en-US', { weekday: 'long' }) + ' '
+    + new Date(k).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), un[0].kick);
+  ok('the red card says how many Games are not selected', shut.l1 === `${un.length} Games not selected`, shut.l1);
+  ok('and when the first one locks', shut.l2 === `First game locks ${firstLock}`, shut.l2 + ' want ' + firstLock);
+  ok('closed, it says what a tap does, on one line', shut.l3 === 'Tap to see the matchups and select your team' && shut.l3h === 1 && !shut.listShown,
+     JSON.stringify(shut));
+  ok('and there is no second Finish button in the sheet', !shut.finishInSheet);
+  await page.click('#npHead'); await page.waitForTimeout(300);
+  const opened = await page.evaluate(() => ({
+    l3: document.querySelector('#npHead .l3').textContent.trim(),
+    listShown: getComputedStyle(document.querySelector('#npCard .np-body')).display !== 'none',
+    rows: [...document.querySelectorAll('#npCard .sl.g3')].map(r => ({ g: r.dataset.g,
+      m: r.children[0].textContent.trim(), when: r.querySelector('.when').textContent.trim(),
+      go: !!r.querySelector('button[data-go]') })) }));
+  const whenOf = await page.evaluate(ks => ks.map(k => new Date(k).toLocaleDateString('en-US', { weekday: 'long' }).slice(0, 3) + ' '
+    + new Date(k).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })), un.map(g => g.kick));
+  ok('open, the matchups show with their kickoff and a Pick button',
+     opened.listShown && opened.l3 === '' && opened.rows.length === un.length &&
+     opened.rows.every((r, i) => r.g === un[i].id && r.m === `${un[i].a} @ ${un[i].h}` && r.when === whenOf[i] && r.go),
+     JSON.stringify(opened.rows.slice(0, 2)));
+  /* Live: a pick made while the sheet is open moves straight up. */
+  const target = un[un.length - 1];
+  await page.evaluate(id => document.querySelector(`.card[data-game="${id}"] .side.l`).click(), target.id);
+  await page.waitForTimeout(900);
+  const live = await page.evaluate(id => ({ open: !document.querySelector('#infoSheet').hidden,
+    n: +document.querySelector('#npHead .n').textContent,
+    up: !!document.querySelector(`#infoSheet .slist > .sl[data-g="${id}"]`),
+    still: !!document.querySelector(`#npCard .sl[data-g="${id}"]`),
+    stillOpen: document.querySelector('#npCard').classList.contains('open') }), target.id);
+  ok('a pick made while the sheet is open moves up into Your picks, live',
+     live.open && live.n === un.length - 1 && live.up && !live.still && live.stillOpen, JSON.stringify(live));
+  await page.click(`#npCard [data-go="${un[2].id}"]`); await page.waitForTimeout(1000);
+  ok('Pick on a matchup closes the sheet and lands on that card',
+     await page.evaluate(id => document.querySelector('#infoSheet').hidden && (document.querySelector('.card.jumped') || {}).dataset?.game === id, un[2].id));
   ok('no page errors', errs.length === 0, errs[0]);
   await ctx.close();
 }
 {
+  /* Every pick in and ranked, only the Monday night total missing. */
+  const { ctx, page, errs } = await open({ startISO: at(6, OFF.thu + 4 * H), noMyTb: true });
+  const b = await readBar(page);
+  ok('picks done but no Monday night total: the box asks for the tiebreak',
+     b.third === 'finish' && b.thirdRed && b.cells[2].small.join(' ') === 'Picks tiebreak', JSON.stringify(b.cells[2]));
+  await page.click('[data-c3="finish"]'); await page.waitForTimeout(900);
+  const tb = await page.evaluate(() => { const i = document.querySelector('#tbin'); const r = i.getBoundingClientRect();
+    return { focus: document.activeElement === i, top: r.top }; });
+  ok('and takes you to the Monday night total', tb.focus && tb.top > 100 && tb.top < 760, JSON.stringify(tb));
+  ok('no page errors', errs.length === 0, errs[0]);
+  await ctx.close();
+}
+{
+  /* Everything in: the box is Games again, in the regular colour. */
+  const { ctx, page } = await open({ startISO: at(6, OFF.thu + 4 * H) });
+  const b = await readBar(page);
+  ok('with everything in, the third box is Games final, not red', b.third === 'games' && !b.thirdRed, JSON.stringify(b.cells[2]));
+  await ctx.close();
+}
+{
   /* Nothing final yet this week. */
-  const { ctx, page } = await open({ startISO: at(6, -2 * DAY) });
+  const { ctx, page } = await open({ startISO: at(6, -2 * DAY), myPickCount: 5 });
   const b = await readBar(page);
   ok('before the first final of the week, the bar is unchanged', !b.c3 && b.submitShown, JSON.stringify(b));
+  ok('and still says Finish my picks', /finish my picks/i.test(await page.textContent('#submitBtn')));
+  await ctx.close();
+}
+{
+  /* 320px: the red card's last line stays on one line. */
+  const { ctx, page } = await open({ startISO: at(6, OFF.thu + 4 * H), myPickCount: 5 }, { width: 320, height: 640 });
+  await page.click('[data-c3="pts"]'); await page.waitForTimeout(500);
+  const m = await page.evaluate(() => { const l = document.querySelector('#npHead .l3'); const h = document.querySelector('#npHead');
+    const rg = document.createRange(); rg.selectNodeContents(l.firstChild);
+    return { lines: new Set([...rg.getClientRects()].filter(r => r.width > 1).map(r => Math.round(r.top))).size, over: l.scrollWidth > h.clientWidth }; });
+  ok('at 320px the red card still reads on one line', m.lines === 1 && !m.over, JSON.stringify(m));
+  const bar = await page.evaluate(() => document.querySelector('#bar, #c3row') && document.documentElement.scrollWidth);
+  ok('and nothing spills sideways', bar <= 320, String(bar));
   await ctx.close();
 }
 

@@ -401,10 +401,12 @@ const PSX = window.PS = {
      never exercise the case that matters most here: two players on the
      SAME closest guess. Pass a short array to set the first few and leave
      the rest on the default. */
+  /* P.noMyTb: every other player has a total in, you do not. v1.43.0 uses
+     it for the "picks done, Monday night total still needed" bar. */
   async getTiebreaks(wk){ await call('getTiebreaks');
-    return MEMBERS.map((m,i) => ({ uid:m.uid, name:m.name,
+    return MEMBERS.filter((m,i) => !(P.noMyTb && i===0)).map((m,i0) => { const i = P.noMyTb ? i0+1 : i0; return ({ uid:m.uid, name:m.name,
       total: (P.tbTotals && P.tbTotals[i] != null) ? P.tbTotals[i] : 44 + i*3,
-      mine: i===0 })); },
+      mine: i===0 }); }); },
   async getArchive(){ await call('getArchive'); return P.archive || []; },
   async savePicks(){ await call('savePicks'); },
   async saveTiebreak(){ await call('saveTiebreak'); },

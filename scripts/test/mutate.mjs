@@ -832,14 +832,15 @@ const MUTATIONS = [
    ['the arrow is the move since the latest final'], 'week5'],
   [75, 'bar: count live games as final', "const fin=gs.filter(isFinal).length, mv=weekMove(wk);", "const fin=gs.filter(isLive).length, mv=weekMove(wk);",
    ['the games count is finals over games'], 'week5'],
-  [76, 'points sheet: pay a losing pick', "const ok=R&&p.winner===R, pts=ok?(conf?pay(p.weight,N):1):0;", "const ok=R&&p.winner===R, pts=conf?pay(p.weight,N):1;",
+  [76, 'points sheet: pay a losing pick', "ok=R&&p.winner===R, pts=ok?(conf?pay(p.weight,N):1):0;", "ok=R&&p.winner===R, pts=conf?pay(p.weight,N):1;",
    ['every line pays what the rules say, tick on a win and cross on a loss', 'and the lines add up to the total'], 'week5'],
   [77, 'records: count games from later weeks too', "if(Number(w)>Number(upto)||!isFinal(g))return;", "if(!isFinal(g))return;",
    ["every record is the club's results through this week"], 'week5'],
   [78, 'week strip: show the week before\'s points', "const r=((STANDINGS[ME]||{}).weeks||{})[String(w)];", "const r=((STANDINGS[ME]||{}).weeks||{})[String(w-1)];",
    ['each finished week shows the banked points Standings uses'], 'week5'],
-  [79, 'bar: take over while picks are still to make', "const c3=anyFinal&&allDone;", "const c3=anyFinal;",
-   ['with games still to pick, the bar keeps its button', 'an open pick has no rank, so the bar keeps asking'], 'week5'],
+  /* 79 RETIRED in v1.43.0: it guarded "the bar must not take over while
+     picks are still to make", which Lee reversed on purpose. Mutation 97
+     guards the new rule from the other side. */
   [80, 'circle: stay red once the game is final', "`<i class=\"rkc ${isFinal(g)?'fin':'open'}\" aria-label", "`<i class=\"rkc open\" aria-label",
    ['and grey once final'], 'week5'],
   [81, 'circle: replace the @ before there is a rank (option A)', "(state.mode==='confidence'&&p&&p.weight)\n            ? (L ?", "(state.mode==='confidence'&&p)\n            ? (L ?",
@@ -877,6 +878,25 @@ const MUTATIONS = [
   /* v1.42.2: the blank-page ".empty" panel leaking onto the unranked bar. */
   [96, 'stake bar: let the .empty panel style back onto the unranked bar', ".stakebar.empty{margin:0;padding:0 12px;border-radius:0;border:0;", ".stakebar.empty{",
    ['the unranked bar is 44px, edge to edge, square: not the blank-page panel'], 'week5'],
+  /* v1.43.0: the bar from the first final, chosen by Lee from the mockups. */
+  [97, 'bar: wait for every pick again before showing the boxes', "  const c3=anyFinal;\n", "  const c3=anyFinal&&allDone;\n",
+   ['one final in and picks unfinished: the three boxes show', 'the bar has switched to the week so far'], 'week5'],
+  [98, 'red box: jump to the LAST unpicked game', "  const g=unpickedOpen().sort(byKick)[0];", "  const g=unpickedOpen().sort(byKick).slice(-1)[0];",
+   ['tapping it lands on the first unpicked game, in kickoff order'], 'week5'],
+  [99, 'Next unpicked: never appears', "  if(!moved)return;", "  return;",
+   ['after the save, Next unpicked names the next game'], 'week5'],
+  [100, 'points sheet: stop redrawing while open', "  if(x.body===infoHtml)return;", "  if(x.body)return;",
+   ['a pick made while the sheet is open moves up into Your picks, live'], 'week5'],
+  [101, 'arrow: none after the first final', "  if(fin===1){", "  if(false){",
+   ['the arrow after game one has no number'], 'week5'],
+  [102, 'Next: show it on top of the Saved note', "    const busy=$('#toast')&&$('#toast').classList.contains('on');", "    const busy=false;",
+   ['Next does not sit on top of the Saved note'], 'week5'],
+  [103, 'red card: matchups in reverse order', "  const un=gs.filter(g=>!isLive(g)&&!isFinal(g)&&!pickOf(ME,g.id));", "  const un=gs.filter(g=>!isLive(g)&&!isFinal(g)&&!pickOf(ME,g.id)).reverse();",
+   ['and when the first one locks', 'open, the matchups show with their kickoff and a Pick button'], 'week5'],
+  [104, 'red box: never says tiebreak', "<small>${todo.tbOnly?'tiebreak':'finish'}</small>", "<small>${'finish'}</small>",
+   ['picks done but no Monday night total: the box asks for the tiebreak'], 'week5'],
+  [105, 'points sheet: pay one rank too low if it holds', "`<b class=\"mute\">${ptsLbl(conf?pay(w,N):1)} if it holds</b>`", "`<b class=\"mute\">${ptsLbl(conf?pay(w+1,N):1)} if it holds</b>`",
+   ['each pick still to play shows what it pays if it holds'], 'week5'],
 ];
 
 function runSuite(suite = 'regress') {

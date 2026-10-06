@@ -1870,6 +1870,58 @@ body[data-tab="picks"] .topbar::after{content:'';position:absolute;left:0;right:
 .stakebar.empty{margin:0;padding:0 12px;border-radius:0;border:0;
   border-top:1px dashed rgba(200,52,42,.45);text-align:left}
 
+/* =========================================================================
+   v1.43.0, THE BAR FROM THE FIRST FINAL. Chosen by Lee from the mockups.
+   ========================================================================= */
+/* The red Picks box: the third box until every open game is picked and
+   ranked and the Monday night total is in. */
+.cellbtn.fin{background:var(--stamp);box-shadow:none}
+.cellbtn.fin small,.cellbtn.fin b,.cellbtn.fin .cv{color:#fff}
+.cellbtn.fin:active{background:#A92B22}
+/* After game one the arrow has no number: it sits level with the place,
+   up at the top and down at the bottom, exactly where the numbered one does. */
+.cellbtn .mv5.one{gap:0}
+
+/* A card you were sent to: outlined in gold for two beats. */
+.card.jumped{box-shadow:0 0 0 3px #E8B84B,0 0 22px rgba(232,184,75,.5);animation:jumped 1.2s ease 2}
+@keyframes jumped{50%{box-shadow:0 0 0 3px #E8B84B,0 0 4px rgba(232,184,75,.2)}}
+
+/* Next unpicked: a pill above the bar, Picks tab only. */
+.nextup{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));z-index:55;transform:translate(-50%,14px);opacity:0;
+  transition:opacity .22s,transform .22s;border:0;border-radius:22px;padding:12px 18px;min-height:44px;
+  background:var(--paper);color:var(--ink);font:800 13px/1 'Archivo',sans-serif;white-space:nowrap;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);cursor:pointer;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis}
+.nextup.on{opacity:1;transform:translate(-50%,0)}
+.nextup em{font-style:normal;color:var(--stamp)}
+body:not([data-tab="picks"]) .nextup{display:none}
+
+/* The points sheet: grouped rows and the centred red card. */
+#infoSheet .sl b.mute{color:var(--chalk);font-weight:700}
+#infoSheet .sl b.need{color:#E4564A}
+#infoSheet .np{margin:14px 0 4px;border:1px solid rgba(228,86,74,.55);border-radius:12px;background:rgba(228,86,74,.07);overflow:hidden}
+#infoSheet .np-head{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;padding:13px 12px 6px;border:0;
+  background:none;color:var(--paper);font-family:inherit;text-align:center;cursor:pointer;-webkit-appearance:none;appearance:none}
+#infoSheet .np-head .l1{font-size:15px;font-weight:800}
+#infoSheet .np-head .l1 .n{display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 6px;border-radius:13px;
+  background:var(--stamp);color:#fff;font-family:'Oswald',sans-serif;font-size:15px;font-weight:600;margin-right:3px;vertical-align:1px}
+#infoSheet .np-head .l2{font-size:12px;font-weight:700;color:var(--chalk)}
+#infoSheet .np-head .l2 em{font-style:normal;color:#E8B84B;font-weight:800}
+/* Measured on the render: -4px makes the gap above this line the same as
+   the gap between the first two. The size shrinks on narrow phones so
+   the sentence never wraps. */
+#infoSheet .np-head .l3{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:-4px;
+  font-size:clamp(9.5px,3vw,11px);font-weight:800;letter-spacing:.01em;white-space:nowrap}
+#infoSheet .chev{width:12px;height:8px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+#infoSheet .np.open .chev{transform:rotate(180deg)}
+#infoSheet .np-body{display:none;border-top:1px solid rgba(228,86,74,.3);padding:0 12px}
+#infoSheet .np.open .np-body{display:block}
+#infoSheet .sl.g3{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+#infoSheet .sl.g3 .when{color:#E8B84B;font-weight:800;white-space:nowrap;text-align:center}
+#infoSheet .sl.g3 .go{justify-self:end;border:0;background:none;color:#E4564A;font:800 13px/1 'Archivo',sans-serif;
+  padding:12px 0 12px 12px;margin:-10px 0;cursor:pointer;-webkit-appearance:none;appearance:none}
+#infoSheet .np-head:focus-visible,#infoSheet .sl.g3 .go:focus-visible,.nextup:focus-visible{outline:2px solid #E8B84B;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.card.jumped{animation:none}.nextup{transition:none}#infoSheet .chev{transition:none}}
+
 </style>
 </head>
 <body data-tab="picks">
@@ -2339,6 +2391,8 @@ body[data-tab="picks"] .topbar::after{content:'';position:absolute;left:0;right:
      got a dead button and a nag reading "6 games still need a rank" with
      no way forward from it. A dead end is not a safeguard. -->
 <!-- v1.42.0 The two sheets the week-so-far bar opens. -->
+<!-- v1.43.0 Next unpicked: appears after a save while picks are unfinished. -->
+<button type="button" class="nextup" id="nextUp" hidden></button>
 <div class="sheet" id="infoSheet" role="dialog" aria-modal="true"
      aria-labelledby="infoTitle" hidden>
   <div class="grab"></div>
@@ -3319,7 +3373,7 @@ function renderSlate(){
         line?` &middot; ${esc(line)}`:''}</span></div>`;
     })();
 
-    h+=`<div class="card${L?' locked':''}" data-game="${g.id}">
+    h+=`<div class="card${L?' locked':''}${jumpHi&&jumpHi.id===g.id&&Date.now()<jumpHi.until?' jumped':''}" data-game="${g.id}">
       ${isFinal(g)?finHead:`<div class="meta">${
         /* P1 + P5 — THE CLOCK TAKES THE LEFT SLOT, IN PROGRESS THE RIGHT.
            Both slots are `.cd.live`, so the green, the weight and the
@@ -3913,36 +3967,75 @@ function weekMove(wk){
 }
 const C3_UP='<svg viewBox="0 0 8 7" aria-hidden="true"><path d="M4 0L8 7H0z"/></svg>';
 const C3_DN='<svg viewBox="0 0 8 7" aria-hidden="true"><path d="M0 0H8L4 7z"/></svg>';
-function c3Html(){
+function c3Html(todo){
   const wk=state.week, gs=slate();
   const rows=weekRows(wk), mi=rows.findIndex(r=>r.p===ME);
   const me=mi>=0?rows[mi]:{pts:weekSum(ME,wk).pts};
   const fin=gs.filter(isFinal).length, mv=weekMove(wk);
-  const arrow=mv>0?`<i class="mv5 up" aria-label="up ${mv}">${C3_UP}<span class="d">${mv}</span></i>`
+  let arrow=mv>0?`<i class="mv5 up" aria-label="up ${mv}">${C3_UP}<span class="d">${mv}</span></i>`
     :mv<0?`<i class="mv5 dn" aria-label="down ${-mv}">${C3_DN}<span class="d">${-mv}</span></i>`:'';
+  /* v1.43.0 THE ARROW FROM THE FIRST FINAL. Before it everybody is level
+     on nothing, so "places moved" has no starting point. After game one:
+     up if you scored from it, down if you did not and somebody else did,
+     and no number either way. From the second final on, places moved. */
+  if(fin===1){
+    const mine=weekPtsEx(ME,wk,null), anyPts=PLAYERS.some(p=>weekPtsEx(p,wk,null)>0);
+    arrow=mine>0?`<i class="mv5 up one" aria-label="up">${C3_UP}</i>`
+      :anyPts?`<i class="mv5 dn one" aria-label="down">${C3_DN}</i>`:'';
+  }
   return `<button type="button" class="cellbtn" data-c3="pts" aria-label="Week ${wk}, ${me.pts} points. Show my week.">
       <small>Week ${wk}</small><b>${me.pts}</b><small>pts</small><i class="cv">&rsaquo;</i></button>
     <button type="button" class="cellbtn" data-c3="stand" aria-label="Currently ${mi>=0?ordinal(mi+1):'unplaced'} of ${rows.length}. Open standings.">
       <small>Currently</small><b class="anch2"><span class="c3n">${mi>=0?ordinal(mi+1):'&ndash;'}${arrow}</span></b><small>of ${rows.length}</small><i class="cv">&rsaquo;</i></button>
-    <button type="button" class="cellbtn" data-c3="games" aria-label="${fin} of ${gs.length} games final. Show what is left.">
-      <small>Games</small><b>${fin}/${gs.length}</b><small>final</small><i class="cv">&rsaquo;</i></button>`;
+    ${todo?`<button type="button" class="cellbtn fin" data-c3="finish" aria-label="${todo.tbOnly
+        ?'Picks done. Monday night total still needed.':`${todo.done} of ${todo.total} picked. Finish my picks.`}">
+      <small>Picks</small><b>${todo.done}/${todo.total}</b><small>${todo.tbOnly?'tiebreak':'finish'}</small><i class="cv">&rsaquo;</i></button>`
+    :`<button type="button" class="cellbtn" data-c3="games" aria-label="${fin} of ${gs.length} games final. Show what is left.">
+      <small>Games</small><b>${fin}/${gs.length}</b><small>final</small><i class="cv">&rsaquo;</i></button>`}`;
 }
+/* v1.43.0 THE POINTS SHEET, GROUPED. Your picks on top in kickoff order:
+   a finished game shows what it paid, one still to play shows what it
+   pays if it holds. A game that kicked off with no pick shows as a 0.
+   The games not selected yet fold into one centred red card that opens
+   to the matchups, each with its kickoff and a Pick button that jumps to
+   that game's card. Every row carries data-g and data-st for the tests. */
+var ptsOpen=false;
 function c3PtsSheet(){
   const wk=state.week, N=nGames(wk), conf=state.mode==='confidence';
   const gs=[...slate()].sort((a,b)=>a.kick-b.kick);
   const total=weekSum(ME,wk).pts;
-  let rows='';
-  gs.filter(isFinal).forEach(g=>{
-    const p=pickOf(ME,g.id), R=result(g);
-    if(!p){ rows+=`<div class="sl"><span><span class="tx">No pick &middot; ${g.a} @ ${g.h}</span></span><b class="no">0 pts</b></div>`; return; }
-    const ok=R&&p.winner===R, pts=ok?(conf?pay(p.weight,N):1):0;
-    rows+=`<div class="sl"><span>${pk(p.winner,!R?'tie':ok?'ok':'x')}<span class="tx">${p.winner} &middot; ${
-      conf?(p.weight?`Rank ${p.weight}`:'Unstaked'):`${g.a} @ ${g.h}`}</span></span><b class="${ok?'ok':(!R?'tie':'no')}">${!R?'no score':ptsLbl(pts)}</b></div>`;
+  let rows='', n=0;
+  gs.forEach(g=>{
+    const p=pickOf(ME,g.id), F=isFinal(g), L=isLive(g);
+    if(!p){
+      if(F||L)rows+=`<div class="sl" data-g="${g.id}" data-st="miss"><span><span class="tx">No pick &middot; ${g.a} @ ${g.h}</span></span><b class="no">0 pts</b></div>`;
+      return;
+    }
+    n++;
+    if(F){
+      const R=result(g), ok=R&&p.winner===R, pts=ok?(conf?pay(p.weight,N):1):0;
+      rows+=`<div class="sl" data-g="${g.id}" data-st="final"><span>${pk(p.winner,!R?'tie':ok?'ok':'x')}<span class="tx">${p.winner} &middot; ${
+        conf?(p.weight?`Rank ${p.weight}`:'Unstaked'):`${g.a} @ ${g.h}`}</span></span><b class="${ok?'ok':(!R?'tie':'no')}">${!R?'no score':ptsLbl(pts)}</b></div>`;
+      return;
+    }
+    const w=conf?p.weight:null;
+    const lab=conf?(w?` &middot; Rank ${w}`:(L?' &middot; Unstaked':'')):` &middot; ${g.a} @ ${g.h}`;
+    const right=(conf&&!w&&!L)?'<b class="need">Not ranked</b>'
+      :`<b class="mute">${ptsLbl(conf?pay(w,N):1)} if it holds</b>`;
+    rows+=`<div class="sl" data-g="${g.id}" data-st="${L?'live':'open'}"><span>${pk(p.winner)}<span class="tx">${p.winner}${lab}</span></span>${right}</div>`;
   });
-  const left=gs.filter(g=>!isFinal(g)).length;
-  if(left)rows+=`<div class="sl dim"><span>${left} still to play</span><b></b></div>`;
-  return {title:`Week ${wk} so far`,
-    body:`<div class="big">${total} <small>pts</small></div><div class="slist">${rows}</div>`};
+  let body=`<div class="big">${total} <small>pts</small></div><div class="slist"><div class="sl sub"><span>Your picks &middot; ${n}</span><b></b></div>${rows}</div>`;
+  const un=gs.filter(g=>!isLive(g)&&!isFinal(g)&&!pickOf(ME,g.id));
+  if(un.length){
+    const f=un[0];
+    body+=`<div class="np${ptsOpen?' open':''}" id="npCard"><button type="button" class="np-head" id="npHead" aria-expanded="${ptsOpen}">
+      <span class="l1"><span class="n">${un.length}</span> ${un.length===1?'Game':'Games'} not selected</span>
+      <span class="l2">First game locks <em>${fDay(f.show)} ${fT(f.show)}</em></span>
+      <span class="l3">${ptsOpen?'':'Tap to see the matchups and select your team '}<svg class="chev" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5"/></svg></span></button>
+      <div class="np-body">${un.map(g=>`<div class="sl g3" data-g="${g.id}" data-st="unpicked"><span>${g.a} @ ${g.h}</span><span class="when">${
+        fDay(g.show).slice(0,3)} ${fT(g.show)}</span><button type="button" class="go" data-go="${g.id}">Pick &rsaquo;</button></div>`).join('')}</div></div>`;
+  }
+  return {title:`Week ${wk} so far`, body};
 }
 function c3GamesSheet(){
   const wk=state.week, N=nGames(wk), conf=state.mode==='confidence';
@@ -3962,10 +4055,13 @@ function c3GamesSheet(){
       :'<div class="sl dim"><span>Every game this week is final.</span><b></b></div>'}</div>`};
 }
 let infoOpener=null;
+var infoKind=null, infoHtml='';
 function openInfo(kind){
+  if(kind==='pts')ptsOpen=false;
+  infoKind=kind;
   const x=kind==='games'?c3GamesSheet():c3PtsSheet();
   $('#infoTitle').textContent=x.title;
-  $('#infoBody').innerHTML=x.body;
+  $('#infoBody').innerHTML=infoHtml=x.body;
   infoOpener=document.activeElement;
   const sh=$('#infoSheet'); sh.hidden=false; $('#scrim').classList.add('on');
   requestAnimationFrame(()=>{ sh.classList.add('on'); document.body.style.overflow='hidden';
@@ -3977,6 +4073,81 @@ function closeInfo(){
   document.body.style.overflow='';
   if(infoOpener&&document.contains(infoOpener)){ try{ infoOpener.focus(); }catch{} }
   infoOpener=null;
+  infoKind=null;
+}
+/* v1.43.0 THE SHEET IS LIVE. A game going final, or a pick saved, redraws
+   the open sheet in place, keeping its scroll. Rewritten only when the
+   content actually changed, so a tap is never swallowed by a no-op. */
+function refreshInfo(){
+  const sh=$('#infoSheet'); if(!sh||sh.hidden||!infoKind)return;
+  const x=infoKind==='games'?c3GamesSheet():c3PtsSheet();
+  if(x.body===infoHtml)return;
+  const y=sh.scrollTop;
+  $('#infoTitle').textContent=x.title;
+  $('#infoBody').innerHTML=infoHtml=x.body;
+  sh.scrollTop=y;
+}
+/* v1.43.0 STRAIGHT TO THE CARD. The red Picks box, each Pick button in
+   the points sheet and the Next unpicked button all land on the real
+   card on the Picks tab, centred and outlined in gold for a moment. */
+var jumpHi=null;
+function calmMotion(){ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch{ return false; } }
+function jumpToCard(id){
+  closeInfo(); nextHide();
+  if(document.body.dataset.tab!=='picks'){ const t=document.querySelector('.tab[data-tab="picks"]'); if(t)t.click(); }
+  jumpHi={id,until:Date.now()+2600};
+  setTimeout(()=>{
+    const c=document.querySelector(`.card[data-game="${id}"]`); if(!c)return;
+    c.scrollIntoView({behavior:calmMotion()?'auto':'smooth',block:'center'});
+    c.classList.remove('jumped'); void c.offsetWidth; c.classList.add('jumped');
+    setTimeout(()=>{ const cc=document.querySelector(`.card[data-game="${id}"]`); if(cc)cc.classList.remove('jumped'); },2650);
+  },40);
+}
+/* What "finish" means, in order: a game with no pick (it scores 0), then
+   a pick with no rank (it scores 1), then the Monday night total. */
+function nextTarget(){
+  const byKick=(a,b)=>a.kick-b.kick;
+  const g=unpickedOpen().sort(byKick)[0];
+  if(g)return {g,kind:'pick'};
+  const r=state.mode==='confidence'?unrankedOpen().sort(byKick)[0]:null;
+  if(r)return {g:r,kind:'rank'};
+  const tbg=tbGame(state.week);
+  if(tbg&&!isLive(tbg)&&state.tb[state.week]==null)return {g:null,kind:'tb'};
+  return null;
+}
+function finishJump(){
+  const t=nextTarget(); if(!t)return;
+  if(t.g){ jumpToCard(t.g.id); return; }
+  closeInfo(); nextHide();
+  const tb=$('#tbin'); if(!tb)return;
+  tb.scrollIntoView({behavior:calmMotion()?'auto':'smooth',block:'center'});
+  setTimeout(()=>{ try{ tb.focus({preventScroll:true}); }catch{} },450);
+}
+/* NEXT UNPICKED. Shown only right after one of your own saves moved the
+   count on (lastUserSave), never on load, and only while the bar is in
+   its red state. It names what it will do before you tap it. */
+var nudgeWk=null, nudgeN=null, lastUserSave=0;
+var nudgeTimer=0;
+function nextHide(){ clearTimeout(nudgeTimer); const b=$('#nextUp'); if(b){ b.classList.remove('on'); b.hidden=true; } }
+function nextNudge(active,doneN){
+  const wk=state.week, moved=nudgeWk===wk&&nudgeN!=null&&doneN>nudgeN&&Date.now()-lastUserSave<4000;
+  nudgeWk=wk; nudgeN=doneN;
+  if(!active){ nextHide(); return; }
+  if(!moved)return;
+  const t=nextTarget(), b=$('#nextUp'); if(!t||!b){ nextHide(); return; }
+  b.innerHTML=t.kind==='tb'?'Next &middot; <em>Monday night total</em> &rsaquo;'
+    :`${t.kind==='rank'?'Next to rank':'Next unpicked'} &middot; <em>${t.g.a} @ ${t.g.h}</em> &rsaquo;`;
+  /* It rises once "Saving…" and "Saved" have cleared, so the two never
+     sit on top of each other. Gives up after six seconds. */
+  clearTimeout(nudgeTimer);
+  const t0=Date.now();
+  const show=()=>{
+    const busy=$('#toast')&&$('#toast').classList.contains('on');
+    if(busy&&Date.now()-t0<6000){ nudgeTimer=setTimeout(show,150); return; }
+    if(busy)return;
+    b.hidden=false; requestAnimationFrame(()=>b.classList.add('on'));
+  };
+  nudgeTimer=setTimeout(show,150);
 }
 function renderBar(){
   const open=slate().filter(g=>!isLive(g));
@@ -4028,15 +4199,23 @@ function renderBar(){
   const needPicks=open.length>0&&picked<open.length;
   $('#submitBtn').disabled=(!ready&&!needPicks)||locked;
   $('#submitBtn').textContent=locked?'Locked in':needPicks?'Finish my picks':'Lock in';
-  /* v1.42.0 THE WEEK SO FAR. Once any game this week is final AND nothing
-     is left for you to do (every open game picked, ranked, tiebreaker in),
-     the bar shows your points, your place and the games count instead.
-     Before that it is exactly the bar it always was. */
+  /* v1.43.0 THE WEEK SO FAR, FROM THE FIRST FINAL. v1.42.0 waited until
+     nothing was left to do, so a player who picks game by game right up
+     to kickoff never saw their points or place all week. Now the three
+     boxes show as soon as any game this week is final. Until every open
+     game is picked and ranked and the Monday night total is in, the third
+     box is a red "Picks d/N" that takes you straight to the first game
+     still to pick. Before the first final it is the bar it always was. */
   const allDone=!open.length||(picked===open.length&&(!conf||staked===open.length)&&(!tbNeeded||tbDone));
   const anyFinal=slate().some(isFinal);
-  const c3=anyFinal&&allDone;
+  const c3=anyFinal;
+  const doneN=slate().filter(g=>{const p=state.picks[g.id];return p&&(!conf||p.weight);}).length;
+  const todo=allDone?null:{done:doneN,total:slate().length,
+    tbOnly:picked===open.length&&(!conf||staked===open.length)};
   $('#bar').classList.toggle('c3',c3);
-  $('#c3row').innerHTML=c3?c3Html():'';
+  $('#c3row').innerHTML=c3?c3Html(todo):'';
+  nextNudge(c3&&!allDone,doneN);
+  refreshInfo();
   $('#plabel').classList.remove('saved');
   // The scoring-change notice named a fixed week, so it was wrong for 17
   // weeks out of 18. It takes effect NEXT week, whenever "now" is.
@@ -4941,6 +5120,7 @@ document.addEventListener('focusout',e=>{
    games, be told sixteen times that it saved, and go to bed with nothing
    written. */
 function commitPicks(attempt=0){
+  lastUserSave=Date.now();
   if(DEMO){ flashSaved(); return; }
   /* Show that something is happening. With no persistence configured, an
      offline setDoc() neither resolves nor rejects — it just hangs — so
@@ -5089,8 +5269,14 @@ $('#scrim').addEventListener('click',()=>{
 $('#sheetX').addEventListener('click',closeSheet);
 $('#infoX').addEventListener('click',closeInfo);
 $('#infoDone').addEventListener('click',closeInfo);
+$('#infoBody').addEventListener('click',e=>{
+  if(e.target.closest('#npHead')){ ptsOpen=!ptsOpen; refreshInfo(); return; }
+  const go=e.target.closest('[data-go]'); if(go)jumpToCard(go.dataset.go);
+});
+$('#nextUp').addEventListener('click',finishJump);
 $('#c3row').addEventListener('click',e=>{
   const b=e.target.closest('[data-c3]'); if(!b)return;
+  if(b.dataset.c3==='finish'){ finishJump(); return; }
   if(b.dataset.c3==='stand'){
     state.standView='week';
     const t=document.querySelector('.tab[data-tab="standings"]'); if(t)t.click();
