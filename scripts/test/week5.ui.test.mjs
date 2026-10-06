@@ -333,7 +333,16 @@ console.log('\n5. The card, measured');
       }
       const g = c.querySelector('.gutter'), rk = g.querySelector('.rkc');
       const state = c.querySelector('.meta.fmeta') ? 'final' : c.querySelector('.lockband') ? 'live' : 'pre';
-      out.circle.push({ state, has: !!rk, at: g.textContent.trim() === '@',
+      /* v1.42.1: the circle's net transform, the gutter's skew and every
+         wrapper's included, must be a pure rotation. A pure rotation has
+         a == d and b == -c; a leftover skew breaks one or the other. */
+      let shear = null;
+      if (rk) { let M = new DOMMatrix(), chain = [];
+        for (let e = rk; e && e !== c; e = e.parentElement) chain.unshift(e);
+        for (const e of chain) { const t = getComputedStyle(e).transform;
+          if (t && t !== 'none') M = M.multiply(new DOMMatrix(t)); }
+        shear = +Math.max(Math.abs(M.a - M.d), Math.abs(M.b + M.c)).toFixed(4); }
+      out.circle.push({ state, has: !!rk, at: g.textContent.trim() === '@', shear,
         cls: rk ? rk.className : '', color: rk ? getComputedStyle(rk).color : null,
         bg: rk ? getComputedStyle(rk).backgroundColor : null, tap: !!(rk && rk.closest('[data-stake]')) });
       const band = c.querySelector('.lockband');
@@ -357,6 +366,9 @@ console.log('\n5. The card, measured');
   ok('cream inside, the colour of the strip it sits on, not white',
      m.circle.filter(x => x.has).every(x => x.bg === 'rgb(237, 232, 222)'), JSON.stringify(m.circle.filter(x => x.has).map(x => x.bg).slice(0, 2)));
   ok('tappable before kickoff only', pre.every(x => x.tap) && [...live, ...fin].every(x => !x.tap));
+  ok('the circle is round in every state: no lean left over from the slanted strip',
+     [...pre, ...live, ...fin].every(x => x.shear !== null && x.shear < 0.01),
+     JSON.stringify([...pre, ...live, ...fin].map(x => [x.state, x.shear]).slice(0, 6)));
   ok('the live strip is one line', m.bands.length > 0 && m.bands.every(b => b.h === 22 && !b.wraps), JSON.stringify(m.bands.slice(0, 2)));
   ok('"Locked" on the left, your pick against the right edge',
      m.bands.every(b => /^Locked/.test(b.txt) && Math.abs(b.right - 11) <= 0.6), JSON.stringify(m.bands.slice(0, 2)));

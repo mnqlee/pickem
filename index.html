@@ -1756,6 +1756,12 @@ body[data-tab="picks"] .topbar::after{content:'';position:absolute;left:0;right:
 /* Before kickoff the circle is a button, and a 28px circle is too small
    to hit: it sits in a 44px square tap target that fills the gutter. */
 .gutter .rkt{display:grid;place-items:center;width:44px;height:44px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* v1.42.1 THE CIRCLE IS ROUND. The gutter is skewed -9deg and its wrapper
+   span already skews +9deg back. .rkt is ALSO a span, so ".gutter span"
+   straightened it a second time and every pre-kickoff circle leaned 9deg
+   the other way, an oval on Lee's phone. The wrapper does the
+   straightening; this one must not. */
+.gutter .rkt{transform:none}
 .gutter .rkc.fin{color:rgba(21,23,27,.48);border-color:rgba(21,23,27,.26)}
 
 /* ---- THE TEAM BOX AND ITS LINE ------------------------------------------

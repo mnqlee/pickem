@@ -870,6 +870,10 @@ const MUTATIONS = [
    ['one seal per week: every 1ST, then every 2ND, side by side up to 3, tucked from 4, five and "+N" past 6', 'the fixture reaches the "+N" case'], 'week5'],
   [94, 'seals: put the trophy first again', "let list=[...Array(f||0).fill('1st'),...Array(s||0).fill('2nd'),...Array(p||0).fill('trophy')];", "let list=[...Array(p||0).fill('trophy'),...Array(f||0).fill('1st'),...Array(s||0).fill('2nd')];",
    ['one seal per week: every 1ST, then every 2ND, side by side up to 3, tucked from 4, five and "+N" past 6'], 'week5'],
+  /* v1.42.1: the bug Lee saw on his phone, a pre-kickoff circle leaning
+     9deg because ".gutter span" straightened it twice. */
+  [95, 'circle: straighten the tap target a second time (the oval)', ".gutter .rkt{transform:none}", "",
+   ['the circle is round in every state: no lean left over from the slanted strip'], 'week5'],
 ];
 
 function runSuite(suite = 'regress') {

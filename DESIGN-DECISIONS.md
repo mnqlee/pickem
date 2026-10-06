@@ -1377,6 +1377,17 @@ cleanly on the gold, silver and "me" rows. Past six the run shows five
 and a "+N". The run is one `svg role=img` with an aria-label giving the
 counts in words, and it never spills into the points column at 320px.
 
+**v1.42.1, the circle is round.** Lee's phone showed every pre-kickoff
+rank circle leaning like an oval. The gutter is `skewX(-9deg)` and its
+wrapper span skews `+9deg` back, but `.rkt` is also a span, so
+`.gutter span` straightened it a second time: a net +9deg lean, a shear
+of 0.157 (tan 9deg). Live and final circles are `<i>`, not spans, and were
+fine. Fix: `.gutter .rkt{transform:none}`. The -7deg rotation stays; it
+is the house stamp tilt. The test composes every transform from the card
+to the circle and requires a pure rotation (a == d, b == -c) in all three
+states, because every earlier check measured size, colour and position,
+and a skew changes none of those.
+
 **How it was verified.** week5.ui.test.mjs is an oracle: it reads the raw
 schedule, picks, roster and banked standings from the stub and recomputes
 every figure in Node from the rules alone, then grades the bar, both
