@@ -5903,8 +5903,10 @@ console.log('\n60. The version card in Settings, and where an update shows up');
     /* NOT INSTALLED IS AN ANSWER. The temptation is to fall back to a
        constant in index.html, which is the one thing this card must
        never do. */
+    /* v1.43.1: the number is now the page's own version, which is real
+       even in a browser tab; "not installed" moved into the line under it. */
     ok('with no worker it says so rather than inventing a number',
-       /not installed/i.test(a.num), a.num);
+       a.num === SW_VERSION && /not installed/i.test(a.sub), JSON.stringify([a.num, a.sub]));
     ok('and tells you how to get one', /home screen/i.test(a.sub), a.sub);
     await page.click('#verBtn');
     await page.waitForTimeout(600);
@@ -5935,6 +5937,42 @@ console.log('\n60. The version card in Settings, and where an update shows up');
     ok('no page errors', errors.length === 0, errors[0]);
     await ctx.close();
   }
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n60b. A phone holding an old page heals itself (v1.43.1)');
+{
+  /* THE BUG: a player's iPhone opened a v1.41 page for a week after v1.43
+     shipped, while Settings, which asked the worker, said v1.43.0. The
+     page now knows its own version; if the worker serving it is newer it
+     reloads once, never in a loop, and Settings shows what is on screen. */
+  const { ctx, page, errors } = await open({ playerCount: 6, weeks: 1, gamesPerWeek: 4, swVersion: 'v9.9.9' });
+  await page.addInitScript(() => {
+    try { sessionStorage.setItem('loads', String(+(sessionStorage.getItem('loads') || 0) + 1)); } catch {}
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(6500);
+  const loads = await page.evaluate(() => +sessionStorage.getItem('loads'));
+  ok('a page older than the worker reloads itself', loads >= 2, String(loads));
+  ok('exactly once, never in a loop', loads === 2, String(loads));
+  await page.click('[data-tab="settings"]'); await page.waitForTimeout(600);
+  const v = await page.evaluate(() => ({ num: document.getElementById('verNum').textContent.trim(),
+    sub: document.getElementById('verSub').textContent.trim(), label: document.getElementById('verBtn').textContent.trim() }));
+  ok('Settings shows the version on screen, not the worker\'s', v.num === SW_VERSION, JSON.stringify(v));
+  ok('and says the newer one is ready, with Update now', /v9\.9\.9 ready/.test(v.sub) && v.label === 'Update now', JSON.stringify(v));
+  ok('no page errors', errors.length === 0, errors[0]);
+  await ctx.close();
+}
+{
+  /* And the everyday case: same version, no reload at all. */
+  const { ctx, page } = await open({ playerCount: 6, weeks: 1, gamesPerWeek: 4 });
+  await page.addInitScript(() => {
+    try { sessionStorage.setItem('loads', String(+(sessionStorage.getItem('loads') || 0) + 1)); } catch {}
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(4500);
+  ok('an up-to-date page never reloads itself', await page.evaluate(() => +sessionStorage.getItem('loads')) === 1);
+  await ctx.close();
 }
 
 /* ------------------------------------------------------------------ */

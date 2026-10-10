@@ -897,6 +897,13 @@ const MUTATIONS = [
    ['picks done but no Monday night total: the box asks for the tiebreak'], 'week5'],
   [105, 'points sheet: pay one rank too low if it holds', "`<b class=\"mute\">${ptsLbl(conf?pay(w,N):1)} if it holds</b>`", "`<b class=\"mute\">${ptsLbl(conf?pay(w+1,N):1)} if it holds</b>`",
    ['each pick still to play shows what it pays if it holds'], 'week5'],
+  /* v1.43.1: a phone holding an old page heals itself. */
+  [106, 'self-heal: never notice the page is older', "  if(!v||!verNewer(v,PAGE_VER))return;", "  if(!v||true)return;",
+   ['a page older than the worker reloads itself', 'exactly once, never in a loop'], 'regress'],
+  [107, 'self-heal: no once-per-version guard (a reload loop)', "  if(done===v)return;", "  ",
+   ['exactly once, never in a loop'], 'regress'],
+  [108, 'Settings: print the worker\'s version again', "  const shown=PAGE_VER||v;", "  const shown=v||PAGE_VER;",
+   ["Settings shows the version on screen, not the worker's"], 'regress'],
 ];
 
 function runSuite(suite = 'regress') {

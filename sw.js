@@ -5,7 +5,7 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.43.0';
+const VERSION = 'v1.43.1';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not
@@ -25,7 +25,21 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  /* Deliberately NOT calling self.skipWaiting() here.
+  /* v1.43.1: SKIP WAITING IS BACK, AND THE PAGE DECIDES WHEN TO RELOAD.
+
+     A player's iPhone kept opening a v1.41 page for a week after v1.42
+     and v1.43 shipped, through several full closes of the app. iOS can
+     leave a new worker parked in `waiting` indefinitely, and a parked
+     worker never serves anything. So the new worker now takes over the
+     moment it installs. What made that unsafe before (the reload landing
+     on someone mid-pick) is handled in the page instead: v1.43.1 pages
+     only reload when the app is in the background or being reopened,
+     and show the "new version is ready" banner otherwise. Older pages
+     still reload at once, which is exactly what gets a stuck phone off
+     its old copy.
+
+     The history, for the record: it used to skip waiting and was stopped
+     because
 
      It used to, which quietly defeated the whole update mechanism: a new
      worker activated the instant it installed and claimed every client,
@@ -36,8 +50,7 @@ self.addEventListener('install', e => {
      the swap had already happened before the button could be tapped, and
      the new worker never sat in `waiting` for it to act on.
 
-     The page now decides when to swap, by posting SKIP_WAITING (see the
-     message handler at the bottom). */
+     the page reloaded on every deploy (the page now guards that). */
   /* One entry at a time, not addAll().
 
      addAll() is all-or-nothing: if any single URL 404s — a renamed
@@ -46,9 +59,16 @@ self.addEventListener('install', e => {
      "succeeded" with an EMPTY cache. The offline fallback then matched
      nothing and respondWith(undefined) gave the browser's network
      error page. Better to cache the five that worked. */
+  /* FRESH FROM THE SERVER, NEVER FROM THE PHONE'S OWN HTTP CACHE. c.add()
+     uses the default cache mode, which may hand back a copy the browser
+     kept from before, so a new version could install holding old pages.
+     cache:'reload' always goes to the network. */
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
-    await Promise.all(SHELL.map(u => c.add(u).catch(() => {})));
+    await Promise.all(SHELL.map(async u => {
+      try { const r = await fetch(u, { cache: 'reload' }); if (r && r.ok) await c.put(u, r); } catch (_) {}
+    }));
+    await self.skipWaiting();
   })());
 });
 
@@ -185,8 +205,13 @@ self.addEventListener('fetch', e => {
        network round trip every time they open the app to check a score. */
     e.respondWith((async () => {
       const hit = await caches.match(req);
-      const fresh = fetch(req).then(res => { store(res); return res; })
-                              .catch(() => null);
+      /* Revalidated against the server (no-cache), never a stale copy the
+         browser kept, or a stale page would be stored again on every
+         launch. Asked by URL because a navigation request cannot
+         carry options; the cache key is still the original request. */
+      const fresh = fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
+        .then(res => { store(res); return res; })
+        .catch(() => null);
       if (hit) {
         // Don't let the background refresh die with the response we just
         // returned — waitUntil keeps the worker alive long enough to

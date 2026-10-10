@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- v1.43.1 The version of THIS page. A test fails if it ever differs from sw.js. -->
+<meta name="app-version" content="v1.43.1">
 <title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
@@ -3835,12 +3837,43 @@ let updReloading=false;
 const hadController='serviceWorker' in navigator
   && !!navigator.serviceWorker.controller;
 if('serviceWorker' in navigator){
+  /* v1.43.1: new workers take over as soon as they install, so this can
+     fire while someone is using the app. Reload only when it is not on
+     screen; while it is, raise the banner and switch on the next
+     background or reopen. */
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
     if(!hadController||updReloading)return;
-    updReloading=true;
-    location.reload();
+    if(document.visibilityState==='hidden'){ updReloading=true; location.reload(); return; }
+    updPending=true;
+    showUpdate(()=>{});
+  });
+  document.addEventListener('visibilitychange',()=>{
+    if(updPending&&!updReloading){ updReloading=true; location.reload(); return; }
+    if(document.visibilityState==='visible')setTimeout(selfHeal,800);
   });
 }
+var updPending=false;
+/* v1.43.1 SELF-HEAL. The page knows its own version. If the worker serving
+   it reports a newer one, this copy is stale: reload once (per version, so
+   it can never loop). Runs shortly after opening and on every return. */
+const PAGE_VER=(document.querySelector('meta[name="app-version"]')||{}).content||null;
+function verNewer(a,b){
+  const p=v=>String(v||'').replace(/^v/,'').split('.').map(n=>parseInt(n,10)||0);
+  const x=p(a), y=p(b);
+  for(let i=0;i<3;i++){ if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0); }
+  return false;
+}
+async function selfHeal(){
+  if(!PAGE_VER||updReloading||!window.PS||!PS.swVersion)return;
+  const v=await PS.swVersion().catch(()=>null);
+  if(!v||!verNewer(v,PAGE_VER))return;
+  let done=null; try{ done=sessionStorage.getItem('ps_heal'); }catch{}
+  if(done===v)return;
+  try{ sessionStorage.setItem('ps_heal',v); }catch{}
+  if(document.activeElement&&/INPUT|TEXTAREA/.test(document.activeElement.tagName)){ updPending=true; showUpdate(()=>{}); return; }
+  updReloading=true; location.reload();
+}
+setTimeout(selfHeal,2500);
 function showUpdate(activate){
   const bar=$('#updbar'), go=$('#updGo');
   if(!bar||!go)return;
@@ -3894,15 +3927,22 @@ async function verRender(){
      tab on a first visit there is no worker and no cache, so there is
      no version to report — and inventing one from this file is exactly
      the mistake this card exists to avoid. */
-  if(v)verSet(v,'This is what this phone is running.','Check for update');
-  else verSet('Not installed yet',
-    'Add the app to your home screen and this will show its version.',
+  /* v1.43.1: the number is the version of the page on screen. It used to
+     be the worker's, and a phone showing a v1.41 page reported v1.43.0. */
+  const shown=PAGE_VER||v;
+  if(v&&PAGE_VER&&verNewer(v,PAGE_VER))
+    verSet(shown,`Your phone has ${v} ready. Tap Update now.`,'Update now',{now:true});
+  else if(v)verSet(shown,'This is what this phone is running.','Check for update');
+  else verSet(shown||'Not installed yet',
+    'Not installed yet. Add the app to your home screen and it will keep itself up to date.',
     'Check for update');
 }
 $('#verBtn')&&$('#verBtn').addEventListener('click',async()=>{
   const b=$('#verBtn'); if(!b||verBusy)return;
   if(b.classList.contains('now')){
     verSet(null,'Applying it now.','Updating',{busy:true,now:true});
+    if(updPending||(PAGE_VER&&await PS.swVersion().then(v=>verNewer(v,PAGE_VER)).catch(()=>false))){
+      updReloading=true; location.reload(); return; }
     const ok=(window.PS&&PS.swActivate)?await PS.swActivate().catch(()=>false):false;
     /* Nothing was waiting after all — it activated on its own between
        the check and the tap, which happens when another tab took it.

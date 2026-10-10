@@ -226,5 +226,36 @@ console.log('\nService worker messages');
   }
 }
 
+/* ------------------------------------------------------------------ */
+console.log('\nv1.43.1: a new version reaches every phone');
+{
+  /* A player's iPhone kept opening a v1.41 page through several full
+     closes after v1.43 shipped. The new worker must take over on install,
+     install fresh files from the server, and refresh pages against it. */
+  const handlers={}, fetched=[], put=[]; let skipped=0;
+  const self={ addEventListener:(t,f)=>{handlers[t]=f}, skipWaiting:async()=>{skipped++;},
+    location:{origin:'https://x.com'}, clients:{claim(){},matchAll:async()=>[],openWindow:async()=>{}},
+    registration:{showNotification:async()=>{}} };
+  const cache={ add:async()=>{}, put:async(k)=>{ put.push(String(k&&k.url||k)); }, match:async()=>null };
+  const caches={ open:async()=>cache, keys:async()=>[], delete:async()=>{}, match:async()=>null };
+  const fetchStub=async(u,o)=>{ fetched.push({u:String(u&&u.url||u), cache:o&&o.cache}); return {ok:true,clone(){return this;}}; };
+  new Function('self','caches','fetch','Response','URL',src)(self,caches,fetchStub,class{constructor(){}},URL);
+  const waits=[]; handlers.install({ waitUntil:p=>waits.push(p) }); await Promise.all(waits);
+  ok('a new version takes over as soon as it installs', skipped===1, String(skipped));
+  const shellFetch=fetched.filter(f=>/\.\/|\.js|\.json|\.png/.test(f.u));
+  ok('and installs every file fresh from the server, never the phone\'s old copy',
+     shellFetch.length>=5 && shellFetch.every(f=>f.cache==='reload'), JSON.stringify(shellFetch.slice(0,3)));
+  ok('the app page itself is among them', put.includes('./'), JSON.stringify(put));
+  fetched.length=0;
+  let p=null; handlers.fetch({ request:{url:'https://x.com/',method:'GET',mode:'navigate'}, respondWith:x=>{p=x;}, waitUntil:()=>{} });
+  await p; await new Promise(r=>setTimeout(r,10));
+  ok('opening the app checks the server for a newer page, never a stale browser copy',
+     fetched.length>0 && fetched.every(f=>f.cache==='no-cache'), JSON.stringify(fetched));
+  const v=(src.match(/const VERSION = '([^']+)'/)||[])[1];
+  const page=fs.readFileSync(new URL('../../index.html', import.meta.url).pathname,'utf8');
+  const pv=(page.match(/<meta name="app-version" content="([^"]+)">/)||[])[1];
+  ok('the page carries the same version as sw.js, so they cannot drift apart', !!v && v===pv, `${pv} vs ${v}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
