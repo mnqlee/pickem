@@ -65,7 +65,7 @@ window.fetch = (u, o) => {
 /* One ESPN event in exactly the shape pullEspn destructures — scores as
    STRINGS, because that is what ESPN sends and parseInt is what the app
    relies on. Pass state 'pre' or 'post' to model the other two. */
-window.__espnEvent = (away, home, as, hs, state, poss) => {
+window.__espnEvent = (away, home, as, hs, state, poss, rz) => {
   /* Ids so a test can drive possession by hand as well as through the
      plan. poss is 'away', 'home', or omitted for no situation at all,
      which is what ESPN sends outside a live drive. */
@@ -78,7 +78,7 @@ window.__espnEvent = (away, home, as, hs, state, poss) => {
       { homeAway: 'home', team: { abbreviation: home, id: ids.home },
         score: hs == null ? null : String(hs) } ]
   };
-  if (poss) c.situation = { possession: ids[poss] };
+  if (poss) c.situation = { possession: ids[poss], ...(rz ? { isRedZone: true } : {}) };
   return { competitions: [c] };
 };
 
@@ -217,7 +217,10 @@ function espnAuto(detail){
         competitors: [
           { homeAway: 'away', team: { abbreviation: g.away, id: ids.away }, score: '17' },
           { homeAway: 'home', team: { abbreviation: g.home, id: ids.home }, score: '13' } ] };
-      if (who === 'away' || who === 'home') c.situation = { possession: ids[who] };
+      /* v1.44.0 P.espnRZ: true for every live game, or a list of slate
+         indexes, puts that drive inside the 20 (situation.isRedZone). */
+      const rz = P.espnRZ === true || (Array.isArray(P.espnRZ) && P.espnRZ.includes(i));
+      if (who === 'away' || who === 'home') c.situation = { possession: ids[who], ...(rz ? { isRedZone: true } : {}) };
       return { competitions: [c] };
     });
 }
@@ -240,6 +243,13 @@ function makeRoster() {
 }
 const ROSTER = makeRoster();
 const MEMBERS = ROSTER.map((n,i) => ({ uid: 'u_'+i, name: n }));
+/* v1.44.0 RIVALS. P.rivals is {uid: [uid,...]} and lands on each member
+   document exactly as the real rivals field does. */
+if (P.rivals) MEMBERS.forEach(m => { if (P.rivals[m.uid]) m.rivals = P.rivals[m.uid].slice(); });
+/* v1.44.0 The automatic pop-ups (Weekly Wrap, rivals walkthrough, the
+   hunting-you notice) stay off unless a plan asks for them, so the older
+   suites never meet a modal they were not written for. */
+try { if (!P.autopop) localStorage.setItem('ps_autopop', 'off'); else localStorage.removeItem('ps_autopop'); } catch (e) {}
 
 /* P.lopsided: FORCE A POOL THAT NEARLY ALL AGREES, BOTH WAYS ROUND.
 
@@ -295,7 +305,7 @@ const pickFor = (g, i, mi, wk) => {
 };
 
 const PSX = window.PS = {
-  SEASON: '2026', user: { uid: 'u_0' }, poolId: 'p_test',
+  SEASON: '2026', user: { uid: 'u_' + (P.me || 0) }, poolId: 'p_test',
   /* Real Firebase fires onAuthStateChanged the INSTANT this resolves —
      which is several lines before the PIN screen's go() reaches
      joinPool(). That ordering is the whole cause of the "boxes empty and
@@ -465,12 +475,16 @@ const PSX = window.PS = {
     if (rows.length) setTimeout(() => cb(rows, wk), 0);
     window.__pushRevealed = (r) => cb(r || rows, wk);
   },
+  async setRivals(list){ await call('setRivals');
+    window.__rivalWrites = (window.__rivalWrites || []).concat([list.slice()]);
+    const me = MEMBERS.find(m => m.uid === 'u_' + (P.me || 0)); if (me) me.rivals = list.slice();
+    return list; },
   watchMembers(cb){
     log.push('watchMembers');
     window.__pushMembers = (m) => cb(m || MEMBERS);
   },
   watchAuth(cb){ log.push('watchAuth'); window.__authCb = cb;
-    setTimeout(()=>cb(P.signedOut ? null : { uid:'u_0' }), 0); },
+    setTimeout(()=>cb(P.signedOut ? null : { uid:'u_' + (P.me || 0) }), 0); },
   async signOut(){}, async refreshPushToken(){},
   /* ALERTS HEALTH AND THE ONE-TAP REPAIR.
 
@@ -599,4 +613,4 @@ const srv = http.createServer(async (req, res) => {
     return send(200, fs.readFileSync(APP, 'utf8'), 'text/html');
   send(404, 'nope', 'text/plain');
 });
-srv.listen(8098, () => console.log('ready'));
+srv.listen(+(process.env.PORT||8098), () => console.log('ready'));

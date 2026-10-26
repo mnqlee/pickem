@@ -338,8 +338,10 @@ const CHECKS = [
   /* HOW OFTEN A WATCHED GAME IS REFRESHED. One request carries the
      score, the clock and possession, so this single number is the whole
      live-update rate. */
-  ['live rate', 'a watched game refreshes every 30 seconds',
-   () => has('const ESPN_EVERY=30000', '},ESPN_EVERY);') &&
+  /* v1.44.0: 15 seconds, Lee's choice for the red zone, with the floor
+     lowered to 10 so it still sits underneath. */
+  ['live rate', 'a watched game refreshes every 15 seconds',
+   () => has('const ESPN_EVERY=15000', 'const ESPN_FLOOR=10000', '},ESPN_EVERY);') &&
          /* AND IT MUST STAY ABOVE THE FLOOR. Below ESPN_FLOOR the floor
             swallows every other tick, so the real rate is the floor,
             arriving irregularly, while the constant claims otherwise. A
@@ -393,6 +395,36 @@ const CHECKS = [
              && /function swCheck/.test(FB) && /function swActivate/.test(FB)
              && /swVersion, swCheck, swActivate/.test(FB);
          })()],
+
+  /* ---- v1.44.0, each one a decision Lee made on a mockup ---- */
+  ['red zone ring', 'a red-zone card wears a SOLID red ring, never a pulsing one',
+   () => has('.card.rzc{box-shadow:0 0 0 2px #E5483C') && !/\.card\.rzc\{[^}]*animation/.test(CODE)],
+  ['red zone tag', 'the Red zone tag is still and centred on the top line',
+   () => has('.meta .rztag{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)')
+         && !/\.rztag\{[^}]*animation/.test(CODE)],
+  ['red zone ball', 'the football flashes, red normally, white on your own red panel',
+   () => has('.scr .pos.rzb{color:#E5483C!important;animation:rzball', '.scr .pos.rzb.rzw{color:#fff!important}')],
+  ['no live spread', 'the spread is gone once a game kicks off',
+   () => has("L?'':`\n        <span class=\"mono${lineOut(g)?'':' tbd'}\">")],
+  ['red zone source', "red zone comes only from ESPN's own isRedZone, and absent clears it",
+   () => has('const rz=own?sit.isRedZone===true:false;')],
+  ['tiles', 'the Games box shows live and final games as tiles that jump to the card',
+   () => has('${gamesTiles(gs)}', 'data-go="${g.id}"')],
+  ['tab top', 'every tab opens at the top',
+   () => has('try{ window.scrollTo(0,0); }catch(e){}')],
+  ['rival button', '+ Rival sits beside Season, small, and opens How rivals work first',
+   () => has('id="rvBtn"', 'flex:0 0 62px', "openInfo('rhelp')")],
+  ['rival tags', 'Standings only gains a Rival and a Hunting you tag, no extra bar',
+   () => has('<span class="rvtag b">Rival</span>', '<span class="rvtag r">Hunting you</span>')
+         && lacks('class="bar"><i>Hunting you')],
+  ['rival note', 'the heads up note lives on Standings and clears when you leave',
+   () => has("if(state.tab!=='standings'&&(rvPick||rvNote)){ rvPick=false; rvNote='';")],
+  ['wrap seal', 'the winner seal reads Week N / 1ST / Place, not Winner',
+   () => has('<b>1ST</b><em>Place</em>') && lacks('<em>Winner</em>')],
+  ['wrap place', 'other seals: arrow on top, the place, then Place underneath',
+   () => has("</em><b>${ordinal(W.wkPlace).toUpperCase()}</b><span>Place</span>")],
+  ['wrap once', 'the Weekly Wrap pops once per week and lives under the Week box',
+   () => has('lsSet(wrapSeenKey(wk),', 'data-wrap="${wk}"')],
 ];
 
 let bad = 0;

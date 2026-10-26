@@ -83,10 +83,16 @@ service cloud.firestore {
            is a griefing tool. `hasOnly` also stops arbitrary junk being
            stashed in a document every member can read. */
         allow write: if signedIn() && request.auth.uid == uid
-          && request.resource.data.keys().hasOnly(['name', 'photo', 'joinedAt', 'code'])
+          && request.resource.data.keys().hasOnly(['name', 'photo', 'joinedAt', 'code', 'rivals'])
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 40
+          /* v1.44.0 RIVALS: at most two player ids, never your own. The
+             list is read by every member, so it is bounded like name. */
+          && (!('rivals' in request.resource.data) ||
+              (request.resource.data.rivals is list
+               && request.resource.data.rivals.size() <= 2
+               && !(uid in request.resource.data.rivals)))
           /* Creating a membership requires the pool's join code. Editing
              an existing one (a rename) does not — you are already in. */
           && (resource != null ||

@@ -1,7 +1,7 @@
 /* Loads the real sw.js in a stubbed worker global and fires real push
    payload shapes at it. Proves a notification is actually displayed. */
 import fs from 'node:fs';
-const src = fs.readFileSync('/root/work/pickem/sw.js','utf8');
+const src = fs.readFileSync(new URL('../../sw.js', import.meta.url).pathname,'utf8');
 
 let pass=0, fail=0;
 const ok=(n,c,x='')=>{ if(c){pass++;console.log('  ok   '+n);} else {fail++;console.log('  FAIL '+n+(x?'  -> '+x:''));} };

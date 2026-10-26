@@ -1501,7 +1501,70 @@ Everything below is in the build and checked by
 | the away score still starts where its team name does | case 62, mutation 58 |
 | a live cell waits for the reveal bound before it unseals | audit `reveal honesty`, case 43b, mutation 59 |
 | the reveal margin is fast by default and widens only on a refusal | `reveal.test.mjs`, case 43c, mutation 60 |
-| a watched game refreshes every 30 seconds | audit `live rate` |
+| a watched game refreshes every 15 seconds (v1.44.0, was 30) | audit `live rate`, v44 section 4, mutation 116 |
 | the usage row carries no identity, ever | audit `usage anonymity`, case 43d, mutations 61-64, firestore.rules |
 | only on-screen time is counted | case 43d, mutation 62 |
 | the week strip holds its height before it fills | audit `no jump`, case 43f, mutation 66 |
+| **v1.44.0** red zone: solid red ring, still centred tag, flashing ball | audit `red zone ring/tag/ball`, v44 sections 1 to 3, mutations 110 to 114 |
+| the spread is gone once a game kicks off | audit `no live spread`, v44 section 1, mutation 115 |
+| the Games box tiles jump to the card | audit `tiles`, v44 section 5, mutation 117 |
+| every tab opens at the top | audit `tab top`, v44 section 6, mutation 118 |
+| Rivals: two tags and an edge, nothing else on Standings | audit `rival tags`, v44 section 7, mutations 120, 121, 126 |
+| + Rival beside Season opens How rivals work first | audit `rival button`, v44 section 8 |
+| the heads up note lives on Standings and clears on leaving | audit `rival note`, v44 section 8, mutation 123 |
+| Weekly Wrap: once a week, then under the Week box | audit `wrap once`, v44 sections 13 and 14, mutations 127, 128 |
+| Weekly Wrap seal: Week N / 1ST / Place; arrow, place, Place | audit `wrap seal`, `wrap place`, mutation 131 |
+| Weekly Wrap: every number from an oracle, never the same line twice | v44 sections 13 and 17, mutations 130, 132 |
+
+## v1.44.0: Red zone, Games box tiles, tabs at the top, Rivals, Weekly Wrap
+
+All five were chosen by Lee on interactive mockups (round29, rivflow,
+rivhelp, reveal) before any code was written.
+
+**Live pulls every 15 seconds.** ESPN_EVERY 15000, ESPN_FLOOR 10000 so the
+floor still sits under the interval. Same single request as before, still
+free (no Firestore, no Cloudflare), still paused off screen. ESPN lags TV
+by 10 to 30 seconds, so going lower buys nothing.
+
+**Red zone** comes only from ESPN's own `situation.isRedZone`, and only
+while somebody has the ball, so the ring can never light without a team to
+point at. Absent clears it, a final card never shows it. Look: solid red
+ring (Lee rejected the pulsing one), a still "Red zone" tag centred on the
+top line in place of "In progress", and the possession football flashing
+red, or white when it sits on your own picked panel and that panel is red.
+
+**No spread on a live card.** The line answers a pre-game question.
+
+**Games box tiles.** Live and final games as square tiles, three across,
+with your points badge; tapping one lands on its card on Picks in gold.
+What is still to play stays as the list below.
+
+**Tabs open at the top.** One shared page scroll used to carry Picks'
+position into Standings.
+
+**Rivals.** Up to two, stored as `rivals` on your own membership document
+(firestore.rules: a list of at most two, never yourself). Standings gains
+only a blue Rival tag and edge for players you picked and a red Hunting you
+tag and edge for players who picked you. A small + Rival button beside
+Season (Lee's quiet option) opens How rivals work, then Pick my rival puts
+a + Rival on every row. Tapping any name opens that player's card: the
+season record, both season totals, a box per finished week, this week's
+live margin and Remove, or Make rival / Make rival back / Swap. The record
+is the whole season, every finished week, from weekSum(), so it cannot
+disagree with the table. A first-visit walkthrough shows once; a player
+who has been picked is told once ("Dex is hunting you"). Both in-app only;
+no push notification was added in this release.
+
+**Weekly Wrap.** Built on the phone from the same figures as Standings
+and the Grid, for every player with a pick that week, once the last game
+is final. Pops once per week (localStorage, per pool and week), not for a
+week more than six days old, never mid-week. Lives under the Week box
+afterwards. Share draws the paper on a canvas at 1080 x 1350 and hands it
+to the share sheet, or downloads it where the sheet cannot take files.
+The copy comes from banks of lines per moment, started at the player's
+place in the roster so neighbours never open on the same sentence, and no
+label or sentence repeats on one paper. No em dashes.
+
+**Test switch.** `ps_autopop = 'off'` in localStorage stops the three
+automatic pop-ups. Only app-serve.mjs sets it, so the older suites never
+meet a modal they were not written for. Nothing in the app writes it.

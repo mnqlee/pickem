@@ -343,6 +343,17 @@ async function getPool() {
   return snap.exists() ? { id: poolId, ...snap.data() } : null;
 }
 
+/* v1.44.0 RIVALS. Up to two uids on your OWN membership document, and
+   nothing else changes: merge, so name, photo, joinedAt and code are
+   left exactly as they are. firestore.rules bounds it (a list of at most
+   two, never yourself). Everyone can read it, which is the point: the
+   player you pick sees a Hunting you tag by your name. */
+async function setRivals(list) {
+  const clean = [...new Set((list || []).filter(u => typeof u === 'string' && u && u !== user.uid))].slice(0, 2);
+  await setDoc(doc(db, 'pools', poolId, 'members', user.uid), { rivals: clean }, { merge: true });
+  return clean;
+}
+
 async function getMembers() {
   const res = await getDocs(collection(db, 'pools', poolId, 'members'));
   return res.docs.map(d => ({ uid: d.id, ...d.data() }));
@@ -1237,7 +1248,7 @@ async function swReady(ms = 8000) {
 window.PS = {
   SEASON, auth, db, swReady,
   signIn, signOut: () => signOut(auth), watchAuth,
-  joinPool, getPool, getMembers, watchMembers,
+  joinPool, getPool, getMembers, watchMembers, setRivals,
   getWeek, watchWeek,
   savePicks, myPicks, watchRevealed,
   getStandings, getScoringMode, setScoringMode,

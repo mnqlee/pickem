@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- v1.43.1 The version of THIS page. A test fails if it ever differs from sw.js. -->
-<meta name="app-version" content="v1.43.1">
+<!-- v1.44.0 The version of THIS page. A test fails if it ever differs from sw.js. -->
+<meta name="app-version" content="v1.44.0">
 <title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
@@ -1924,6 +1924,226 @@ body:not([data-tab="picks"]) .nextup{display:none}
 #infoSheet .np-head:focus-visible,#infoSheet .sl.g3 .go:focus-visible,.nextup:focus-visible{outline:2px solid #E8B84B;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.card.jumped{animation:none}.nextup{transition:none}#infoSheet .chev{transition:none}}
 
+/* =====================================================================
+   v1.44.0  RED ZONE, GAME TILES, RIVALS, WEEKLY WRAP
+   ===================================================================== */
+/* RED ZONE: solid ring, still tag centred on the top line, flashing ball. */
+.card.rzc{box-shadow:0 0 0 2px #E5483C,0 0 12px rgba(229,72,60,.3),0 6px 18px rgba(0,0,0,.30)}
+.card.rzc .meta{position:relative}
+.meta .rztag{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;
+  padding:3px 7px;border-radius:6px;background:#D63B30;color:#fff;font:800 9px/1 'Archivo',sans-serif;letter-spacing:.12em;
+  text-transform:uppercase;white-space:nowrap;box-shadow:0 0 12px rgba(229,72,60,.45)}
+.scr .pos.rzb{color:#E5483C!important;animation:rzball 1.1s ease-in-out infinite}
+.scr .pos.rzb .ball{filter:drop-shadow(0 0 4px rgba(229,72,60,.9));transform:scale(1.25)}
+.scr .pos.rzb .ball ellipse{fill:rgba(229,72,60,.25)}
+.scr .pos.rzb.rzw{color:#fff!important}
+.scr .pos.rzb.rzw .ball{filter:drop-shadow(0 0 5px rgba(255,255,255,.95))}
+.scr .pos.rzb.rzw .ball ellipse{fill:rgba(255,255,255,.3)}
+@keyframes rzball{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* GAME TILES in the Games sheet, three across. */
+#infoSheet .gts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 4px}
+#infoSheet .gth{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;margin:8px 2px 0;
+  font:800 10.5px/1 'Archivo',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--paper)}
+#infoSheet .gth:first-child{margin-top:0}
+#infoSheet .gth span{font:600 11px 'Archivo',sans-serif;letter-spacing:0;text-transform:none;color:var(--chalk)}
+#infoSheet .gt{position:relative;aspect-ratio:1/1;display:flex;flex-direction:column;padding:0;border-radius:18px;overflow:hidden;
+  background:#0E1013;border:1px solid rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 6px 16px rgba(0,0,0,.35);
+  color:#fff;text-align:left;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none}
+#infoSheet .gt.rz{box-shadow:0 0 0 2px rgba(200,52,42,.5),0 8px 20px rgba(0,0,0,.4)}
+#infoSheet .gt:focus-visible{outline:2px solid #E8B84B;outline-offset:2px}
+#infoSheet .gtc{position:relative;flex:1;display:grid;grid-template-rows:1fr 1fr;
+  background:linear-gradient(166deg,var(--ca) 0 calc(50% - 1px),#0B0C0E calc(50% - 1px) calc(50% + 1.5px),var(--ch) calc(50% + 1.5px))}
+#infoSheet .gtr{display:flex;align-items:center;gap:5px;padding:0 9px 0 10px;min-width:0}
+#infoSheet .gtr.tr{opacity:.62}
+#infoSheet .gtab{font:600 12.5px/1 'Oswald',sans-serif;letter-spacing:.1em;padding-bottom:2px;border-bottom:2px solid transparent}
+#infoSheet .gtab.mine{border-bottom-color:#E8B84B}
+#infoSheet .gtr .ball{width:15px;height:10px;flex:0 0 15px;color:#fff}
+#infoSheet .gtr b{margin-left:auto;font:600 24px/1 'Oswald',sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 2px 8px rgba(0,0,0,.35)}
+#infoSheet .gtf{display:flex;align-items:center;justify-content:space-between;gap:4px;height:28px;padding:0 6px 0 9px;overflow:hidden;
+  font:800 9.5px/1 'Archivo',sans-serif;letter-spacing:.03em;text-transform:uppercase;color:var(--chalk);white-space:nowrap}
+#infoSheet .gtf.live{color:var(--live)}
+#infoSheet .gtpk{display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:9px;font:800 10px/1.3 'Archivo',sans-serif;text-transform:none}
+#infoSheet .gtpk em{font-style:normal;font-weight:700;opacity:.85}
+#infoSheet .gtpk.y{background:var(--live);color:#0E1013}
+#infoSheet .gtpk.n,#infoSheet .gtpk.e{border:1.5px solid #E4564A;color:#E4564A}
+#infoSheet .gtpk.y.l{background:none;border:1.5px solid var(--live);color:var(--live)}
+#infoSheet .gttip{margin:4px 2px 2px;font:600 11.5px/1.35 'Archivo',sans-serif;color:var(--chalk)}
+
+/* RIVALS in Standings. */
+.subtabs .rvbtn{flex:0 0 62px;min-height:38px;padding:0;border-radius:8px;border:1.5px solid rgba(111,160,255,.55);
+  background:rgba(111,160,255,.08);color:#7FA9FF;font:800 8.5px/1 'Archivo',sans-serif;letter-spacing:.06em;text-transform:uppercase;
+  cursor:pointer;-webkit-appearance:none;appearance:none}
+.subtabs .rvbtn:focus-visible{outline:2px solid #E8B84B;outline-offset:2px}
+.row.rv{border-left-color:#6FA0FF}
+.row.ht{border-left-color:#E4564A}
+.row.rv.ht{border-left-color:#6FA0FF;box-shadow:inset 3px 0 0 #E4564A}
+.row[data-pu]{cursor:pointer}
+.row[data-pu]:focus-visible{outline:2px solid #E8B84B;outline-offset:-2px}
+.rvtag{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:4px;font:800 8.5px/1.4 'Archivo',sans-serif;
+  letter-spacing:.1em;text-transform:uppercase;vertical-align:2px;white-space:nowrap}
+.rvtag.b{background:rgba(111,160,255,.16);color:#7FA9FF}
+.rvtag.r{background:rgba(228,86,74,.16);color:#F07368}
+.nrow{flex-wrap:wrap}
+.rvmk{flex:0 0 auto;align-self:center;display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 10px;
+  border-radius:14px;border:1px solid #6FA0FF;background:none;color:#7FA9FF;font:800 8.5px/1 'Archivo',sans-serif;
+  letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer;-webkit-appearance:none;appearance:none}
+.rvmk.on{background:#6FA0FF;color:#0B1220}
+.rvmk:disabled{opacity:.35;cursor:default}
+#infoSheet[data-kind="rtut"] #infoDone{display:none}
+.rvnote{margin:0 var(--pad) 8px;padding:10px 12px;border-radius:10px;background:var(--shell-2);border:1px solid rgba(250,247,241,.1);
+  font-size:12.5px;font-weight:600;line-height:1.4;color:var(--paper)}
+.rvstrip{display:flex;align-items:center;gap:10px;margin:0 var(--pad) 8px;padding:10px 10px 10px 12px;border-radius:10px;
+  background:rgba(111,160,255,.1);border:1px solid rgba(111,160,255,.4)}
+.rvstrip>div{flex:1;min-width:0}
+.rvstrip b{display:block;font-size:13px;font-weight:700}
+.rvstrip span{font-size:11.5px;font-weight:600;color:var(--chalk)}
+.rvdone{min-height:38px;padding:0 16px;border-radius:19px;border:0;background:#6FA0FF;color:#0B1220;
+  font:800 10.5px/1 'Archivo',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+/* the rivals line above the cards on Picks */
+.rvlivebar{display:flex;align-items:center;gap:10px;width:calc(100% - 2*var(--pad));margin:0 var(--pad) 10px;padding:10px 12px;border-radius:10px;
+  background:rgba(111,160,255,.1);border:1px solid rgba(111,160,255,.35);color:var(--paper);font:700 12.5px/1.35 'Archivo',sans-serif;
+  text-align:left;cursor:pointer;-webkit-appearance:none;appearance:none}
+.rvlivebar>span{flex:1;min-width:0}
+.rvlivebar i{display:block;font-style:normal;font:800 9px/1 'Archivo',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#7FA9FF;margin-bottom:4px}
+.rvlivebar em{font-style:normal}.rvlivebar em.up{color:#7BC96F}.rvlivebar em.dn{color:#F07368}
+.rvlivebar b{color:var(--chalk);font-size:16px}
+/* rival sheets */
+#infoSheet .rvkick{font:800 10px/1 'Archivo',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#E8B84B;margin:4px 0 10px;text-align:center}
+#infoSheet .rvp{margin:0 0 12px;color:var(--paper);font-size:14px;line-height:1.45;text-align:center}
+#infoSheet .rvp.mute{color:var(--chalk);font-size:13px}
+#infoSheet .rvqa>div{padding:9px 0;border-top:1px solid rgba(250,247,241,.1)}
+#infoSheet .rvqa b{display:block;font-size:13.5px;font-weight:700;color:var(--paper)}
+#infoSheet .rvqa span{display:block;font-size:12.5px;line-height:1.4;color:var(--chalk)}
+#infoSheet .rvcta,#infoSheet .rvline{display:flex;justify-content:center;align-items:center;width:100%;min-height:46px;margin-top:10px;border-radius:23px;
+  border:0;background:var(--paper);color:var(--ink);font:800 11px/1 'Archivo',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+#infoSheet .rvcta.blue{background:#6FA0FF;color:#0B1220}
+#infoSheet .rvline{background:none;border:1px solid rgba(250,247,241,.2);color:var(--paper)}
+#infoSheet .rvlater{display:block;width:100%;min-height:40px;margin-top:4px;border:0;background:none;color:var(--chalk);
+  font:800 11px/1 'Archivo',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+#infoSheet .rvdots{display:flex;gap:6px;justify-content:center;margin:4px 0 2px}
+#infoSheet .rvdots i{width:7px;height:7px;border-radius:50%;background:#3B3833}
+#infoSheet .rvdots i.on{background:#E8B84B}
+#infoSheet .rvvs{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;text-align:center;gap:6px;margin:2px 0 12px}
+#infoSheet .rvvs b{display:block;font:600 40px/1 'Oswald',sans-serif;color:var(--paper)}
+#infoSheet .rvvs small{display:block;margin-top:4px;font:800 9px 'Archivo',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--chalk)}
+#infoSheet .rvvs .mid{font:600 11px/1.3 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--chalk)}
+#infoSheet .rvvs .mid em{display:block;font-style:normal;color:var(--paper)}
+#infoSheet .rvtot{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+#infoSheet .rvtot div{padding:10px;border-radius:10px;background:#121110;border:1px solid rgba(250,247,241,.1);text-align:center}
+#infoSheet .rvtot small{display:block;font:800 8.5px 'Archivo',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--chalk)}
+#infoSheet .rvtot b{font:600 20px 'Oswald',sans-serif;color:var(--paper)}
+#infoSheet .rvwkl{display:flex;justify-content:space-between;font:800 9px/1 'Archivo',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--chalk);margin-bottom:6px}
+#infoSheet .rvwkl i{display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 4px 0 8px}
+#infoSheet .rvwkl i.w,#infoSheet .rvwks .w{background:#5CC36B}
+#infoSheet .rvwkl i.l,#infoSheet .rvwks .l{background:#E0574C}
+#infoSheet .rvwkl i.t,#infoSheet .rvwks .t{background:#8C877E}
+#infoSheet .rvwks{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-bottom:12px}
+#infoSheet .rvwks span{display:grid;place-items:center;height:26px;border-radius:5px;font:700 11px 'Archivo',sans-serif;color:#0E0D0C}
+#infoSheet .rvlive{display:flex;justify-content:space-between;padding:10px 12px;border-radius:8px;background:rgba(111,160,255,.1);font:700 12.5px 'Archivo',sans-serif;color:var(--paper)}
+#infoSheet .rvlive em{font-style:normal}#infoSheet .rvlive em.up{color:#7BC96F}#infoSheet .rvlive em.dn{color:#F07368}
+/* the Weekly Wrap button in the points sheet */
+#infoSheet .wrapbtn{display:flex;align-items:center;gap:10px;width:100%;margin:10px 0 4px;padding:12px 14px;border-radius:12px;
+  border:1px solid rgba(232,184,75,.5);background:rgba(232,184,75,.08);color:var(--paper);text-align:left;cursor:pointer;font-family:inherit}
+#infoSheet .wrapbtn span{flex:1;font-size:12px;font-weight:600;color:var(--chalk)}
+#infoSheet .wrapbtn b{display:block;font:600 17px/1.1 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#E8B84B}
+#infoSheet .wrapbtn i{font-style:normal;font-size:20px;color:#E8B84B}
+
+/* THE WEEKLY WRAP overlay and its newspaper card (420 x 525, scaled). */
+.wrapov{position:fixed;inset:0;z-index:90;display:grid;align-content:center;justify-items:center;gap:12px;
+  padding:calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b));background:rgba(8,8,9,0);transition:background .35s;overflow-y:auto}
+.wrapov[hidden]{display:none}
+.wrapov.on{background:rgba(8,8,9,.85)}
+.wrapov .weye{font:800 9px/1 'Archivo',sans-serif;letter-spacing:.26em;color:#E8B84B;text-transform:uppercase;opacity:0;transition:opacity .3s .5s}
+.wrapov.on .weye{opacity:1}
+.wslot{width:100%;max-width:360px;aspect-ratio:4/5;position:relative;transform:translateY(120vh) rotate(6deg);transition:transform .7s cubic-bezier(.18,.9,.25,1.08)}
+.wrapov.on .wslot{transform:translateY(0) rotate(-1.2deg)}
+.wcard{position:absolute;left:0;top:0;width:420px;height:525px;transform-origin:0 0;overflow:hidden;border-radius:16px;
+  box-shadow:0 26px 60px rgba(0,0,0,.55);
+  background:radial-gradient(120% 70% at 50% 0%,rgba(255,255,255,.55),transparent 60%),radial-gradient(100% 60% at 100% 100%,rgba(140,110,60,.10),transparent 70%),#F5EFE2;
+  color:#16171A;padding:16px 20px 0;display:flex;flex-direction:column;font-family:'Archivo',sans-serif;line-height:1.5;text-align:left}
+.wcard .np{display:grid;grid-template-columns:62px 1fr 62px;align-items:center;gap:8px}
+.wcard .ear{border:1px solid #16171A;padding:4px 0 3px;text-align:center;font:700 7px/1.25 'Archivo',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#3B3A36}
+.wcard .ear b{display:block;font:600 15px/1.05 'Oswald',sans-serif;letter-spacing:.02em;color:#16171A}
+.wcard .title{text-align:center}
+.wcard .title small{display:block;font:800 7px/1 'Archivo',sans-serif;letter-spacing:.34em;color:#3B3A36}
+.wcard .title b{display:block;font:700 29px/1 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;margin-top:3px}
+.wcard .rule2{height:5px;margin-top:7px;border-top:2px solid #16171A;border-bottom:1px solid #16171A}
+.wcard .dl{display:flex;justify-content:space-between;gap:6px;padding:4px 0;border-bottom:1px solid #16171A;font:500 7.6px/1 'Roboto','Roboto Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:#3B3A36;white-space:nowrap}
+.wcard .hz{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:11px 0 10px}
+.wcard .kick{font:800 7.5px/1 'Archivo',sans-serif;letter-spacing:.24em;text-transform:uppercase;color:#C8342A}
+.wcard .hl{font:700 32px/.95 'Oswald',sans-serif;text-transform:uppercase;margin-top:5px}
+.wcard .deck{font:italic 500 12.5px/1.3 'Source Serif 4',Georgia,serif;color:#3B3A36;margin-top:6px}
+.wcard .seal{width:74px;height:74px;border-radius:50%;display:grid;place-items:center;text-align:center;position:relative;margin:-14px 2px 0 0;transform:rotate(-7deg)}
+.wcard .seal.gold{background:radial-gradient(circle at 35% 30%,#F6DA92,#C9982F 70%,#A97B1F);box-shadow:0 3px 8px rgba(120,80,10,.35),inset 0 0 0 3px rgba(255,255,255,.35)}
+.wcard .seal.gold::before{content:"";position:absolute;inset:6px;border-radius:50%;border:1px dashed rgba(70,45,5,.55)}
+.wcard .seal.ink{border:2.5px solid #16171A;box-shadow:inset 0 0 0 3px #F5EFE2,inset 0 0 0 4px #16171A}
+.wcard .seal span{font:800 6.5px/1.2 'Archivo',sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#4A3208}
+.wcard .seal b{display:block;font:700 26px/.95 'Oswald',sans-serif;color:#2E1E04}
+.wcard .seal em{display:block;font:800 8px/1 'Archivo',sans-serif;font-style:normal;margin-top:1px}
+.wcard .seal.gold>div{position:relative;top:-4px}
+.wcard .seal.gold em{color:#2E1E04;letter-spacing:.18em;text-transform:uppercase}
+.wcard .seal.ink>div{position:relative;top:-3px}
+.wcard .seal.ink em{margin:0 0 1px}
+.wcard .seal.ink b{color:#16171A;position:relative;top:-1px}
+.wcard .seal.ink span{display:block;margin-top:1px;color:#3B3A36}
+.wcard .up{color:#2C6B24}.wcard .dn{color:#B3362B}
+.wcard .box{display:grid;grid-template-columns:repeat(4,1fr);border-top:2px solid #16171A;border-bottom:1px solid #16171A}
+.wcard .box div{padding:6px 0 5px;text-align:center}
+.wcard .box div+div{border-left:1px solid rgba(22,23,26,.16)}
+.wcard .box small{display:block;font:800 6.8px/1 'Archivo',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#7A756B}
+.wcard .box b{display:block;font:600 24px/1.05 'Oswald',sans-serif;margin-top:3px}
+.wcard .sh{display:flex;justify-content:space-between;align-items:baseline;margin:9px 0 5px;font:800 7px/1 'Archivo',sans-serif;letter-spacing:.22em;text-transform:uppercase;color:#3B3A36}
+.wcard .sh span{font:500 7.5px 'Roboto','Roboto Mono',monospace;letter-spacing:.02em;text-transform:none;color:#7A756B}
+.wcard .lad{display:grid;gap:2px}
+.wcard .tk{position:relative;height:44px;border-radius:2px;display:grid;grid-template-rows:1fr auto;justify-items:center;overflow:hidden}
+.wcard .tk b{align-self:center;font:700 8px/1 'Archivo',sans-serif;letter-spacing:.02em;color:#fff;writing-mode:vertical-rl;transform:rotate(180deg)}
+.wcard .tk i{display:block;width:100%;text-align:center;font:600 7px/1 'Roboto','Roboto Mono',monospace;font-style:normal;padding:2px 0;background:rgba(0,0,0,.28);color:#fff}
+.wcard .tk.x{background:transparent!important;box-shadow:inset 0 0 0 1px rgba(179,54,43,.6)}
+.wcard .tk.x b{color:#B3362B}
+.wcard .tk.x i{background:rgba(179,54,43,.12);color:#B3362B}
+.wcard .tk.x::after{content:"";position:absolute;left:-3px;right:-3px;top:50%;height:1.5px;background:#B3362B;transform:rotate(-58deg)}
+.wcard .lower{display:grid;grid-template-columns:1fr 112px;gap:12px;margin-top:9px}
+.wcard .mo{display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;align-items:center;padding:5px 0;border-top:1px solid rgba(22,23,26,.16)}
+.wcard .mo:first-child{border-top:2px solid #16171A}
+.wcard .mo small{grid-column:1/-1;font:800 6.6px/1.1 'Archivo',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#7A756B}
+.wcard .wchip{display:grid;place-items:center;min-width:28px;height:16px;padding:0 4px;border-radius:3px;color:#fff;font:800 8px/1 'Archivo',sans-serif;letter-spacing:.04em}
+.wcard .mo>span:not(.wchip){font:600 10.5px/1.2 'Archivo',sans-serif;color:#3B3A36}
+.wcard .mo b{font:600 15px/1 'Oswald',sans-serif;text-align:right}
+.wcard .mo b s,.wcard .mnf .y b s{text-decoration-thickness:2px}
+.wcard .mnf{border:1.5px solid #16171A;display:flex;flex-direction:column}
+.wcard .mnf .h{background:#16171A;color:#F5EFE2;text-align:center;padding:4px 0 3px;font:800 6.6px/1.2 'Archivo',sans-serif;letter-spacing:.22em;text-transform:uppercase}
+.wcard .mnf .t{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:6px;padding:5px 8px 3px}
+.wcard .mnf .t b{font:600 20px/1 'Oswald',sans-serif;text-align:right}
+.wcard .mnf .t.lo b{color:#7A756B}
+.wcard .mnf .y{margin-top:auto;border-top:1px solid rgba(22,23,26,.16);padding:5px 8px;font:700 8.5px/1.3 'Archivo',sans-serif;color:#3B3A36;display:flex;justify-content:space-between;align-items:center}
+.wcard .mnf .y b{font:600 14px/1 'Oswald',sans-serif}
+.wcard .stub{margin:auto -20px 0;position:relative;background:#ECE4D2;border-top:1.5px dashed rgba(22,23,26,.35);padding:8px 20px 9px;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}
+.wcard .stub::before,.wcard .stub::after{content:"";position:absolute;top:-8px;width:14px;height:14px;border-radius:50%;background:#141412}
+.wcard .stub::before{left:-7px}.wcard .stub::after{right:-7px}
+.wcard .stub .lb{font:800 6.8px/1.2 'Archivo',sans-serif;letter-spacing:.22em;text-transform:uppercase;color:#C8342A}
+.wcard .stub .lb b{display:block;font:600 11px/1.15 'Oswald',sans-serif;letter-spacing:.04em;color:#16171A;margin-top:2px}
+.wcard .stub .vs{display:flex;justify-content:center;align-items:baseline;gap:8px;font:600 19px/1 'Oswald',sans-serif}
+.wcard .stub .vs small{font:700 8px 'Archivo',sans-serif;letter-spacing:.1em;color:#7A756B;text-transform:uppercase}
+.wcard .stub .vs .dim{color:#7A756B}
+.wcard .stub .rec{text-align:right;font:800 6.8px/1.25 'Archivo',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#7A756B}
+.wcard .stub .rec b{display:block;font:600 14px/1.05 'Oswald',sans-serif;letter-spacing:.02em;color:#16171A}
+.wrapov .seal{opacity:0;transform:rotate(-7deg) scale(2.6);transition:transform .32s cubic-bezier(.3,1.6,.5,1) .78s,opacity .1s .78s}
+.wrapov.on .seal{opacity:1;transform:rotate(-7deg) scale(1)}
+.wbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:360px;opacity:0;transform:translateY(10px);transition:opacity .3s 1s,transform .3s 1s}
+.wrapov.on .wbtns{opacity:1;transform:none}
+.wbtns button{min-height:46px;border-radius:23px;border:0;font:800 11px/1 'Archivo',sans-serif;letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+.wbtns .wshr{background:#F4F1EA;color:#121417}
+.wbtns .wcl{background:none;color:#EDE8DE;border:1px solid #4A4640}
+.wbtns button:focus-visible{outline:2px solid #E8B84B;outline-offset:2px}
+.wlater{font:600 11px 'Archivo',sans-serif;color:#9C978D;opacity:0;transition:opacity .3s 1.1s}
+.wrapov.on .wlater{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  .scr .pos.rzb{animation:none}
+  .wrapov,.wslot,.wrapov .seal,.wbtns,.wrapov .weye,.wlater{transition:opacity .2s!important}
+  .wslot,.wrapov.on .wslot{transform:none}
+  .wrapov .seal,.wrapov.on .seal{transform:rotate(-7deg)}}
+
 </style>
 </head>
 <body data-tab="picks">
@@ -2015,7 +2235,9 @@ body:not([data-tab="picks"]) .nextup{display:none}
   <div class="subtabs" id="standTabs" role="tablist">
     <button type="button" class="subtab on" data-stand="week" role="tab" aria-selected="true">This week</button>
     <button type="button" class="subtab" data-stand="season" role="tab" aria-selected="false">Season</button>
+    <button type="button" class="rvbtn" id="rvBtn" aria-label="Rivals">+ Rival</button>
   </div>
+  <div id="rvStrip"></div>
   <button type="button" class="mebar hide" id="meBar"></button>
   <div class="board" id="board"></div>
 </div>
@@ -2404,6 +2626,15 @@ body:not([data-tab="picks"]) .nextup{display:none}
   <button class="info-done" id="infoDone" type="button">Done</button>
 </div>
 
+<!-- v1.44.0 THE WEEKLY WRAP. Its own layer, above the sheets: it is the
+     one thing in the app that is meant to stop you for a second. -->
+<div class="wrapov" id="wrapOv" role="dialog" aria-modal="true" aria-label="Your Weekly Wrap" hidden>
+  <div class="weye" id="wrapEye">This week is in the books</div>
+  <div class="wslot" id="wrapSlot"><div class="wcard" id="wrapCard"></div></div>
+  <div class="wbtns"><button type="button" class="wshr" id="wrapShare">Share</button><button type="button" class="wcl" id="wrapClose">Close</button></div>
+  <div class="wlater" id="wrapLater"></div>
+</div>
+
 <div class="sheet" id="fillSheet" role="dialog" aria-modal="true"
      aria-labelledby="fillTitle" hidden>
   <div class="grab"></div>
@@ -2460,6 +2691,7 @@ let PLAYERS=['Lee','Monse','Eliana','Mateo','Sofia'];   // live: uids from the r
 let NAMES={};                                            // key -> display name
 let RECORDS={};                                          // live: team W-L, optional
 let STANDINGS={};   // key -> {pts,hits,weekWins,weekSeconds,perfectWeeks}
+let standingsReady=false;   // v1.44.0: the Weekly Wrap waits for the season figures
 let TIEBREAKS={};   // key|week -> guessed total
 
 /* Everything a player supplies about themselves reaches innerHTML, and a
@@ -2678,6 +2910,18 @@ const ESPN_BALL=Object.create(null);
    that has yet to kick off, not one the server has written final, and
    not one ESPN has said nothing about. */
 const ballOf=g=>(!isLive(g)||isFinal(g))?null:(ESPN_BALL[`${g.a}_${g.h}`]||null);
+/* v1.44.0 RED ZONE. ESPN's own `situation.isRedZone`, out of the same
+   response as the football. Same isolation as ESPN_BALL: display only,
+   never scored, never written, dropped the moment the game is final.
+   Only true when we ALSO know who has the ball, so the ring can never
+   light without a team to point at. */
+const ESPN_RZ=Object.create(null);
+const rzOf=g=>{const b=ballOf(g); return b&&ESPN_RZ[`${g.a}_${g.h}`]===true?b:null;};
+/* A club colour is "red" when red clearly dominates. Used for one thing:
+   the red-zone football turns white on your own picked panel when that
+   panel is red, or it would vanish into it. */
+const isRedHex=c=>{const m=/^#?([0-9a-f]{6})$/i.exec(String(c||'').trim()); if(!m)return false;
+  const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>140&&r>g*1.8&&r>b*1.6;};
 /* The string to print top-left on a live card, or null to fall back to
    the kickoff time. Only ever for a game that has started and has not
    been written final, so a stale string cannot outlive the game. */
@@ -3060,14 +3304,14 @@ const ordinal=n=>{const v=n%100;return n+((v>=11&&v<=13)?'th':(['th','st','nd','
    the football hangs beside it without pushing it off centre. The record
    sits under the badge, and the badge sits in a 42px box on both sides,
    so the two records land on one line whichever side is lit. */
-function side(code,which,cls,bg,ha,sc,ball){const[city,team]=TEAM(code);
+function side(code,which,cls,bg,ha,sc,ball,rz){const[city,team]=TEAM(code);
   const r=rec(code);
   return `<button class="side ${which} ${cls}" data-side="${which==='l'?'a':'h'}" ${bg}>
     <div class="tile"><div class="mbox">${mark(code)}</div>${r?`<span class="trec">(${r})</span>`:''}</div>
     <div class="names"><div class="city">${city}</div>
     <div class="team${team.length>=10?' long':''}">${team}</div>
     ${sc!=null?`<div class="l3"><span class="scr"><span class="scrn">${sc}</span>${
-       ball?`<span class="pos">${BALL}</span>`:''}</span></div>`
+       ball?`<span class="pos${rz?' rzb'+(rz==='w'?' rzw':''):''}">${BALL}</span>`:''}</span></div>`
               :`<div class="rec mono">${ha}</div>`}</div></button>`;}
 
 /* How the pool picked. Only ever computed for games that have kicked
@@ -3375,7 +3619,13 @@ function renderSlate(){
         line?` &middot; ${esc(line)}`:''}</span></div>`;
     })();
 
-    h+=`<div class="card${L?' locked':''}${jumpHi&&jumpHi.id===g.id&&Date.now()<jumpHi.until?' jumped':''}" data-game="${g.id}">
+    /* v1.44.0 RED ZONE: a solid red ring, a still "Red zone" tag centred
+       on the top line, and the football beside the score of the team
+       with the ball flashing red, white when it sits on your own picked
+       panel and that panel is red. Nothing else on the card changes. */
+    const rzT=(L&&!isFinal(g))?rzOf(g):null;
+    const rzSide=t=>rzT!==t?'':((t===g.a?litA:litH)&&isRedHex(TEAM(t)[2])?'w':'r');
+    h+=`<div class="card${L?' locked':''}${rzT?' rzc':''}${jumpHi&&jumpHi.id===g.id&&Date.now()<jumpHi.until?' jumped':''}" data-game="${g.id}">
       ${isFinal(g)?finHead:`<div class="meta">${
         /* P1 + P5 — THE CLOCK TAKES THE LEFT SLOT, IN PROGRESS THE RIGHT.
            Both slots are `.cd.live`, so the green, the weight and the
@@ -3394,16 +3644,21 @@ function renderSlate(){
         lc
           ? `<span class="cd live lefted">${esc(lc)}</span>`
           : `<span class="mono">${fT(g.show)}</span>`
-        }<span class="net">${g.net}</span>
-        <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>
+        }<span class="net">${g.net}</span>${
+        /* v1.44.0 NO SPREAD ONCE IT KICKS OFF. The line answers a
+           pre-game question; on a live card it was a third number
+           competing with the score. */
+        L?'':`
+        <span class="mono${lineOut(g)?'':' tbd'}">${lineOut(g)?g.sp:'line TBD'}</span>`}${
+        rzT?'<span class="rztag">Red zone</span>':`
         <span class="cd ${cdClass(g.kick-Date.now(),isFinal(g))}${
           lc?' nodot':''}" data-cd="${g.id}">${
-          L?'In progress':'Locks in '+fmt(g.kick-Date.now())}</span></div>`}
+          L?'In progress':'Locks in '+fmt(g.kick-Date.now())}</span>`}</div>`}
       ${/* ONE LOOKUP FOR BOTH SIDES, so the two can never disagree about
             who has it. ballOf() returns null unless the game is being
             played right now. */''}
       <div class="match">${(()=>{const bw=ballOf(g);return `${
-        side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null,bw===g.a)}
+        side(g.a,'l',aCls,aBg,'Away',sc?sc[0]:null,bw===g.a,rzSide(g.a))}
         <div class="gutter"><span>${
           /* v1.42.0 YOUR RANK, IN THE MIDDLE OF THE CARD, once there is one.
              The @ stays until you have both picked and ranked, so the
@@ -3415,9 +3670,9 @@ function renderSlate(){
             ? (L ? `<i class="rkc ${isFinal(g)?'fin':'open'}" aria-label="Rank ${p.weight}">${p.weight}</i>`
                : `<span class="rkt" data-stake="${g.id}" role="button" tabindex="0" aria-label="Rank ${p.weight}. Change it."><i class="rkc open">${p.weight}</i></span>`)
             : '@'}</span></div>
-        ${side(g.h,'r',hCls,hBg,'Home',sc?sc[1]:null,bw===g.h)}`;})()}</div>${stake}${
+        ${side(g.h,'r',hCls,hBg,'Home',sc?sc[1]:null,bw===g.h,rzSide(g.h))}`;})()}</div>${stake}${
         L?consensusBar(g):''}${band}${resbar}</div>`;});
-  $('#slate').innerHTML=h+tbCard();
+  $('#slate').innerHTML=rivalLine()+h+tbCard();
 }
 
 function tbCard(){
@@ -4075,6 +4330,9 @@ function c3PtsSheet(){
       <div class="np-body">${un.map(g=>`<div class="sl g3" data-g="${g.id}" data-st="unpicked"><span>${g.a} @ ${g.h}</span><span class="when">${
         fDay(g.show).slice(0,3)} ${fT(g.show)}</span><button type="button" class="go" data-go="${g.id}">Pick &rsaquo;</button></div>`).join('')}</div></div>`;
   }
+  /* v1.44.0 The week's Weekly Wrap lives here once every game is final. */
+  if(weekDoneN(wk)&&gs.some(g=>pickOf(ME,g.id)))
+    body=`<button type="button" class="wrapbtn" data-wrap="${wk}"><span><b>Weekly Wrap</b>Your Week ${wk}, front page</span><i aria-hidden="true">&rsaquo;</i></button>`+body;
   return {title:`Week ${wk} so far`, body};
 }
 function c3GamesSheet(){
@@ -4090,16 +4348,27 @@ function c3GamesSheet(){
         conf&&p.weight?`${ptsLbl(pay(p.weight,N))} if it holds`:''}</b>`:'<span><span class="tx">No pick</span></span><b></b>'}</div>`;
   });
   return {title:'Games this week',
-    body:`<div class="cnt"><b>${fin}</b> of <b>${gs.length}</b> final</div><div class="slist">${
+    body:`<div class="cnt"><b>${fin}</b> of <b>${gs.length}</b> final</div>${gamesTiles(gs)}<div class="slist">${
       left.length?`<div class="sl sub"><span>Still to play</span><b></b></div>${rows}`
       :'<div class="sl dim"><span>Every game this week is final.</span><b></b></div>'}</div>`};
+}
+/* v1.44.0 One sheet, more kinds: the rivals help, the walkthrough and a
+   player card all reuse #infoSheet, so they close, scroll and refresh
+   exactly like the two sheets that were already here. */
+function infoBuild(kind){
+  if(kind==='games')return c3GamesSheet();
+  if(kind==='rhelp')return rvHelpSheet();
+  if(kind==='rtut')return rvTutSheet();
+  if(String(kind).startsWith('pl:'))return rvPlayerSheet(String(kind).slice(3));
+  return c3PtsSheet();
 }
 let infoOpener=null;
 var infoKind=null, infoHtml='';
 function openInfo(kind){
   if(kind==='pts')ptsOpen=false;
   infoKind=kind;
-  const x=kind==='games'?c3GamesSheet():c3PtsSheet();
+  $('#infoSheet').dataset.kind=String(kind).split(':')[0];
+  const x=infoBuild(kind);
   $('#infoTitle').textContent=x.title;
   $('#infoBody').innerHTML=infoHtml=x.body;
   infoOpener=document.activeElement;
@@ -4120,7 +4389,7 @@ function closeInfo(){
    content actually changed, so a tap is never swallowed by a no-op. */
 function refreshInfo(){
   const sh=$('#infoSheet'); if(!sh||sh.hidden||!infoKind)return;
-  const x=infoKind==='games'?c3GamesSheet():c3PtsSheet();
+  const x=infoBuild(infoKind);
   if(x.body===infoHtml)return;
   const y=sh.scrollTop;
   $('#infoTitle').textContent=x.title;
@@ -4789,13 +5058,23 @@ function renderBoard(){
         :snd ? `<span class="leadtag silver">Runner up</span>` : '')
       : i===0 ? `<span class="leadtag">${
           view==='week'?`Week ${wk} leader`:'Season leader'}</span>` : '';
+    /* v1.44.0 RIVALS. Two tags and a coloured edge are the only things
+       Rivals adds to this table: blue for a player YOU picked, red for a
+       player who picked you. The Season view swaps the rival's sub-line
+       for your head to head record. Everything else is today's row. */
+    const isRv=r.p!==ME&&myRivals().includes(r.p), isHt=r.p!==ME&&hunters().includes(r.p);
+    const rvSub=(view==='season'&&isRv)?`Rivalry &middot; ${rivalRecText(r.p)}`:sub;
+    const pickBtn=(rvPick&&r.p!==ME)?`<button type="button" class="rvmk${isRv?' on':''}" data-rvmk="${esc(r.p)}" aria-pressed="${isRv}"${
+        !isRv&&myRivals().length>=2?' disabled':''}>${isRv?'&#10003; Rival':'+ Rival'}</button>`:'';
     return `<div class="row${r.p===ME?' me':''}${gold?' lead':''}${
-        second?' second hastag':''}${mv?' '+mv:''}">
+        second?' second hastag':''}${mv?' '+mv:''}${isRv?' rv':''}${isHt?' ht':''}"${
+        r.p!==ME?` data-pu="${esc(r.p)}" role="button" tabindex="0"`:''}>
       <div class="rank mono">${i+1}${mv?`<i class="arrow">${
         mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
       <div class="who">
-        <div class="nrow"><b>${NAME(r.p)}</b>${badge}</div>
-        <span class="mono">${sub}</span></div>
+        <div class="nrow"><b>${NAME(r.p)}</b>${badge}${
+          isRv&&!rvPick?'<span class="rvtag b">Rival</span>':''}${isHt?'<span class="rvtag r">Hunting you</span>':''}</div>
+        <span class="mono">${rvSub}</span></div>${pickBtn}
       <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>
       ${tag}</div>`;}).join('')
     /* The week-by-week winners list used to sit here. It is gone: every
@@ -4883,6 +5162,23 @@ $('#meBar').addEventListener('click',()=>{
   const row=document.querySelector('#board .row.me');
   if(row)row.scrollIntoView({behavior:'smooth',block:'center'});
 });
+/* v1.44.0 RIVALS. Tap a name for that player's card; in pick mode, tap
+   the button (or the row) to add or drop them. */
+$('#board').addEventListener('click',e=>{
+  const mk=e.target.closest('[data-rvmk]');
+  if(mk){ if(!mk.disabled){ const u=mk.dataset.rvmk; if(!myRivals().includes(u))rvPickedNow.push(u); toggleRival(u);} return; }
+  const row=e.target.closest('[data-pu]'); if(!row)return;
+  const u=row.dataset.pu;
+  if(rvPick){ const full=!myRivals().includes(u)&&myRivals().length>=2; if(!full){ if(!myRivals().includes(u))rvPickedNow.push(u); toggleRival(u);} else toast('You have two rivals. Remove one first.'); return; }
+  openInfo('pl:'+u);
+});
+$('#board').addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  const row=e.target.closest('[data-pu]'); if(!row||e.target.closest('[data-rvmk]'))return;
+  e.preventDefault(); row.click();
+});
+$('#rvBtn').addEventListener('click',()=>{ if(rvPick){ endRivalPick(); return; } openInfo('rhelp'); });
+$('#rvStrip').addEventListener('click',e=>{ if(e.target.closest('#rvDone'))endRivalPick(); });
 
 /* weekByWeek() lived here and is deliberately gone — see the note where it
    used to be rendered, at the foot of the Season table. Its helpers
@@ -4993,10 +5289,616 @@ function renderArchive(){
    page load until loadSeason() resolves — and drawing a season with no
    games in it is how an empty Grid, a "Season closed" countdown and a
    thrown TypeError all reach the screen underneath the boot cover. */
+/* =====================================================================
+   v1.44.0  RIVALS, THE WEEKLY WRAP, AND THE GAMES BOX TILES
+   =====================================================================
+
+   Everything new in this release lives in this block, so it can be read
+   (and, if it ever has to be, removed) in one place. It reads the same
+   state every other screen reads (WEEKS, PLAYERS, NAMES, STANDINGS,
+   weekSum) and adds exactly two new pieces of data: the `rivals` list on
+   your own membership document, and one per-week read of the revealed
+   picks when a Weekly Wrap is built for a week that is not on screen.
+
+   AUTOMATIC POP-UPS (the wrap, the rivals walkthrough, the "is hunting
+   you" notice) are all switched off by one localStorage key,
+   `ps_autopop = 'off'`. The test harness sets it so two thousand older
+   checks are not suddenly staring at a modal; nothing in the app ever
+   writes it. */
+const autoPopOK=()=>{ try{ return localStorage.getItem('ps_autopop')!=='off'; }catch{ return true; } };
+const lsGet=k=>{ try{ return localStorage.getItem(k); }catch{ return null; } };
+const lsSet=(k,v)=>{ try{ localStorage.setItem(k,v); }catch{} };
+const poolKey=()=>{ try{ return (PS&&PS.poolId)||lsGet('ps_pool')||'p'; }catch{ return 'p'; } };
+
+/* ---------------- RIVALS: data ---------------- */
+/* uid -> up to two uids, straight off each membership document. Filled by
+   applyMembers(), so the live roster listener keeps it current for free:
+   when Dex picks you, his document changes, the listener fires, and your
+   Standings grows a red tag without a reload. */
+let RIVALS={};
+let rvPick=false;           // Standings is in "tap + Rival" mode
+let rvSaving=false;
+function readRivals(members){
+  RIVALS={};
+  (members||[]).forEach(m=>{
+    if(Array.isArray(m.rivals))
+      RIVALS[m.uid]=m.rivals.filter(x=>typeof x==='string'&&x!==m.uid).slice(0,2);
+  });
+}
+/* Only players still in the pool. A removed player's uid can linger in
+   somebody's list; it must not count against their two. */
+const myRivals=()=>(RIVALS[ME]||[]).filter(u=>u!==ME&&PLAYERS.includes(u));
+const hunters=()=>PLAYERS.filter(u=>u!==ME&&(RIVALS[u]||[]).includes(ME));
+
+/* THE RECORD IS SEASON LONG. Every week in which every game is final
+   counts, from week 1, whoever you picked and whenever you picked them.
+   More points that week is a win, equal points is a tie. weekSum() is the
+   same figure the Standings tables use, so the record can never disagree
+   with the table it sits in. */
+/* `ov` lets the Weekly Wrap supply its own figures for the week it is
+   about, which it has just computed from that week's picks, so the stub
+   on the paper can never disagree with the paper while the scoring run
+   is still catching up. */
+function rivalRec(u,ov){
+  let w=0,l=0,t=0; const weeks=[];
+  Object.keys(WEEKS).map(Number).sort((a,b)=>a-b).forEach(wk=>{
+    const gs=WEEKS[wk]||[];
+    if(!gs.length||!gs.every(isFinal))return;
+    const o=ov&&ov.wk===wk;
+    const a=o?ov.a:weekSum(ME,wk).pts, b=o?ov.b:weekSum(u,wk).pts;
+    const r=a>b?'w':a<b?'l':'t';
+    if(r==='w')w++; else if(r==='l')l++; else t++;
+    weeks.push({wk,r,a,b});
+  });
+  return {w,l,t,weeks};
+}
+const recStr=(a,b,t)=>`${a}-${b}${t?'-'+t:''}`;
+function rivalRecText(u){
+  const r=rivalRec(u);
+  if(!r.weeks.length)return 'No finished weeks yet';
+  return r.w>r.l?`You lead ${recStr(r.w,r.l,r.t)}`
+       : r.w<r.l?`${NAME(u)} leads ${recStr(r.l,r.w,r.t)}`
+       : `Tied ${recStr(r.w,r.l,r.t)}`;
+}
+const seasonPts=u=>Object.keys(WEEKS).reduce((s,w)=>s+weekSum(u,w).pts,0);
+
+/* Save, optimistically. The tag appears the moment you tap; if the write
+   is refused the list goes back to what the server has and you are told. */
+async function setRivals(list){
+  const was=(RIVALS[ME]||[]).slice();
+  RIVALS[ME]=list.slice(0,2);
+  render(); refreshInfo();
+  rvSaving=true;
+  try{ await PS.setRivals(RIVALS[ME]); }
+  catch(e){
+    RIVALS[ME]=was; render(); refreshInfo();
+    toast('That rival did not save. Check your connection and try again.','fail');
+  }finally{ rvSaving=false; }
+}
+function toggleRival(u){
+  if(!u||u===ME||!PLAYERS.includes(u))return;
+  const cur=myRivals();
+  if(cur.includes(u))return setRivals(cur.filter(x=>x!==u));
+  if(cur.length>=2){ toast('You have two rivals. Remove one first.'); return; }
+  setRivals(cur.concat(u));
+}
+function swapRival(out,inn){
+  const cur=myRivals(); const i=cur.indexOf(out); if(i<0||cur.includes(inn))return;
+  cur[i]=inn; setRivals(cur);
+}
+
+/* ---------------- RIVALS: Standings ---------------- */
+let rvPickedNow=[];          // who was added during this pick session
+/* The "heads up" line after picking. Lee: it belongs on Standings and it
+   goes when you leave it, so it lives in the strip, not in a toast. */
+let rvNote='', rvNoteT=null;
+function setRvNote(t){ rvNote=t; clearTimeout(rvNoteT); renderRivalStrip();
+  if(t)rvNoteT=setTimeout(()=>{ rvNote=''; renderRivalStrip(); },6000); }
+function startRivalPick(){
+  closeInfo();
+  if(document.body.dataset.tab!=='standings'){ const t=document.querySelector('.tab[data-tab="standings"]'); if(t)t.click(); }
+  rvPick=true; rvPickedNow=[];
+  renderBoard(); renderRivalStrip();
+  window.scrollTo({top:0,behavior:calmMotion()?'auto':'smooth'});
+}
+function endRivalPick(){
+  rvPick=false;
+  const added=rvPickedNow.filter(u=>myRivals().includes(u));
+  rvPickedNow=[];
+  renderBoard(); renderRivalStrip();
+  if(added.length){
+    const names=added.map(u=>NAMES[u]||'Player');
+    const me=NAMES[ME]||'You';
+    setRvNote(`${names.join(' and ')} ${added.length>1?'each get':'gets'} a heads up: "${me} is hunting you."`);
+  }
+}
+function renderRivalStrip(){
+  const el=$('#rvStrip'), b=$('#rvBtn'); if(!el)return;
+  if(b){ const n=myRivals().length; b.textContent=n?'Rivals':'+ Rival';
+    b.setAttribute('aria-label',n?'Rivals. How they work':'Pick a rival'); }
+  if(!rvPick){ el.innerHTML=rvNote?`<div class="rvnote" role="status">${esc(rvNote)}</div>`:''; return; }
+  const n=myRivals().length;
+  el.innerHTML=`<div class="rvstrip"><div><b>Tap + Rival on up to two players</b><span>${n} of 2 picked</span></div>
+    <button type="button" class="rvdone" id="rvDone">Done</button></div>`;
+}
+/* The Season table is where a rival's record lives, and the table is
+   rebuilt on every tick, so the strip is drawn by renderBoard's caller. */
+
+/* ---------------- RIVALS: sheets (they reuse #infoSheet) ---------------- */
+const RV_HELP=[
+  ['What is a rival?','A player you pick to go head to head with all season. Up to two.'],
+  ['What does Hunting you mean?','That player picked you as their rival. You do not have to pick them back.'],
+  ['How do I win?','Score more points than them in a week. Every finished week counts, from week 1.'],
+  ['Does it change my score?','No. Bragging rights only. Points and standings stay exactly the same.'],
+  ['Can I change it?','Any time. Your record against a player is always the whole season.'],
+  ['Who can see it?','Everyone. The player you pick sees a red Hunting you tag by your name.']];
+function rvHelpSheet(){
+  return {title:'How rivals work',
+    body:`<div class="rvqa">${RV_HELP.map(q=>`<div><b>${q[0]}</b><span>${q[1]}</span></div>`).join('')}</div>${
+      myRivals().length<2?'<button type="button" class="rvcta" data-rvgo="pick">Pick my rival</button>':''}`};
+}
+const RV_TUT=[
+  ['Pick a rival','Choose up to two players to go head to head with all season. Tap + Rival next to Season, then pick.'],
+  ['See who is hunting you','When someone picks you, a red Hunting you tag appears by their name. Pick them back if you want it mutual.'],
+  ['Win the week, win the matchup','More points than them that week is a win. Your record builds all season, and Picks shows if you are ahead right now. It never changes your score.']];
+let rvTutStep=0;
+function rvTutSheet(){
+  const c=RV_TUT[rvTutStep];
+  return {title:c[0],
+    body:`<div class="rvkick">New: Rivals &middot; ${rvTutStep+1} of 3</div><p class="rvp">${c[1]}</p>
+      <div class="rvdots">${[0,1,2].map(i=>`<i class="${i===rvTutStep?'on':''}"></i>`).join('')}</div>
+      <button type="button" class="rvcta" data-rvgo="${rvTutStep<2?'next':'pick'}">${rvTutStep<2?'Next':'Pick my rival'}</button>
+      <button type="button" class="rvlater" data-rvgo="later">Maybe later</button>`};
+}
+function rvPlayerSheet(u){
+  if(!PLAYERS.includes(u))return {title:'Player',body:'<p class="rvp">That player is no longer in the pool.</p>'};
+  const isR=myRivals().includes(u), isH=hunters().includes(u), nm=NAME(u);
+  if(isR){
+    const r=rivalRec(u), wk=state.week, gs=WEEKS[wk]||[];
+    const lead=!r.weeks.length?'No finished weeks yet':r.w>r.l?`You lead ${recStr(r.w,r.l,r.t)}`:r.w<r.l?`${nm} leads ${recStr(r.l,r.w,r.t)}`:`Tied ${recStr(r.w,r.l,r.t)}`;
+    const live=gs.some(g=>isLive(g)||isFinal(g))&&!gs.every(isFinal);
+    const d=weekSum(ME,wk).pts-weekSum(u,wk).pts;
+    return {title:`You vs ${nm}`,
+      body:`<div class="rvkick">${isH?'Your rival &middot; Hunting you':'Your rival'}</div>
+      <div class="rvvs"><div><b>${r.w}</b><small>You</small></div><div class="mid">Season record<em>${lead}</em></div><div><b>${r.l}</b><small>${nm}</small></div></div>
+      <div class="rvtot"><div><small>Your season pts</small><b>${seasonPts(ME)}</b></div><div><small>${nm} season pts</small><b>${seasonPts(u)}</b></div></div>
+      ${r.weeks.length?`<div class="rvwkl"><span>Week</span><span><i class="w"></i>You won<i class="l"></i>${nm} won${r.t?'<i class="t"></i>Tie':''}</span></div>
+      <div class="rvwks">${r.weeks.map(x=>`<span class="${x.r}" title="Week ${x.wk}: ${x.a} to ${x.b}">${x.wk}</span>`).join('')}</div>`:''}
+      ${live?`<div class="rvlive"><span>Week ${wk}, if scores hold</span><em class="${d>0?'up':d<0?'dn':''}">${d>0?`You by ${d}`:d<0?`${nm} by ${-d}`:'Level'}</em></div>`:''}
+      <button type="button" class="rvline" data-rvgo="rm" data-u="${esc(u)}">Remove rival</button>`};
+  }
+  const cur=myRivals();
+  const rows=[...PLAYERS].map(p=>({p,pts:seasonPts(p)})).sort((a,b)=>(b.pts-a.pts)||String(NAMES[a.p]||'').localeCompare(String(NAMES[b.p]||'')));
+  const pos=rows.findIndex(r=>r.p===u)+1;
+  return {title:nm,
+    body:`<div class="rvkick">Player${isH?' &middot; Hunting you':''}</div>
+      <p class="rvp">${ordinal(pos)} for the season &middot; ${seasonPts(u)} pts${isH?`<br>${nm} picked you as a rival.`:''}</p>
+      ${cur.length<2?`<button type="button" class="rvcta blue" data-rvgo="add" data-u="${esc(u)}">${isH?'Make rival back':'Make rival'}</button>`
+        :`<p class="rvp mute">You have two rivals. Swap one out:</p>${cur.map(o=>`<button type="button" class="rvline" data-rvgo="swap" data-out="${esc(o)}" data-u="${esc(u)}">Swap for ${NAME(o)}</button>`).join('')}`}`};
+}
+
+/* ---------------- RIVALS: the line on Picks ---------------- */
+function rivalLine(){
+  const rv=myRivals(), wk=state.week, gs=WEEKS[wk]||[];
+  if(!rv.length||!gs.some(g=>isLive(g)||isFinal(g)))return '';
+  const done=gs.every(isFinal), me=weekSum(ME,wk).pts;
+  const bits=rv.map(u=>{const d=me-weekSum(u,wk).pts;
+    return d>0?`Beating ${NAME(u)} by <em class="up">${d}</em>`:d<0?`Behind ${NAME(u)} by <em class="dn">${-d}</em>`:`Level with ${NAME(u)}`;});
+  return `<button type="button" class="rvlivebar" data-rvu="${esc(rv[0])}"><span><i>${done?`Your rivals &middot; week ${wk} final`:'Your rivals &middot; live'}</i>${bits.join(' &middot; ')}</span><b aria-hidden="true">&rsaquo;</b></button>`;
+}
+
+/* ---------------- RIVALS: first visit and the heads up ---------------- */
+function maybeRivalIntro(){
+  if(!autoPopOK()||DEMO)return;
+  const k='ps_rv_intro_'+poolKey();
+  if(lsGet(k))return;
+  lsSet(k,'1');
+  if(myRivals().length)return;
+  rvTutStep=0; openInfo('rtut');
+}
+let huntChecked=false;
+function checkHunters(){
+  if(DEMO||!autoPopOK())return;
+  const k='ps_hunt_seen_'+poolKey();
+  let seen=[]; try{ seen=JSON.parse(lsGet(k)||'[]'); }catch{}
+  const now=hunters(), fresh=now.filter(u=>!seen.includes(u));
+  lsSet(k,JSON.stringify(now));
+  if(!fresh.length)return;
+  const n=fresh.map(u=>NAMES[u]||'Player');
+  toast(fresh.length===1?`${n[0]} is hunting you. They picked you as a rival.`
+    :`${n.slice(0,-1).join(', ')} and ${n[n.length-1]} are hunting you.`);
+}
+
+/* =====================================================================
+   THE GAMES BOX: tiles for every live and final game, three across.
+   Tapping one lands on that game's card on Picks, outlined in gold.
+   ===================================================================== */
+function gTile(g){
+  const F=isFinal(g), L=!F&&isLive(g), sc=scoreOf(g)||[null,null];
+  const a=sc[0], h=sc[1], hasSc=a!=null&&h!=null;
+  const aT=hasSc&&+a<+h, hT=hasSc&&+h<+a;
+  const p=pickOf(ME,g.id), N=nGames(state.week), conf=state.mode==='confidence';
+  const v=p?(conf?pay(p.weight,N):1):0;
+  const w=F?result(g):(hasSc?(+a>+h?g.a:+h>+a?g.h:null):null);
+  let pk='';
+  if(p&&(F||L)){
+    if(!w)pk=`<span class="gtpk e">0<em>of</em>${v}</span>`;
+    else pk=p.winner===w?`<span class="gtpk y${L?' l':''}">+${v}</span>`:`<span class="gtpk n${L?' l':''}">0<em>of</em>${v}</span>`;
+  }
+  const ball=L?ballOf(g):null, rz=L?rzOf(g):null;
+  const row=(t,s,tr)=>`<div class="gtr${tr?' tr':''}"><span class="gtab${p&&p.winner===t?' mine':''}">${esc(t)}</span>${ball===t?BALL:''}<b>${s==null?'':s}</b></div>`;
+  const foot=L?`<div class="gtf live">${esc(liveClock(g)||'Live')}${pk}</div>`:`<div class="gtf">Final${pk}</div>`;
+  const lab=`${g.a} ${a??''}, ${g.h} ${h??''}, ${F?'final':'live'}. Go to the pick card.`;
+  const dim=c=>`color-mix(in srgb,${c} 40%,#0B0C0E)`;
+  return `<button type="button" class="gt${F?' fin':''}${rz?' rz':''}" data-go="${g.id}" aria-label="${esc(lab)}"
+    style="--ca:${aT?dim(TEAM(g.a)[2]):TEAM(g.a)[2]};--ch:${hT?dim(TEAM(g.h)[2]):TEAM(g.h)[2]}">
+    <div class="gtc">${row(g.a,a,aT)}${row(g.h,h,hT)}</div>${foot}</button>`;
+}
+function gamesTiles(gs){
+  const live=gs.filter(g=>isLive(g)&&!isFinal(g)), fin=gs.filter(isFinal);
+  if(!live.length&&!fin.length)return '';
+  let t='<div class="gts">';
+  if(live.length)t+=`<div class="gth">Live<span>${live.length} game${live.length===1?'':'s'}</span></div>`+live.map(gTile).join('');
+  if(fin.length)t+=`<div class="gth">Final<span>${fin.length} game${fin.length===1?'':'s'}</span></div>`+fin.slice().reverse().map(gTile).join('');
+  return t+'</div><div class="gttip">The badge is your points: green when your pick is ahead, red shows what is on the line. Tap a game to jump to its card.</div>';
+}
+
+/* =====================================================================
+   THE WEEKLY WRAP
+   =====================================================================
+   One newspaper card per player per week, built on the phone from the
+   same figures Standings and the Grid use. It appears once, on the first
+   open after the last game of the week is final, for every player who
+   made a pick that week, and stays one tap away in the week's points box.
+
+   NOTHING HERE IS WRITTEN ANYWHERE. "Seen" is a localStorage flag per
+   pool and week, so a second phone shows it once more, which is fine. */
+const WRAP_CACHE={};
+const wrapSeenKey=wk=>`ps_wrap_${poolKey()}_${(PS&&PS.SEASON)||''}_w${wk}`;
+const weekDoneN=wk=>{const gs=WEEKS[wk]||[]; return gs.length>0&&gs.every(isFinal);};
+function lastDoneWeek(){
+  const ws=Object.keys(WEEKS).map(Number).filter(weekDoneN).sort((a,b)=>a-b);
+  return ws.length?ws[ws.length-1]:null;
+}
+/* Picks for every player for one week: from memory when that week is
+   the one on screen, otherwise one read. */
+async function wrapPicks(wk){
+  if(wk===state.week){
+    const out={}; PLAYERS.forEach(p=>{ out[p]={}; (WEEKS[wk]||[]).forEach(g=>{const k=pickOf(p,g.id); if(k)out[p][g.id]=k;}); });
+    return out;
+  }
+  const rows=await PS.getRevealed(wk);
+  const out={}; PLAYERS.forEach(p=>out[p]={});
+  (rows||[]).forEach(r=>{ (out[r.uid]||=({}))[r.gameId]={winner:r.winner,weight:r.weight}; });
+  return out;
+}
+const hashS=s=>{let h=2166136261; for(const c of String(s)){h^=c.charCodeAt(0); h=Math.imul(h,16777619);} return h>>>0;};
+const pickV=(arr,seed)=>arr[hashS(seed)%arr.length];
+const nick=t=>(TEAM(t)||[])[1]||t;
+const fill=(s,o)=>s.replace(/\{(\w+)\}/g,(_,k)=>o[k]!=null?o[k]:'');
+
+/* THE WORDS. Each moment has several ways to say it, chosen by a hash of
+   the player and the week, so two people comparing wraps in the group
+   text rarely read the same line, and reopening shows the same one. */
+const WR={
+  best:{lab:['Called it','Money pick','Banker','Top shelf','Cashed in'],
+    txt:['Put the {T} on top and they never blinked',
+         'Trusted the {T} with {v} and got every point back',
+         '{v} points on the {T}, delivered with a bow',
+         'Leaned on the {T} for {v} and they held the weight',
+         'The {T} carried your biggest number home']},
+  upset:{lab:['Nobody else saw it','Against the grain','Lonely and right','Called the upset'],
+    txt:['Took the {T} while {k} of {n} went the other way',
+         'Only {m} of {n} backed the {T}. You were one of them',
+         'The pool zigged, you took the {T}, and the {T} won',
+         '{k} of {n} faded the {T}. Their loss, your {v}']},
+  quiet:{lab:['Quiet money','Sleeper hit','Steady hand','Kept rolling'],
+    txt:['Slid the {T} in at {v} and they paid in full',
+         'The {T} did their job for {v} without a fuss',
+         '{v} quiet points from the {T}, no drama required',
+         'The {T} kept the week from getting away from you']},
+  miss:{lab:['The big miss','Ouch','The one that got away','Bad beat','Monday heartbreak'],
+    txt:['{v} points on the {T}, and the {T} never showed up',
+         'The {T} took your {v} and left without a word',
+         '{v} on the {T}. That one will sting until Thursday',
+         'Trusted the {T} with {v}. Trust is earned, apparently',
+         'Left {v} points on the {T} sideline']},
+  missWon:{lab:['Cost of doing business'],
+    txt:['The {T} left with {v} of yours and you won anyway',
+         'Even a winner drops one. The {T} cost {v}']}
+};
+const DECK={
+  win:['{pts} points and nobody did better. The {B} did the heavy lifting.',
+       'Top of the week with {pts}. Take a bow, then get Week {nx} in.',
+       '{pts} points, first place, and bragging rights until Thursday.'],
+  winTie:['{pts} points and a share of the week. Split the trophy, keep the bragging rights.',
+          'Tied for the top with {pts}. Somebody has to buy the wings.',
+          '{pts} points and a shared crown. Nobody blinked first.'],
+  rise:['Up {mv} spots in one week. The {B} paid the rent.',
+        'Climbed {mv} places on {pts} points. The view is better up here.',
+        '{pts} points and a {mv} spot jump. Somebody check the tape.'],
+  fall:['Down {mv} spots. The {W} owe you an apology.',
+        '{pts} points and a {mv} spot slide. Week {nx} is a fresh sheet.',
+        'A {mv} spot drop, mostly on the {W}. Shake it off.'],
+  up:['{pts} points and a small step up. Momentum counts.','Nudged up to {sp} on {pts} points.',
+      'A quiet climb to {sp}. The {B} did their part.'],
+  down:['{pts} points, a small slip to {sp}. Nothing a good Sunday cannot fix.',
+        'Down a spot or two on {pts}. The {W} have some explaining to do.'],
+  hold:['{pts} points, {wp} for the week, holding at {sp}.','{c} of {N} right and {pts} in the bank.',
+        'Same spot, {sp}, with {pts} more on the board.'],
+  first:['{pts} points to open the season. The table starts here.',
+         'Week 1 is in the books with {pts}. Plenty of season left.',
+         '{c} of {N} right to start. Every run starts somewhere.']
+};
+
+async function buildWrap(wk){
+  if(WRAP_CACHE[wk])return WRAP_CACHE[wk];
+  const gs=[...(WEEKS[wk]||[])].sort((a,b)=>a.kick-b.kick), N=gs.length;
+  if(!N||!weekDoneN(wk))return null;
+  const P=await wrapPicks(wk);
+  const mine=P[ME]||{};
+  if(!Object.keys(mine).length)return null;            // no picks, no wrap
+  let mode=state.mode;
+  if(wk!==state.week){ try{ mode=await PS.getScoringMode(wk); }catch{} }
+  const conf=mode==='confidence';
+  const val=k=>conf?pay(k.weight,N):1;
+  const ptsOf=u=>gs.reduce((s,g)=>{const k=(P[u]||{})[g.id]; return s+(k&&k.winner===result(g)?val(k):0);},0);
+  const wkPts={}; PLAYERS.forEach(u=>wkPts[u]=ptsOf(u));
+  const players=PLAYERS.length;
+  const sortBy=f=>[...PLAYERS].sort((a,b)=>(f(b)-f(a))||String(NAMES[a]||'').localeCompare(String(NAMES[b]||'')));
+  const wkOrder=sortBy(u=>wkPts[u]);
+  const best=Math.max(...PLAYERS.map(u=>wkPts[u]));
+  const winners=PLAYERS.filter(u=>wkPts[u]===best&&best>0);
+  const wkPlace=winners.includes(ME)?1:(1+PLAYERS.filter(u=>wkPts[u]>wkPts[ME]).length);
+  /* Season through this week, and through the week before, for the move. */
+  const thru=(u,last)=>Object.keys(WEEKS).map(Number).filter(w=>w<=last).reduce((s,w)=>s+(w===wk?wkPts[u]:weekSum(u,w).pts),0);
+  const before=sortBy(u=>thru(u,wk-1)), after=sortBy(u=>thru(u,wk));
+  const sNow=after.indexOf(ME)+1, sWas=before.indexOf(ME)+1;
+  const firstWeek=!Object.keys(WEEKS).map(Number).some(w=>w<wk&&weekDoneN(w));
+  const mv=firstWeek?0:sWas-sNow;
+  const myPts=wkPts[ME];
+  const correct=gs.filter(g=>{const k=mine[g.id]; return k&&k.winner===result(g);}).length;
+  const avg=Math.round(PLAYERS.reduce((s,u)=>s+wkPts[u],0)/Math.max(1,players));
+  /* The ladder: every pick, biggest first. */
+  const lad=gs.filter(g=>mine[g.id]).map(g=>{const k=mine[g.id]; return {g,t:k.winner,v:val(k),ok:k.winner===result(g),tie:!result(g)};})
+    .sort((a,b)=>b.v-a.v||a.t.localeCompare(b.t));
+  const share=(g,t)=>{let on=0,all=0; PLAYERS.forEach(u=>{const k=(P[u]||{})[g.id]; if(k){all++; if(k.winner===t)on++;}}); return {on,all};};
+  const seed=`${ME}|${wk}`;
+  const usedL=new Set(), usedT=new Set();
+  /* Never the same label or the same sentence twice on one paper. */
+  /* The start point is YOUR place in the roster plus a per-week hash, so
+     players next to each other never open on the same sentence, and the
+     same player reads something new each week. */
+  const meIdx=Math.max(0,PLAYERS.indexOf(ME));
+  const pickU=(arr,sd,used)=>{let i=(meIdx+hashS(sd))%arr.length; for(let k=0;k<arr.length&&used.has(arr[i]);k++)i=(i+1)%arr.length; used.add(arr[i]); return arr[i];};
+  const goodWeek=()=>wkPlace===1||myPts>=avg;
+  const won=lad.filter(x=>x.ok), lost=lad.filter(x=>!x.ok&&!x.tie);
+  const moments=[], used=new Set();
+  const say=(cat,x,extra)=>{const c=WR[cat]; const o={T:nick(x.t),v:x.v,...(extra||{})};
+    const labs=cat==='quiet'?(goodWeek()?c.lab.slice(0,4):['Kept the lights on','Life raft','Lifeline','Small mercies']):c.lab;
+    return {lab:pickU(labs,seed+cat+'l',usedL),txt:fill(pickU(c.txt,seed+cat+x.t,usedT),o),t:x.t,v:x.v,ok:x.ok};};
+  if(won[0]){moments.push(say('best',won[0])); used.add(won[0].t);}
+  const up=won.filter(x=>!used.has(x.t)).map(x=>({x,s:share(x.g,x.t)})).filter(o=>o.s.all>=3&&o.s.on/o.s.all<=0.4)
+    .sort((a,b)=>a.s.on/a.s.all-b.s.on/b.s.all)[0];
+  if(up){moments.push(say('upset',up.x,{k:up.s.all-up.s.on,m:up.s.on,n:up.s.all})); used.add(up.x.t);}
+  if(lost[0]){moments.push(say(wkPlace===1?'missWon':'miss',lost[0])); used.add(lost[0].t);}
+  for(const x of won){ if(moments.length>=3)break; if(!used.has(x.t)){moments.push(say('quiet',x)); used.add(x.t);} }
+  for(const x of lost){ if(moments.length>=3)break; if(!used.has(x.t)){moments.push(say('miss',x)); used.add(x.t);} }
+  moments.sort((a,b)=>(b.ok-a.ok)||(b.v-a.v));
+  /* Headline and deck. */
+  const nm=NAMES[ME]||'You', bestT=won[0]?nick(won[0].t):'', worstT=lost[0]?nick(lost[0].t):'';
+  let kind,kick,hl;
+  if(firstWeek&&wkPlace!==1){kind='first';kick='Season opener';hl=`${nm} opens at ${ordinal(sNow)}`;}
+  else if(wkPlace===1){kind=winners.length>1?'winTie':'win';kick='Week winner';hl=winners.length>1?`${nm} shares Week ${wk}`:`${nm} takes Week ${wk}`;}
+  else if(mv>=3){kind='rise';kick='On the rise';hl=`${nm} climbs ${mv} spots`;}
+  else if(mv<=-3){kind='fall';kick='Tough week';hl=`${nm} slips to ${ordinal(sNow)}`;}
+  else if(mv>0){kind='up';kick='Moving up';hl=`${nm} moves up to ${ordinal(sNow)}`;}
+  else if(mv<0){kind='down';kick='Small slip';hl=`${nm} dips to ${ordinal(sNow)}`;}
+  else {kind='hold';kick='Holding steady';hl=`${nm} holds at ${ordinal(sNow)}`;}
+  const deck=fill(pickU(DECK[kind],seed+'deck',new Set()),{pts:myPts,B:bestT||'defense',W:worstT||'refs',mv:Math.abs(mv),nx:wk+1,sp:ordinal(sNow),wp:ordinal(wkPlace),c:correct,N});
+  /* Monday night: the last game of the week. */
+  const mg=gs[gs.length-1], msc=scoreOf(mg)||[null,null], mk=mine[mg.id];
+  const mnf={a:mg.a,h:mg.h,sa:msc[0],sh:msc[1],pick:mk?mk.winner:null,v:mk?val(mk):0,ok:mk?mk.winner===result(mg):false};
+  /* The stub: your first rival, or the week's winner when you have none. */
+  const rv=myRivals()[0];
+  let stub;
+  if(rv){
+    const r=rivalRec(rv,{wk,a:myPts,b:wkPts[rv]??0});
+    stub={kind:'rival',name:NAMES[rv]||'Player',me:myPts,them:wkPts[rv]??0,
+      lead:r.w>r.l?'Lead':r.w<r.l?'Trail':'Tied',rec:recStr(Math.max(r.w,r.l),Math.min(r.w,r.l),r.t)};
+  }else{
+    stub={kind:'winner',name:winners.length>1?`${winners.length} tied`:(NAMES[winners[0]]||'Nobody'),pts:best,avg};
+  }
+  const W={wk,N,conf,name:nm,players,myPts,correct,avg,sNow,sWas,mv,wkPlace,kind,kick,hl,deck,lad,moments,mnf,stub,
+    date:new Date(Math.max(...gs.map(g=>g.kick))+4*3600e3)};
+  WRAP_CACHE[wk]=W;
+  return W;
+}
+
+const chipH=t=>`<span class="wchip" style="background:${TEAM(t)[2]}">${esc(t)}</span>`;
+function wrapCardHTML(W){
+  const dl=W.date.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric',year:'numeric'});
+  const seal=W.wkPlace===1
+    ? `<div class="seal gold"><div><span>Week ${W.wk}</span><b>1ST</b><em>Place</em></div></div>`
+    : `<div class="seal ink"><div><em class="${W.mv>0?'up':W.mv<0?'dn':''}">${W.mv>0?'&#9650; '+W.mv:W.mv<0?'&#9660; '+(-W.mv):'&ndash;'}</em><b>${ordinal(W.wkPlace).toUpperCase()}</b><span>Place</span></div></div>`;
+  const lad=W.lad.map(x=>`<div class="tk${x.ok?'':x.tie?' tie':' x'}" style="background:${TEAM(x.t)[2]}"><b>${esc(x.t)}</b><i>${x.v}</i></div>`).join('');
+  const mo=W.moments.map(m=>`<div class="mo"><small>${esc(m.lab)}</small>${chipH(m.t)}<span>${esc(m.txt)}</span><b class="${m.ok?'up':'dn'}">${m.ok?'+'+m.v:'<s>'+m.v+'</s>'}</b></div>`).join('');
+  const M=W.mnf, aLo=M.sa!=null&&+M.sa<+M.sh, hLo=M.sa!=null&&+M.sh<+M.sa;
+  const st=W.stub;
+  const stub=st.kind==='rival'
+    ? `<div class="lb">Rivalry<b>vs ${esc(st.name)}</b></div><div class="vs"><span class="${st.me>=st.them?'':'dim'}">${st.me}</span><small>to</small><span class="${st.me>=st.them?'dim':''}">${st.them}</span></div><div class="rec">${st.lead}<b>${st.rec}</b></div>`
+    : `<div class="lb">Week winner<b>${esc(st.name)}</b></div><div class="vs"><span>${st.pts}</span><small>pts</small></div><div class="rec">Pool avg<b>${st.avg}</b></div>`;
+  return `<div class="np"><div class="ear">Week<b>${W.wk}</b></div><div class="title"><small>Weekly NFL Pick&rsquo;em</small><b>Weekly Wrap</b></div><div class="ear">Season<b>${esc((PS&&PS.SEASON)||'')}</b></div></div>
+    <div class="rule2"></div>
+    <div class="dl"><span>${esc(dl)}</span><span>${esc(W.name)}&rsquo;s edition</span><span>${W.players} players</span></div>
+    <div class="hz"><div><div class="kick">${esc(W.kick)}</div><div class="hl">${esc(W.hl)}</div><div class="deck">${esc(W.deck)}</div></div>${seal}</div>
+    <div class="box"><div><small>Points</small><b>${W.myPts}</b></div><div><small>Correct</small><b>${W.correct}/${W.N}</b></div><div><small>Pool avg</small><b>${W.avg}</b></div><div><small>Season rank</small><b>${ordinal(W.sNow)}</b></div></div>
+    <div class="sh">Your ${W.lad.length} games, ${W.conf?'in confidence order':'biggest first'}<span>${W.conf?`rank 1 pays ${W.N}`:'1 point each'}</span></div>
+    <div class="lad" style="grid-template-columns:repeat(${Math.max(W.lad.length,1)},1fr)">${lad}</div>
+    <div class="lower"><div>${mo}</div><div class="mnf"><div class="h">Monday night</div>
+      <div class="t${aLo?' lo':''}">${chipH(M.a)}<b>${M.sa??''}</b></div><div class="t${hLo?' lo':''}">${chipH(M.h)}<b>${M.sh??''}</b></div>
+      <div class="y"><span>${M.pick?`You: ${esc(M.pick)}`:'No pick'}</span><b class="${M.ok?'up':'dn'}">${M.pick?(M.ok?'+'+M.v:'<s>'+M.v+'</s>'):''}</b></div></div></div>
+    <div class="stub">${stub}</div>`;
+}
+
+let wrapOpenWk=null;
+async function openWrap(wk,auto){
+  if(wrapOpenWk!=null)return;
+  let W=null;
+  try{ W=await buildWrap(wk); }catch(e){ if(!auto)toast('The Weekly Wrap could not load. Try again in a moment.','fail'); return; }
+  if(!W){ if(!auto)toast('No Weekly Wrap for that week: there were no picks to write up.'); return; }
+  loadSerif();
+  closeInfo();
+  wrapOpenWk=wk;
+  const ov=$('#wrapOv'); if(!ov)return;
+  $('#wrapEye').textContent=`Week ${wk} is in the books`;
+  $('#wrapLater').textContent=`Find it any time under the Week ${wk} box`;
+  $('#wrapCard').innerHTML=wrapCardHTML(W);
+  ov.hidden=false; document.body.style.overflow='hidden';
+  sizeWrap();
+  void ov.offsetWidth;
+  requestAnimationFrame(()=>{ ov.classList.add('on'); try{ $('#wrapClose').focus({preventScroll:true}); }catch{} });
+  lsSet(wrapSeenKey(wk),'1');
+}
+function closeWrap(){
+  const ov=$('#wrapOv'); if(!ov||ov.hidden)return;
+  ov.classList.remove('on'); ov.hidden=true; document.body.style.overflow=''; wrapOpenWk=null;
+}
+function sizeWrap(){
+  const s=$('#wrapSlot'), c=$('#wrapCard'); if(!s||!c)return;
+  c.style.transform=`scale(${s.clientWidth/420})`;
+}
+addEventListener('resize',()=>{ if(wrapOpenWk!=null)sizeWrap(); });
+let serifLoaded=false;
+function loadSerif(){
+  if(serifLoaded)return; serifLoaded=true;
+  try{ const l=document.createElement('link'); l.rel='stylesheet';
+    l.href='https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@1,8..60,500&display=swap';
+    document.head.appendChild(l); }catch{}
+}
+/* Once per week, on the first open after it is finished. Waits for
+   Standings (the season figures come from it) and never interrupts a
+   sheet that is already open. */
+let wrapTried=false;
+async function maybeAutoWrap(){
+  if(wrapTried||DEMO||!autoPopOK())return;
+  const wk=lastDoneWeek(); if(wk==null)return;
+  if(lsGet(wrapSeenKey(wk)))return;
+  /* Only a fresh week. A player coming back after a month away gets the
+     last wrap from the box, not a pop-up about something long gone. */
+  const lastKick=Math.max(...(WEEKS[wk]||[]).map(g=>g.kick));
+  if(Date.now()-lastKick>6*86400e3)return;
+  if(!standingsReady)return;
+  if(document.querySelector('.sheet.on')||!$('#infoSheet').hidden)return;
+  wrapTried=true;
+  setTimeout(()=>openWrap(wk,true),700);
+}
+
+/* SHARE AS A PICTURE. Drawn on a canvas from the same W object, at
+   1080 x 1350, because a screenshot of a DOM node is not something a
+   browser will hand to the share sheet. Falls back to a download where
+   the share sheet cannot take files. */
+function wrapCanvas(W){
+  const S=1080/420, cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;
+  const x=cv.getContext('2d'); x.scale(S,S);
+  const ink='#16171A', ink2='#3B3A36', ink3='#7A756B', paper='#F5EFE2', red='#B3362B', grn='#2C6B24';
+  const F=(w,px,fam)=>`${w} ${px}px ${fam}`;
+  const OS="'Oswald','Arial Narrow',sans-serif", AR="'Archivo',system-ui,sans-serif", MO="'Roboto','Roboto Mono',monospace", SE="italic 500 12.5px 'Source Serif 4',Georgia,serif";
+  x.fillStyle=paper; x.fillRect(0,0,420,525);
+  const txt=(s,X,Y,f,c,al)=>{x.font=f; x.fillStyle=c||ink; x.textAlign=al||'left'; x.fillText(s,X,Y);};
+  const sp=(s,n)=>String(s).split('').join(' '.repeat(n||1));
+  // nameplate
+  x.strokeStyle=ink; x.lineWidth=1;
+  x.strokeRect(20,16,62,32); x.strokeRect(338,16,62,32);
+  txt('WEEK',51,26,F(700,7,AR),ink2,'center'); txt(String(W.wk),51,43,F(600,15,OS),ink,'center');
+  txt('SEASON',369,26,F(700,7,AR),ink2,'center'); txt(String((PS&&PS.SEASON)||''),369,43,F(600,15,OS),ink,'center');
+  txt(sp('Weekly NFL Pick’em',2),210,24,F(800,7,AR),ink2,'center');
+  txt('WEEKLY WRAP',210,49,F(700,29,OS),ink,'center');
+  x.fillStyle=ink; x.fillRect(20,55,380,2); x.fillRect(20,59,380,1);
+  const dl=W.date.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric',year:'numeric'}).toUpperCase();
+  txt(dl,20,68,F(500,7.6,MO),ink2); txt((W.name+'’s edition').toUpperCase(),210,68,F(500,7.6,MO),ink2,'center'); txt(`${W.players} PLAYERS`,400,68,F(500,7.6,MO),ink2,'right');
+  x.fillRect(20,72,380,1);
+  // headline, wrapped to 290px
+  txt(W.kick.toUpperCase(),20,90,F(800,7.5,AR),'#C8342A');
+  x.font=F(700,34,OS); const words=W.hl.toUpperCase().split(' '); let line='', y=122, lines=[];
+  words.forEach(w=>{const t=line?line+' '+w:w; if(x.measureText(t).width>290&&line){lines.push(line);line=w;} else line=t;}); lines.push(line);
+  lines.slice(0,2).forEach((l,i)=>txt(l,20,122+i*31,F(700,34,OS),ink));
+  y=122+(Math.min(lines.length,2)-1)*31+20;
+  x.font=SE; const dw=W.deck.split(' '); line=''; let dy=y;
+  dw.forEach(w=>{const t=line?line+' '+w:w; if(x.measureText(t).width>290&&line){txt(line,20,dy,SE,ink2);dy+=16;line=w;} else line=t;}); txt(line,20,dy,SE,ink2);
+  // seal
+  x.save(); x.translate(362,112); x.rotate(-7*Math.PI/180);
+  if(W.wkPlace===1){const g=x.createRadialGradient(-10,-12,4,0,0,37); g.addColorStop(0,'#F6DA92'); g.addColorStop(.7,'#C9982F'); g.addColorStop(1,'#A97B1F');
+    x.fillStyle=g; x.beginPath(); x.arc(0,0,37,0,7); x.fill(); x.setLineDash([2,2]); x.strokeStyle='rgba(70,45,5,.55)'; x.beginPath(); x.arc(0,0,31,0,7); x.stroke(); x.setLineDash([]);
+    txt(`WEEK ${W.wk}`,0,-14,F(800,6.5,AR),'#4A3208','center'); txt('1ST',0,9,F(700,26,OS),'#2E1E04','center'); txt('PLACE',0,20,F(800,8,AR),'#2E1E04','center');}
+  else{x.lineWidth=2.5; x.strokeStyle=ink; x.beginPath(); x.arc(0,0,36,0,7); x.stroke(); x.lineWidth=1; x.beginPath(); x.arc(0,0,31,0,7); x.stroke();
+    txt(W.mv>0?'▲ '+W.mv:W.mv<0?'▼ '+(-W.mv):'–',0,-15,F(800,8,AR),W.mv>0?grn:W.mv<0?red:ink3,'center');
+    txt(ordinal(W.wkPlace).toUpperCase(),0,8,F(700,26,OS),ink,'center'); txt('PLACE',0,20,F(800,6.5,AR),ink2,'center');}
+  x.restore();
+  // box score
+  const by=Math.max(dy+12,190); x.fillStyle=ink; x.fillRect(20,by,380,2); x.fillRect(20,by+38,380,1);
+  [['POINTS',W.myPts],['CORRECT',`${W.correct}/${W.N}`],['POOL AVG',W.avg],['SEASON RANK',ordinal(W.sNow)]].forEach((c,i)=>{
+    const cx=20+95*i+47.5; if(i){x.fillStyle='rgba(22,23,26,.16)'; x.fillRect(20+95*i,by+4,1,30);}
+    txt(c[0],cx,by+12,F(800,6.8,AR),ink3,'center'); txt(String(c[1]),cx,by+34,F(600,22,OS),ink,'center');});
+  // ladder
+  const ly=by+52; txt(`YOUR ${W.lad.length} GAMES`,20,ly,F(800,7,AR),ink2); txt(W.conf?`rank 1 pays ${W.N}`:'1 point each',400,ly,F(500,7.5,MO),ink3,'right');
+  const n=Math.max(W.lad.length,1), cw=(380-(n-1)*2)/n;
+  W.lad.forEach((t,i)=>{const X=20+i*(cw+2), Y=ly+6;
+    if(t.ok||t.tie){x.fillStyle=TEAM(t.t)[2]; x.fillRect(X,Y,cw,44);}
+    else{x.strokeStyle='rgba(179,54,43,.6)'; x.strokeRect(X+.5,Y+.5,cw-1,43);}
+    x.save(); x.translate(X+cw/2,Y+18); x.rotate(-Math.PI/2); txt(t.t,0,3,F(700,8,AR),t.ok||t.tie?'#fff':red,'center'); x.restore();
+    x.fillStyle=t.ok||t.tie?'rgba(0,0,0,.28)':'rgba(179,54,43,.12)'; x.fillRect(X,Y+34,cw,10);
+    txt(String(t.v),X+cw/2,Y+42,F(600,7,MO),t.ok||t.tie?'#fff':red,'center');
+    if(!t.ok&&!t.tie){x.strokeStyle=red; x.lineWidth=1.5; x.beginPath(); x.moveTo(X,Y+38); x.lineTo(X+cw,Y+6); x.stroke(); x.lineWidth=1;}});
+  // moments
+  let my=ly+62; x.fillStyle=ink; x.fillRect(20,my,258,2);
+  W.moments.forEach((m,i)=>{const Y=my+6+i*42; if(i){x.fillStyle='rgba(22,23,26,.16)'; x.fillRect(20,Y-4,258,1);}
+    txt(m.lab.toUpperCase(),20,Y+6,F(800,6.6,AR),ink3);
+    x.fillStyle=TEAM(m.t)[2]; x.fillRect(20,Y+12,28,16); txt(m.t,34,Y+23,F(800,8,AR),'#fff','center');
+    x.font=F(600,10.5,AR); const ws=m.txt.split(' '); let l='',ty=Y+20,k=0;
+    ws.forEach(w=>{const t=l?l+' '+w:w; if(x.measureText(t).width>176&&l&&k<1){txt(l,54,ty,F(600,10.5,AR),ink2);ty+=12;k++;l=w;} else l=t;}); txt(l,54,ty,F(600,10.5,AR),ink2);
+    txt(m.ok?'+'+m.v:String(m.v),278,Y+24,F(600,15,OS),m.ok?grn:red,'right');
+    if(!m.ok){x.font=F(600,15,OS); const w=x.measureText(String(m.v)).width; x.fillStyle=red; x.fillRect(278-w,Y+19,w,2);}});
+  // Monday night box
+  const M=W.mnf, bx=290, bY=my; x.strokeStyle=ink; x.lineWidth=1.5; x.strokeRect(bx,bY,110,124); x.lineWidth=1;
+  x.fillStyle=ink; x.fillRect(bx,bY,110,14); txt('MONDAY NIGHT',bx+55,bY+10,F(800,6.6,AR),paper,'center');
+  [[M.a,M.sa,M.sa!=null&&+M.sa<+M.sh],[M.h,M.sh,M.sa!=null&&+M.sh<+M.sa]].forEach((r,i)=>{const Y=bY+24+i*28;
+    x.fillStyle=TEAM(r[0])[2]; x.fillRect(bx+8,Y,28,16); txt(r[0],bx+22,Y+11,F(800,8,AR),'#fff','center');
+    txt(r[1]==null?'':String(r[1]),bx+102,Y+16,F(600,20,OS),r[2]?ink3:ink,'right');});
+  x.fillStyle='rgba(22,23,26,.16)'; x.fillRect(bx,bY+98,110,1);
+  txt(M.pick?`You: ${M.pick}`:'No pick',bx+8,bY+115,F(700,8.5,AR),ink2);
+  if(M.pick)txt(M.ok?'+'+M.v:String(M.v),bx+102,bY+116,F(600,14,OS),M.ok?grn:red,'right');
+  // stub
+  const sy=470; x.fillStyle='#ECE4D2'; x.fillRect(0,sy,420,55);
+  x.setLineDash([4,3]); x.strokeStyle='rgba(22,23,26,.35)'; x.beginPath(); x.moveTo(0,sy); x.lineTo(420,sy); x.stroke(); x.setLineDash([]);
+  const st=W.stub;
+  txt(st.kind==='rival'?'RIVALRY':'WEEK WINNER',20,sy+20,F(800,6.8,AR),'#C8342A'); txt((st.kind==='rival'?'VS '+st.name:st.name).toUpperCase(),20,sy+36,F(600,11,OS),ink);
+  if(st.kind==='rival'){txt(`${st.me}   to   ${st.them}`,210,sy+35,F(600,19,OS),ink,'center'); txt(st.lead.toUpperCase(),400,sy+20,F(800,6.8,AR),ink3,'right'); txt(st.rec,400,sy+37,F(600,14,OS),ink,'right');}
+  else{txt(`${st.pts} pts`,210,sy+35,F(600,19,OS),ink,'center'); txt('POOL AVG',400,sy+20,F(800,6.8,AR),ink3,'right'); txt(String(st.avg),400,sy+37,F(600,14,OS),ink,'right');}
+  return cv;
+}
+async function shareWrap(){
+  const wk=wrapOpenWk; const W=wk!=null&&WRAP_CACHE[wk]; if(!W)return;
+  try{ await document.fonts.ready; }catch{}
+  const cv=wrapCanvas(W);
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+  if(!blob){ toast('Could not make the picture on this phone.','fail'); return; }
+  const file=new File([blob],`weekly-wrap-week-${wk}.png`,{type:'image/png'});
+  try{
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:`Weekly Wrap, Week ${wk}`,text:`My Week ${wk} Weekly Wrap. nflweeklypickem.com`});
+      return;
+    }
+  }catch(e){ if(e&&e.name==='AbortError')return; }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=file.name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1500);
+  toast('Saved the picture. Send it from your photos.');
+}
+
 function render(){
   if(!Object.keys(WEEKS).length)return;
   renderWeeks();renderSlate();renderTray();renderBar();renderGrid();
-  renderBoard();renderTZ();renderDiag();renderPayTable();renderInPlay();renderArchive();}
+  renderBoard();renderRivalStrip();renderTZ();renderDiag();renderPayTable();renderInPlay();renderArchive();}
 
 function tick(){
   // Same reason as render(): this runs on an interval from page load, and
@@ -5215,6 +6117,7 @@ function commitPicks(attempt=0){
 }
 
 $('#slate').addEventListener('click',e=>{
+  { const rb=e.target.closest('[data-rvu]'); if(rb){ openInfo('pl:'+rb.dataset.rvu); return; } }
   const st=e.target.closest('[data-stake]');
   /* `find` returns undefined while a week switch is in flight — the new
      week's slate is live but the old week's cards are still on screen and
@@ -5296,7 +6199,8 @@ const closeSheet=()=>{
 };
 // Escape closes it, as every dialog must.
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&$('#infoSheet')&&!$('#infoSheet').hidden)closeInfo();
+  if(e.key==='Escape'&&$('#wrapOv')&&!$('#wrapOv').hidden)closeWrap();
+  else if(e.key==='Escape'&&$('#infoSheet')&&!$('#infoSheet').hidden)closeInfo();
   else if(e.key==='Escape'&&$('#fillSheet')&&!$('#fillSheet').hidden)closeFillSheet();
   else if(e.key==='Escape'&&$('#sheet')&&!$('#sheet').hidden)closeSheet();
 });
@@ -5308,9 +6212,22 @@ $('#scrim').addEventListener('click',()=>{
 });
 $('#sheetX').addEventListener('click',closeSheet);
 $('#infoX').addEventListener('click',closeInfo);
+$('#wrapClose').addEventListener('click',closeWrap);
+$('#wrapShare').addEventListener('click',()=>{ shareWrap().catch(()=>toast('Could not share the picture.','fail')); });
+$('#wrapOv').addEventListener('click',e=>{ if(e.target===$('#wrapOv'))closeWrap(); });
 $('#infoDone').addEventListener('click',closeInfo);
 $('#infoBody').addEventListener('click',e=>{
   if(e.target.closest('#npHead')){ ptsOpen=!ptsOpen; refreshInfo(); return; }
+  const wr=e.target.closest('[data-wrap]'); if(wr){ openWrap(+wr.dataset.wrap,false); return; }
+  const rg=e.target.closest('[data-rvgo]');
+  if(rg){ const a=rg.dataset.rvgo, u=rg.dataset.u;
+    if(a==='pick'){ startRivalPick(); return; }
+    if(a==='next'){ rvTutStep=Math.min(2,rvTutStep+1); refreshInfo(); return; }
+    if(a==='later'){ closeInfo(); return; }
+    if(a==='add'){ toggleRival(u); return; }
+    if(a==='rm'){ toggleRival(u); closeInfo(); toast(`${NAMES[u]||'Player'} removed. Your record against them stays if you pick them again.`); return; }
+    if(a==='swap'){ swapRival(rg.dataset.out,u); return; }
+    return; }
   const go=e.target.closest('[data-go]'); if(go)jumpToCard(go.dataset.go);
 });
 $('#nextUp').addEventListener('click',finishJump);
@@ -5403,7 +6320,13 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
      version asks the service worker and can wait on a message that
      never comes, so it happens on arrival at Settings and nowhere else.
      Not awaited either. */
-  if(state.tab==='settings'){renderAlertFix();verRender();}}));
+  if(state.tab==='settings'){renderAlertFix();verRender();}
+  /* v1.44.0 EVERY TAB OPENS AT THE TOP. The page scroll is shared by all
+     five views, so Standings used to open wherever Picks had been left,
+     halfway down the table. */
+  try{ window.scrollTo(0,0); }catch(e){}
+  if(state.tab!=='standings'&&(rvPick||rvNote)){ rvPick=false; rvNote=''; renderBoard(); renderRivalStrip(); }
+  if(state.tab==='standings'){ try{ maybeRivalIntro(); }catch(e){} }}));
 
 /* The scoring-mode switch and its click handler are GONE — see the note
    where the buttons used to be, in the Settings markup.
@@ -6037,7 +6960,7 @@ async function startApp({fromOnboarding=false,background=false}={}){
          something the app needs to have a week to show. Letting it throw
          here would fail the ENTIRE boot over a feature that is allowed
          to simply not be there. */
-    try{ PS.watchMembers(members=>{ applyMembers(members); render(); }); }
+    try{ PS.watchMembers(members=>{ applyMembers(members); render(); if(standingsReady)checkHunters(); }); }
     catch(e){ console.warn('watchMembers unavailable',e); }
     /* Only now is there an app worth showing. Hiding onboarding any
        earlier meant a failed load left the user staring at nothing, with
@@ -6273,6 +7196,7 @@ function applyMembers(members){
   // could not be read — a solo view beats no view.
   NAMES={};
   members.forEach(m=>{ NAMES[m.uid]=m.name||'Player'; });
+  readRivals(members);
   if(!NAMES[ME])NAMES[ME]=(localStorage.getItem('ps_name')||'You');
   // Sort by DISPLAY name, key by uid.
   PLAYERS=members.length?members.map(m=>m.uid).sort((a,b)=>
@@ -6361,6 +7285,11 @@ async function loadSeason(seedMembers){
        that read STANDINGS ran after it was filled. Guarded because a failed
        render must not turn a missing standings row into a dead app. */
     try{ render(); }catch(e){ console.warn('standings repaint failed',e); }
+    standingsReady=true;
+    /* v1.44.0 After first paint and with the season in hand: the heads up
+       for anyone newly hunting you, then this week's Weekly Wrap. Both
+       wrapped, because neither may ever cost a player the app. */
+    setTimeout(()=>{ try{ checkHunters(); }catch(e){} try{ maybeAutoWrap(); }catch(e){} },1200);
   });
 
   /* getScoringMode used to be awaited HERE, on its own, purely because it
@@ -6736,11 +7665,12 @@ const espnWanted=()=>(WEEKS[state.week]||[])
    the next tick starts it again a second later. iOS is worse: switching
    apps fires visibilitychange in bursts.
 
-   Twenty seconds is well under the 60-second interval, so it never
-   delays a scheduled poll; it only collapses the accidental duplicates.
+   Ten seconds is under the 15-second interval, so it never delays a
+   scheduled poll; it only collapses the accidental duplicates.
    It also means that even if espnLoop() ever loses its idempotence, the
-   worst case is three requests a minute rather than sixty. */
-const ESPN_FLOOR=20000;
+   worst case is six requests a minute rather than sixty.
+   v1.44.0: was 20000, lowered together with ESPN_EVERY below. */
+const ESPN_FLOOR=10000;
 
 /* HOW OFTEN A PHONE ASKS ESPN WHILE A GAME IS ON SCREEN.
 
@@ -6768,8 +7698,14 @@ const ESPN_FLOOR=20000;
    floor exists to collapse the duplicate triggers iOS throws off on a
    tab switch, so lowering IT to chase 15s would give up a real guard for
    a few seconds that ESPN's own lag mostly eats anyway. If this ever
-   goes below ESPN_FLOOR, the two want rethinking together. */
-const ESPN_EVERY=30000;
+   goes below ESPN_FLOOR, the two want rethinking together.
+
+   v1.44.0: 15000, with the floor at 10000 so the two still nest. Lee
+   chose live pulls for the red zone; a drive inside the 20 often lasts
+   under a minute, so 30s could miss the whole thing. Still free: no
+   Firestore, no Cloudflare, paused off screen. ESPN itself lags TV by
+   10 to 30 seconds, so 10s would buy nothing 15s does not. */
+const ESPN_EVERY=15000;
 
 async function pullEspn(){
   if(DEMO||espnBusy)return;
@@ -6829,6 +7765,9 @@ async function pullEspn(){
                  :pid&&by.home.team&&String(by.home.team.id)===pid ? h
                  :null;
         if(ESPN_BALL[k]!==own){ESPN_BALL[k]=own;changed=true;}
+        /* Same rule as possession: absent clears. */
+        const rz=own?sit.isRedZone===true:false;
+        if(ESPN_RZ[k]!==rz){ESPN_RZ[k]=rz;changed=true;}
       }catch(_){}
     }
     /* Only repaint when a number actually moved, and only if the week on

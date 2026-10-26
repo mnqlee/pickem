@@ -904,12 +904,62 @@ const MUTATIONS = [
    ['exactly once, never in a loop'], 'regress'],
   [108, 'Settings: print the worker\'s version again', "  const shown=PAGE_VER||v;", "  const shown=v||PAGE_VER;",
    ["Settings shows the version on screen, not the worker's"], 'regress'],
+
+  /* ---- v1.44.0: red zone, tiles, tabs, rivals, Weekly Wrap. Graded by
+     v44.ui.test.mjs; 'v44:N,M' runs only those sections. ---- */
+  [110, 'red zone: the ring pulses again', ".card.rzc{box-shadow:0 0 0 2px #E5483C,0 0 12px rgba(229,72,60,.3),0 6px 18px rgba(0,0,0,.30)}",
+   ".card.rzc{box-shadow:0 0 0 2px #E5483C,0 0 12px rgba(229,72,60,.3),0 6px 18px rgba(0,0,0,.30);animation:rzball 1.1s infinite}",
+   ['the ring is solid red, not animated'], 'v44:1'],
+  [111, 'red zone: the tag sits on the left', ".meta .rztag{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);", ".meta .rztag{position:static;",
+   ['the tag is centred on the top line (within 1.5px)'], 'v44:1'],
+  [112, 'red zone: never a white football', "((t===g.a?litA:litH)&&isRedHex(TEAM(t)[2])?'w':'r')", "('r')",
+   ['the picked red panel gets the WHITE football'], 'v44:1,2'],
+  [113, 'red zone: absent does not clear', "        if(ESPN_RZ[k]!==rz){ESPN_RZ[k]=rz;changed=true;}", "        if(rz&&ESPN_RZ[k]!==rz){ESPN_RZ[k]=rz;changed=true;}",
+   ['when ESPN stops saying red zone, the ring and tag go on the next poll'], 'v44:2'],
+  [114, 'red zone: a final card can still light', "    const rzT=(L&&!isFinal(g))?rzOf(g):null;", "    const rzT=L?(ESPN_RZ[`${g.a}_${g.h}`]?(ESPN_BALL[`${g.a}_${g.h}`]||g.a):null):null;",
+   ['the final card has no ring and no tag'], 'v44:3'],
+  [115, 'live spread comes back', "        L?'':`\n        <span class=\"mono${lineOut(g)?'':' tbd'}\">", "        false?'':`\n        <span class=\"mono${lineOut(g)?'':' tbd'}\">",
+   ['no spread on any live card'], 'v44:1'],
+  [116, 'live pulls back to 30 seconds', "const ESPN_EVERY=15000;", "const ESPN_EVERY=30000;",
+   ['three requests in about 33 seconds (boot plus two at 15s)'], 'v44:4'],
+  [117, 'tiles: wrong-pick badge pays out', "`<span class=\"gtpk n${L?' l':''}\">0<em>of</em>${v}</span>`", "`<span class=\"gtpk y${L?' l':''}\">+${v}</span>`",
+   ['every final badge is +points for a right pick, 0 of points for a wrong one'], 'v44:5'],
+  [118, 'tabs: stop opening at the top', "  try{ window.scrollTo(0,0); }catch(e){}\n  if(state.tab!=='standings'", "  \n  if(state.tab!=='standings'",
+   ['switching tabs always lands at the top'], 'v44:6'],
+  [120, 'rivals: count a removed player against your two', "const myRivals=()=>(RIVALS[ME]||[]).filter(u=>u!==ME&&PLAYERS.includes(u));", "const myRivals=()=>(RIVALS[ME]||[]).filter(u=>u!==ME);",
+   ['a removed player in your list is ignored, not counted against your two'], 'v44:7'],
+  [121, 'rivals: record counts the other way round', "    const r=a>b?'w':a<b?'l':'t';", "    const r=a<b?'w':a>b?'l':'t';",
+   ['the Season view shows the rivalry record, and it matches the oracle', 'its weeks-won numbers match the oracle', 'one numbered box per finished week, coloured by who won it'], 'v44:7'],
+  [123, 'rivals: the note survives leaving Standings', "if(state.tab!=='standings'&&(rvPick||rvNote)){ rvPick=false; rvNote='';", "if(state.tab!=='standings'&&(rvPick)){ rvPick=false; ",
+   ['the note is gone once you leave Standings'], 'v44:8'],
+  [124, 'rivals: a refused write keeps the tag', "    RIVALS[ME]=was; render(); refreshInfo();", "    render(); refreshInfo();",
+   ['the tag does not stick when the write fails'], 'v44:9'],
+  [125, 'rivals: the walkthrough every visit', "  if(lsGet(k))return;\n  lsSet(k,'1');\n  if(myRivals().length)return;", "  if(myRivals().length)return;",
+   ['and it does not come back on the next visit', 'and no second walkthrough'], 'v44:11'],
+  [126, 'rivals: names printed raw', "<div class=\"nrow\"><b>${NAME(r.p)}</b>${badge}${", "<div class=\"nrow\"><b>${NAMES[r.p]}</b>${badge}${",
+   ['nothing executed'], 'v44:12'],
+  [127, 'wrap: pops up every launch', "  if(lsGet(wrapSeenKey(wk)))return;", "  ",
+   ['it does not pop up a second time'], 'v44:13'],
+  [128, 'wrap: pops up mid-week', "function lastDoneWeek(){\n  const ws=Object.keys(WEEKS).map(Number).filter(weekDoneN)", "function lastDoneWeek(){\n  const ws=Object.keys(WEEKS).map(Number).filter(w=>(WEEKS[w]||[]).some(isFinal))",
+   ['not while the week is still being played'], 'v44:14'],
+  [128, 'wrap: build a paper for an unfinished week', "  if(!N||!weekDoneN(wk))return null;", "  if(!N)return null;",
+   ['not while the week is still being played'], 'v44:14'],
+  [130, 'wrap: season rank one off', "  const sNow=after.indexOf(ME)+1, sWas=before.indexOf(ME)+1;", "  const sNow=after.indexOf(ME)+2, sWas=before.indexOf(ME)+1;",
+   ['Season rank matches the oracle'], 'v44:13'],
+  [131, 'wrap: the winner seal says Winner', "<b>1ST</b><em>Place</em>", "<b>1ST</b><em>Winner</em>",
+   ["it reads Week 1, 1ST, Place, never Winner"], 'v44:18'],
+  [132, 'wrap: the same line twice on one paper', "for(let k=0;k<arr.length&&used.has(arr[i]);k++)i=(i+1)%arr.length;", "",
+   ['no label and no sentence repeats on one paper'], 'v44:13,17'],
+  [133, 'wrap: share an empty canvas', "  const cv=wrapCanvas(W);", "  const cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;",
+   ['a real picture: paper, a masthead in ink, and the club colours'], 'v44:15'],
 ];
 
 function runSuite(suite = 'regress') {
   try {
-    const out = execFileSync('node', [suite === 'week5' ? 'week5.ui.test.mjs' : 'regress.ui.test.mjs'],
+    const v44 = String(suite).startsWith('v44');
+    const out = execFileSync('node', [suite === 'week5' ? 'week5.ui.test.mjs' : v44 ? 'v44.ui.test.mjs' : 'regress.ui.test.mjs'],
       { cwd: new URL('.', import.meta.url).pathname, encoding: 'utf8',
+        env: { ...process.env, ONLY: v44 ? String(suite).split(':')[1] || '' : '' },
         timeout: 900000, maxBuffer: 1 << 26 });
     return { out, failures: [] };
   } catch (e) {
