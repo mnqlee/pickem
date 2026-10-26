@@ -2316,7 +2316,7 @@ console.log('\n33. A tiebreak guess must survive the list query failing');
      inside the function. It does catch the exact regression, which is
      somebody re-sequencing these reads. */
   const fs = await import('node:fs');
-  const src = fs.readFileSync('/root/work/pickem/firebase-init.js', 'utf8');
+  const src = fs.readFileSync(new URL('../../firebase-init.js', import.meta.url).pathname, 'utf8');
   const tb = src.slice(src.indexOf('async function getTiebreaks'),
                        src.indexOf('async function saveTiebreak'));
   ok('getTiebreaks exists to check', tb.length > 200);

@@ -475,10 +475,12 @@ const PSX = window.PS = {
     if (rows.length) setTimeout(() => cb(rows, wk), 0);
     window.__pushRevealed = (r) => cb(r || rows, wk);
   },
-  async setRivals(list){ await call('setRivals');
+  /* P.oldDataFile: model a phone running the NEW page against the OLD
+     firebase-init.js, which has no setRivals at all. */
+  ...(P.oldDataFile ? {} : { async setRivals(list){ await call('setRivals');
     window.__rivalWrites = (window.__rivalWrites || []).concat([list.slice()]);
     const me = MEMBERS.find(m => m.uid === 'u_' + (P.me || 0)); if (me) me.rivals = list.slice();
-    return list; },
+    return list; } }),
   watchMembers(cb){
     log.push('watchMembers');
     window.__pushMembers = (m) => cb(m || MEMBERS);

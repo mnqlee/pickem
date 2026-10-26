@@ -256,12 +256,22 @@ if (want(7)) {
   ok('the Season view shows the rivalry record, and it matches the oracle', sub.includes(want + (R.t ? '-' + R.t : '')), `${sub} vs ${want}`);
   await page.click('#board [data-pu="u_2"]'); await page.waitForTimeout(400);
   const sheet = await page.evaluate(() => ({ t: document.getElementById('infoTitle').textContent, vs: [...document.querySelectorAll('#infoSheet .rvvs b')].map(b => +b.textContent),
-    boxes: [...document.querySelectorAll('#infoSheet .rvwks span')].map(s => s.className + s.textContent) }));
+    mine: [...document.querySelectorAll('#infoSheet .rvsplit .me .rvwks span')].map(s => s.className + s.textContent),
+    theirs: [...document.querySelectorAll('#infoSheet .rvsplit .them .rvwks span')].map(s => s.className + s.textContent),
+    ties: [...document.querySelectorAll('#infoSheet .rvties span')].map(s => s.className + s.textContent),
+    sideOk: (() => { const m = document.querySelector('#infoSheet .rvsplit .me'), t = document.querySelector('#infoSheet .rvsplit .them'); return !!m && !!t && m.getBoundingClientRect().right <= t.getBoundingClientRect().left + 1; })(),
+    level: (() => { const b = [...document.querySelectorAll('#infoSheet .rvtot b')].map(x => x.getBoundingClientRect().top); return b.length === 2 && Math.abs(b[0] - b[1]) < 0.5; })(),
+    conf: [...document.querySelectorAll('#infoSheet .rvtot>div')].map(d => getComputedStyle(d).borderTopColor) }));
   ok('the rival card titles itself You vs ...', sheet.t === `You vs ${name2}`, sheet.t);
   ok('its weeks-won numbers match the oracle', sheet.vs[0] === R.w && sheet.vs[1] === R.l, JSON.stringify(sheet.vs) + ' ' + JSON.stringify(R));
-  ok('one numbered box per finished week, coloured by who won it', sheet.boxes.length === done.length
-    && done.every((k, i) => { const x = st.find(r => r.uid === 'u_0').weeks[String(k)].pts, y = st.find(r => r.uid === 'u_2').weeks[String(k)].pts; return sheet.boxes[i] === (x > y ? 'w' : x < y ? 'l' : 't') + k; }),
-    JSON.stringify(sheet.boxes));
+  const split = { w: [], l: [], t: [] };
+  done.forEach(k => { const x = st.find(r => r.uid === 'u_0').weeks[String(k)].pts, y = st.find(r => r.uid === 'u_2').weeks[String(k)].pts; split[x > y ? 'w' : x < y ? 'l' : 't'].push((x > y ? 'w' : x < y ? 'l' : 't') + k); });
+  ok('weeks you won sit on your side in green, theirs on their side in red, ties below',
+    JSON.stringify(sheet.mine) === JSON.stringify(split.w) && JSON.stringify(sheet.theirs) === JSON.stringify(split.l) && JSON.stringify(sheet.ties) === JSON.stringify(split.t),
+    JSON.stringify(sheet) + ' want ' + JSON.stringify(split));
+  ok('your column is on the left, theirs on the right', sheet.sideOk);
+  ok('the two season totals sit exactly level', sheet.level);
+  ok('both season boxes wear the red CONF border', sheet.conf.length === 2 && sheet.conf.every(c => /178, 58, 49/.test(c)), JSON.stringify(sheet.conf));
   ok('no page errors', errors.length === 0, errors[0] || '');
   await ctx.close();
 }
@@ -342,8 +352,20 @@ if (want(10)) {
   const expect = ['u_1', 'u_2'].map(u => { const d = pts.ME - pts[u]; return d > 0 ? `Beating ${nm[u]} by ${d}` : d < 0 ? `Behind ${nm[u]} by ${-d}` : `Level with ${nm[u]}`; });
   ok('its numbers are the This week table\'s own differences', expect.every(e => line.includes(e)), `${line} :: ${expect.join(' | ')}`);
   await tab(page, 'picks'); await page.waitForTimeout(200);
+  ok('one bar for both rivals, one tap', await page.evaluate(() => document.querySelectorAll('#slate .rvlivebar').length === 1 && document.querySelector('#slate .rvlivebar').tagName === 'BUTTON'));
   await page.click('#slate .rvlivebar'); await page.waitForTimeout(300);
-  ok('tapping it opens the first rival\'s card', /^You vs /.test(await page.textContent('#infoTitle')));
+  ok('tapping it opens the first rival\'s card', (await page.textContent('#infoTitle')) === `You vs ${nm.u_1}`, await page.textContent('#infoTitle'));
+  const dots = await page.evaluate(() => [...document.querySelectorAll('#infoSheet [data-rvsw]')].map(b => [b.dataset.rvsw, b.getAttribute('aria-selected'), b.textContent.trim()]));
+  ok('two dots, not tabs, this one lit', JSON.stringify(dots) === '[["u_1","true",""],["u_2","false",""]]', JSON.stringify(dots));
+  /* A sideways swipe does the same. */
+  await page.evaluate(() => { const el = document.getElementById('infoBody');
+    const T = (type, x) => { const t = new Touch({ identifier: 1, target: el, clientX: x, clientY: 300 });
+      el.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t], bubbles: true })); };
+    T('touchstart', 300); T('touchend', 120); });
+  await page.waitForTimeout(300);
+  ok('swiping left on the card moves to the other rival', (await page.textContent('#infoTitle')) === `You vs ${nm.u_2}`, await page.textContent('#infoTitle'));
+  await page.click('#infoSheet [data-rvsw="u_1"]'); await page.waitForTimeout(300);
+  ok('a tap on the other dot goes back', (await page.textContent('#infoTitle')) === `You vs ${nm.u_1}`);
   const B = await open({ startISO: new Date(Date.now() + 2 * D).toISOString(), weeks: 1, gamesPerWeek: 6, playerCount: 4, rivals: { u_0: ['u_1'] } });
   ok('no line before the week has kicked off', await B.page.evaluate(() => !document.querySelector('.rvlivebar')));
   const C = await open({ startISO: sunLive(), weeks: 1, gamesPerWeek: 6, playerCount: 4 });
@@ -545,6 +567,31 @@ if (want(18)) {
   ok('the winner\'s paper opens with the gold seal', w.open && w.gold, JSON.stringify({ top, seal: w.seal }));
   ok('it reads Week 1, 1ST, Place, never Winner', /Week 1/i.test(w.seal) && /1ST/.test(w.seal) && /Place/i.test(w.seal) && !/Winner/i.test(w.seal), w.seal);
   ok('and the kicker says Week winner', /Week winner/i.test(w.kick), w.kick);
+  ok('no page errors', B.errors.length === 0, B.errors[0] || '');
+  await B.ctx.close();
+}
+
+console.log('\n19. The page always loads its own data file, and heals if it ever does not');
+if (want(19)) {
+  const { ctx, page, errors } = await open({ startISO: sunLive(1), weeks: 3, gamesPerWeek: 10, playerCount: 6 });
+  const v = await page.evaluate(() => document.querySelector('meta[name="app-version"]').content.slice(1));
+  const srcs = await page.evaluate(() => [...document.querySelectorAll('script[src*="firebase-init"],link[href*="firebase-init"]')].map(e => e.getAttribute('src') || e.getAttribute('href')));
+  ok('both the preload and the script ask for firebase-init.js at this page\'s version', srcs.length === 2 && srcs.every(x => x === `./firebase-init.js?v=${v}`), JSON.stringify(srcs));
+  await ctx.close();
+  /* The phone that broke: the new page with an old data file. */
+  const B = await open({ startISO: sunLive(1), weeks: 3, gamesPerWeek: 10, playerCount: 6, oldDataFile: true });
+  await B.page.evaluate(() => { window.__marker = 1; });
+  await tab(B.page, 'standings'); await B.page.waitForTimeout(300);
+  await B.page.click('#board [data-pu="u_2"]'); await B.page.waitForTimeout(300);
+  const nav = B.page.waitForNavigation({ timeout: 5000 }).then(() => true).catch(() => false);
+  await B.page.click('[data-rvgo="add"]');
+  ok('a page missing the save reloads itself instead of saying "did not save"', await nav);
+  await B.page.waitForTimeout(2200);
+  await B.page.click('.tab[data-tab="standings"]'); await B.page.waitForTimeout(300);
+  await B.page.click('#board [data-pu="u_2"]'); await B.page.waitForTimeout(300);
+  const again = B.page.waitForNavigation({ timeout: 2500 }).then(() => true).catch(() => false);
+  await B.page.click('[data-rvgo="add"]');
+  ok('it reloads once per version, never in a loop', !(await again));
   ok('no page errors', B.errors.length === 0, B.errors[0] || '');
   await B.ctx.close();
 }

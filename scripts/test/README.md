@@ -1,9 +1,9 @@
 # Tests
 
-2123 checks. Nothing here touches Firebase, Resend, KV or the live site.
+2135 checks. Nothing here touches Firebase, Resend, KV or the live site.
 
 That number is the twenty-three suite totals below added up, from a full
-run on 2026-10-26 for v1.44.0. If you change a suite, re-run everything and
+run on 2026-10-26 for v1.44.1. If you change a suite, re-run everything and
 re-add — a count carried forward from memory drifts, and quoting a stale
 one is the same class of mistake as a green run that graded a stale file.
 
@@ -11,7 +11,7 @@ one is the same class of mistake as a green run that graded a stale file.
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out test_key.pem
     cp ../../worker/auth.js /tmp/auth.mjs      # NOTE: /tmp — see below
 
-    node picks-audit.mjs         #  58 every design choice, still in the build
+    node picks-audit.mjs         #  59 every design choice, still in the build
     node auth.core.test.mjs      #  27 sign-in Worker, happy path and edges
     node auth.stress.test.mjs    #  49 sign-in Worker, adversarial
     node nudge.test.mjs          #  42 reminder scheduling
@@ -35,7 +35,7 @@ one is the same class of mistake as a green run that graded a stale file.
                                  #     the week strip and the records print,
                                  #     plus the layout Lee chose from mockups
     node stress.ui.test.mjs      # 115 a full pool leaned on: see below
-    node v44.ui.test.mjs         # 123 v1.44.0: red zone, 15s pulls, game tiles,
+    node v44.ui.test.mjs         # 134 v1.44.0: red zone, 15s pulls, game tiles,
                                  #     tabs at the top, Rivals, the Weekly Wrap,
                                  #     every number against an oracle. ONLY=3,5
                                  #     runs just those sections
@@ -56,9 +56,9 @@ one is the same class of mistake as a green run that graded a stale file.
     python test_usage_report.py  #  33 the usage aggregate, and that it
                                  #     cannot report anything per person
 
-    node mutate-dryrun.mjs       #     do all 131 mutations still apply?
-    node mutate.mjs              #     131 mutations, 119 batches, ~6.5 hours
-                                 #     (batches 110-133 run v44 sections only)
+    node mutate-dryrun.mjs       #     do all 136 mutations still apply?
+    node mutate.mjs              #     136 mutations, 124 batches, ~6.5 hours
+                                 #     (batches 110-138 run v44 sections only)
                                  #     (batches 72-88, 90 and 91 run week5, 81s each)
 
 The three `shot-*.mjs` scripts grade nothing. They write the sheets in

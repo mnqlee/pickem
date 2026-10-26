@@ -929,7 +929,7 @@ const MUTATIONS = [
   [120, 'rivals: count a removed player against your two', "const myRivals=()=>(RIVALS[ME]||[]).filter(u=>u!==ME&&PLAYERS.includes(u));", "const myRivals=()=>(RIVALS[ME]||[]).filter(u=>u!==ME);",
    ['a removed player in your list is ignored, not counted against your two'], 'v44:7'],
   [121, 'rivals: record counts the other way round', "    const r=a>b?'w':a<b?'l':'t';", "    const r=a<b?'w':a>b?'l':'t';",
-   ['the Season view shows the rivalry record, and it matches the oracle', 'its weeks-won numbers match the oracle', 'one numbered box per finished week, coloured by who won it'], 'v44:7'],
+   ['the Season view shows the rivalry record, and it matches the oracle', 'its weeks-won numbers match the oracle', 'weeks you won sit on your side in green, theirs on their side in red, ties below'], 'v44:7'],
   [123, 'rivals: the note survives leaving Standings', "if(state.tab!=='standings'&&(rvPick||rvNote)){ rvPick=false; rvNote='';", "if(state.tab!=='standings'&&(rvPick)){ rvPick=false; ",
    ['the note is gone once you leave Standings'], 'v44:8'],
   [124, 'rivals: a refused write keeps the tag', "    RIVALS[ME]=was; render(); refreshInfo();", "    render(); refreshInfo();",
@@ -952,6 +952,17 @@ const MUTATIONS = [
    ['no label and no sentence repeats on one paper'], 'v44:13,17'],
   [133, 'wrap: share an empty canvas', "  const cv=wrapCanvas(W);", "  const cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;",
    ['a real picture: paper, a masthead in ink, and the club colours'], 'v44:15'],
+  /* v1.44.1: the page and its data file always travel together. */
+  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.1"></script>', '<script type="module" src="firebase-init.js"></script>',
+   ["both the preload and the script ask for firebase-init.js at this page's version"], 'v44:19'],
+  [135, 'data file: no self-heal when the save is missing', "  if(typeof PS.setRivals!=='function'){", "  if(false){",
+   ['a page missing the save reloads itself instead of saying "did not save"'], 'v44:19'],
+  [136, 'data file: heal on every tap (a reload loop)', "    if(!lsGet(k)){ lsSet(k,'1');", "    if(true){ lsSet(k,'1');",
+   ['it reloads once per version, never in a loop'], 'v44:19'],
+  [137, 'rival card: no swipe to the other rival', "    if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy)*1.5)return;", "    return;",
+   ['swiping left on the card moves to the other rival'], 'v44:10'],
+  [138, 'rival card: no dots for the other rival', "    const sw=all.length>1?", "    const sw=false?",
+   ['two dots, not tabs, this one lit'], 'v44:10'],
 ];
 
 function runSuite(suite = 'regress') {

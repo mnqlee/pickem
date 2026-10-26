@@ -1568,3 +1568,26 @@ label or sentence repeats on one paper. No em dashes.
 **Test switch.** `ps_autopop = 'off'` in localStorage stops the three
 automatic pop-ups. Only app-serve.mjs sets it, so the older suites never
 meet a modal they were not written for. Nothing in the app writes it.
+
+## v1.44.1: the page and its data file always match
+
+Found on the first live tap of + Rival: the phone ran the v1.44.0 page
+against the v1.43.1 firebase-init.js, which has no setRivals, and the
+player read "That rival did not save". The two files were cached under
+separate fixed addresses, so either could be a launch behind the other.
+Proved from Lee's laptop: the live data file had setRivals and the
+database accepted the write. index.html now loads
+`firebase-init.js?v=<its own version>` (preload and script), and sw.js
+precaches that same address, so a page can only ever run with the data
+file of its own release. Belt and braces: if the save is ever missing,
+the page reloads once per version instead of reporting a failure.
+Audit `data file pair`, v44 section 19, mutations 134 to 136.
+
+Same release, the rival card, from Lee's marked-up screenshots: the two
+season-points boxes share a two-line label (who, then "Season pts") so
+the numbers sit level, and wear the CONF badge's red (border #B23A31,
+labels #E4564A); weeks won are split under each player, yours green on
+the left, theirs red on the right, ties below. With two rivals the
+Picks bar stays ONE bar (Lee rejected one line per rival and rejected
+tabs on the card); the card shows two dots and swipes sideways to the
+other rival. v44 sections 7 and 10, mutations 121, 137, 138.

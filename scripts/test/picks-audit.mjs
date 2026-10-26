@@ -423,6 +423,12 @@ const CHECKS = [
    () => has('<b>1ST</b><em>Place</em>') && lacks('<em>Winner</em>')],
   ['wrap place', 'other seals: arrow on top, the place, then Place underneath',
    () => has("</em><b>${ordinal(W.wkPlace).toUpperCase()}</b><span>Place</span>")],
+  ['data file pair', 'the page loads the data file at its OWN version, everywhere it is named',
+   () => { const v = (CODE.match(/name="app-version" content="v([\d.]+)"/) || [])[1];
+     const SW = fs.readFileSync(new URL('../../sw.js', import.meta.url).pathname, 'utf8');
+     return !!v && has(`href="./firebase-init.js?v=${v}"`, `src="./firebase-init.js?v=${v}"`)
+       && SW.includes(`'./firebase-init.js?v=${v}'`) && SW.includes(`const VERSION = 'v${v}'`)
+       && !/src="firebase-init\.js"/.test(CODE); }],
   ['wrap once', 'the Weekly Wrap pops once per week and lives under the Week box',
    () => has('lsSet(wrapSeenKey(wk),', 'data-wrap="${wk}"')],
 ];
