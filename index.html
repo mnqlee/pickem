@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- v1.44.1 The version of THIS page. A test fails if it ever differs from sw.js. -->
-<meta name="app-version" content="v1.44.1">
+<meta name="app-version" content="v1.44.2">
 <title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
@@ -53,7 +53,7 @@
      cache miss, fetched fresh), and an old cached page keeps its own old
      one. The pair always matches. A test fails if this differs from the
      app-version above or from sw.js. -->
-<link rel="modulepreload" href="./firebase-init.js?v=1.44.1">
+<link rel="modulepreload" href="./firebase-init.js?v=1.44.2">
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
@@ -2668,7 +2668,7 @@ body:not([data-tab="picks"]) .nextup{display:none}
   <button class="fill-own" id="fillOwn">I'll rank them myself</button>
 </div>
 
-<script type="module" src="./firebase-init.js?v=1.44.1"></script>
+<script type="module" src="./firebase-init.js?v=1.44.2"></script>
 <script type="module">
 /* ============================================================
    CONFIG — the only block you edit in this file.
@@ -5623,54 +5623,98 @@ const fill=(s,o)=>s.replace(/\{(\w+)\}/g,(_,k)=>o[k]!=null?o[k]:'');
    the player and the week, so two people comparing wraps in the group
    text rarely read the same line, and reopening shows the same one. */
 const WR={
-  best:{lab:['Called it','Money pick','Banker','Top shelf','Cashed in'],
+  best:{lab:['Called it','Money pick','Banker','Top shelf','Cashed in','Nailed on','Easy money','Told you so'],
     txt:['Put the {T} on top and they never blinked',
          'Trusted the {T} with {v} and got every point back',
          '{v} points on the {T}, delivered with a bow',
          'Leaned on the {T} for {v} and they held the weight',
-         'The {T} carried your biggest number home']},
-  upset:{lab:['Nobody else saw it','Against the grain','Lonely and right','Called the upset'],
+         'The {T} carried your biggest number home',
+         'Bet the house on the {T} and the house is still standing',
+         'Stacked {v} on the {T} and they turned up in a suit',
+         'The {T} took your {v} and came back with interest',
+         'Called the {T} at {v} like you had the tape']},
+  upset:{lab:['Nobody else saw it','Against the grain','Lonely and right','Called the upset','Alone out there','The whole room was wrong'],
     txt:['Took the {T} while {k} of {n} went the other way',
          'Only {m} of {n} backed the {T}. You were one of them',
          'The pool zigged, you took the {T}, and the {T} won',
-         '{k} of {n} faded the {T}. Their loss, your {v}']},
-  quiet:{lab:['Quiet money','Sleeper hit','Steady hand','Kept rolling'],
+         '{k} of {n} faded the {T}. Their loss, your {v}',
+         '{k} of {n} wrote the {T} off. You wrote them down',
+         'The room said no. The {T} said {v}',
+         'You and {m} others took the {T}. The other {k} are very quiet today']},
+  quiet:{lab:['Quiet money','Sleeper hit','Steady hand','Kept rolling','No notes','Did the job'],
+    labLow:['Kept the lights on','Life raft','Lifeline','Small mercies','Dignity preserved','Not a total loss','One bright spot'],
     txt:['Slid the {T} in at {v} and they paid in full',
          'The {T} did their job for {v} without a fuss',
          '{v} quiet points from the {T}, no drama required',
-         'The {T} kept the week from getting away from you']},
-  miss:{lab:['The big miss','Ouch','The one that got away','Bad beat','Monday heartbreak'],
+         'The {T} kept the week from getting away from you',
+         'The {T} did the dishes for {v} and went to bed',
+         '{v} from the {T}. The least glamorous points you will ever love',
+         'Nobody writes songs about {v} points. Bank them anyway',
+         'The {T} were boring and correct, which is the best kind']},
+  miss:{lab:['The big miss','Ouch','The one that got away','Bad beat','Monday heartbreak','Well then','The betrayal','Crime scene'],
     txt:['{v} points on the {T}, and the {T} never showed up',
          'The {T} took your {v} and left without a word',
          '{v} on the {T}. That one will sting until Thursday',
          'Trusted the {T} with {v}. Trust is earned, apparently',
-         'Left {v} points on the {T} sideline']},
-  missWon:{lab:['Cost of doing business'],
+         'Left {v} points on the {T} sideline',
+         'You gave the {T} {v} points and a signed permission slip',
+         'The {T} had one job and {v} of your points. They kept neither',
+         '{v} points to the {T}, who played like they had somewhere to be',
+         'The {T} cost you {v} and did not even send a card',
+         'Put {v} on the {T}. The {T} put nothing on the board',
+         'Somewhere the {T} are celebrating a loss that cost you {v}']},
+  missWon:{lab:['Cost of doing business','Minor expense','Rounding error','The one blemish'],
     txt:['The {T} left with {v} of yours and you won anyway',
-         'Even a winner drops one. The {T} cost {v}']}
+         'Even a winner drops one. The {T} cost {v}',
+         'The {T} took {v} out of your wallet and you still bought the round',
+         'Won the week despite the {T}, who owe you {v} and an apology',
+         '{v} to the {T}. This far ahead, you can afford the tip']}
 };
 const DECK={
   win:['{pts} points and nobody did better. The {B} did the heavy lifting.',
        'Top of the week with {pts}. Take a bow, then get Week {nx} in.',
-       '{pts} points, first place, and bragging rights until Thursday.'],
+       '{pts} points, first place, and bragging rights until Thursday.',
+       '{pts} points. The {B} showed up and everyone else showed up late.',
+       'Nobody touched {pts} this week. Be insufferable about it until Thursday.',
+       '{c} of {N} right and {pts} points. The rest of the pool is reading this and sighing.'],
   winTie:['{pts} points and a share of the week. Split the trophy, keep the bragging rights.',
           'Tied for the top with {pts}. Somebody has to buy the wings.',
-          '{pts} points and a shared crown. Nobody blinked first.'],
+          '{pts} points and a shared crown. Nobody blinked first.',
+          'Tied at {pts}. One of you is going to pretend it was not a tie.',
+          '{pts} points, shared. The {B} did not care who got the credit.'],
   rise:['Up {mv} spots in one week. The {B} paid the rent.',
         'Climbed {mv} places on {pts} points. The view is better up here.',
-        '{pts} points and a {mv} spot jump. Somebody check the tape.'],
+        '{pts} points and a {mv} spot jump. Somebody check the tape.',
+        'Up {mv} spots. The {B} did in one Sunday what a month could not.',
+        '{mv} places in seven days. Whoever you passed is not pleased.',
+        'Climbed {mv} on the back of the {B}. Keep them on speed dial.'],
   fall:['Down {mv} spots. The {W} owe you an apology.',
         '{pts} points and a {mv} spot slide. Week {nx} is a fresh sheet.',
-        'A {mv} spot drop, mostly on the {W}. Shake it off.'],
-  up:['{pts} points and a small step up. Momentum counts.','Nudged up to {sp} on {pts} points.',
-      'A quiet climb to {sp}. The {B} did their part.'],
+        'A {mv} spot drop, mostly on the {W}. Shake it off.',
+        'Down {mv} spots. The {W} will be hearing about this all week.',
+        '{mv} spots gone, courtesy of the {W}. Nobody is coming to help.',
+        'A {mv} spot fall. The {W} should explain themselves in writing.'],
+  up:['{pts} points and a small step up. Momentum counts.',
+      'Nudged up to {sp} on {pts} points.',
+      'A quiet climb to {sp}. The {B} did their part.',
+      'Up to {sp} on {pts}. Small steps are still steps.',
+      '{pts} points and a nudge to {sp}. The {B} earned their keep.'],
   down:['{pts} points, a small slip to {sp}. Nothing a good Sunday cannot fix.',
-        'Down a spot or two on {pts}. The {W} have some explaining to do.'],
-  hold:['{pts} points, {wp} for the week, holding at {sp}.','{c} of {N} right and {pts} in the bank.',
-        'Same spot, {sp}, with {pts} more on the board.'],
+        'Down a spot or two on {pts}. The {W} have some explaining to do.',
+        'Slipped to {sp} on {pts}. The {W} did that, not you.',
+        '{pts} points and a slide to {sp}. Week {nx} does not care what happened here.',
+        'Down to {sp}. Blame the {W}, they will not defend themselves.'],
+  hold:['{pts} points, {wp} for the week, holding at {sp}.',
+        '{c} of {N} right and {pts} in the bank.',
+        'Same spot, {sp}, with {pts} more on the board.',
+        '{pts} points, {wp} for the week, and the exact same seat at {sp}.',
+        'Still {sp}. {c} of {N} right and nothing moved. Somebody break the tie.',
+        '{pts} on the board, {sp} on the table. The {B} kept you honest.'],
   first:['{pts} points to open the season. The table starts here.',
          'Week 1 is in the books with {pts}. Plenty of season left.',
-         '{c} of {N} right to start. Every run starts somewhere.']
+         '{c} of {N} right to start. Every run starts somewhere.',
+         '{pts} to open the year. Everybody is undefeated at something in Week 1.',
+         '{c} of {N} to start. The season is long and the {B} are already working.']
 };
 
 async function buildWrap(wk){
@@ -5717,7 +5761,7 @@ async function buildWrap(wk){
   const won=lad.filter(x=>x.ok), lost=lad.filter(x=>!x.ok&&!x.tie);
   const moments=[], used=new Set();
   const say=(cat,x,extra)=>{const c=WR[cat]; const o={T:nick(x.t),v:x.v,...(extra||{})};
-    const labs=cat==='quiet'?(goodWeek()?c.lab.slice(0,4):['Kept the lights on','Life raft','Lifeline','Small mercies']):c.lab;
+    const labs=cat==='quiet'?(goodWeek()?c.lab:c.labLow):c.lab;
     return {lab:pickU(labs,seed+cat+'l',usedL),txt:fill(pickU(c.txt,seed+cat+x.t,usedT),o),t:x.t,v:x.v,ok:x.ok};};
   if(won[0]){moments.push(say('best',won[0])); used.add(won[0].t);}
   const up=won.filter(x=>!used.has(x.t)).map(x=>({x,s:share(x.g,x.t)})).filter(o=>o.s.all>=3&&o.s.on/o.s.all<=0.4)
