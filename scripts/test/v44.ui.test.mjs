@@ -349,7 +349,7 @@ if (want(10)) {
   await page.waitForTimeout(300);
   const pts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#board .row')].map(r => [r.dataset.pu || 'ME', +r.querySelector('.pts b').textContent])));
   const nm = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#board .row[data-pu]')].map(r => [r.dataset.pu, r.querySelector('.nrow b').textContent])));
-  const expect = ['u_1', 'u_2'].map(u => { const d = pts.ME - pts[u]; return d > 0 ? `Beating ${nm[u]} by ${d}` : d < 0 ? `Behind ${nm[u]} by ${-d}` : `Level with ${nm[u]}`; });
+  const expect = ['u_1', 'u_2'].map(u => { const d = pts.ME - pts[u]; return d > 0 ? `Beating ${nm[u]} by ${d}` : d < 0 ? `Behind ${nm[u]} by ${-d}` : `Tied with ${nm[u]}`; });
   ok('its numbers are the This week table\'s own differences', expect.every(e => line.includes(e)), `${line} :: ${expect.join(' | ')}`);
   await tab(page, 'picks'); await page.waitForTimeout(200);
   ok('one bar for both rivals, one tap', await page.evaluate(() => document.querySelectorAll('#slate .rvlivebar').length === 1 && document.querySelector('#slate .rvlivebar').tagName === 'BUTTON'));
@@ -430,8 +430,20 @@ async function wrapOracle(page, wk) {
   const nm = Object.fromEntries(mem.map(m => [m.uid, m.name]));
   const seasonThru = (u, last) => weeks.filter(w => w.wk <= last).reduce((s, w) => s + (w.wk === wk ? pts[u] : (((st.find(r => r.uid === u) || {}).weeks || {})[String(w.wk)] || {}).pts || 0), 0);
   const sorted = last => mem.map(m => m.uid).sort((a, b) => (seasonThru(b, last) - seasonThru(a, last)) || String(nm[a]).localeCompare(String(nm[b])));
-  const best = Math.max(...Object.values(pts));
-  const wkPlace = (pts.u_0 === best && best > 0) ? 1 : 1 + Object.values(pts).filter(v => v > pts.u_0).length;
+  /* v1.44.4 Weekly place: points, then the tiebreaker (closest without
+     going over; over loses to any under; no guess last). Written out here
+     from the rule, sharing no code with the app. */
+  /* In 2026 it only decides from Week 8 (Lee's ruling); before that, ties share. */
+  const season = await page.evaluate(() => PS.SEASON);
+  const tbOn = !(String(season) === '2026' && wk < 8);
+  const tbs = tbOn ? await page.evaluate(w => PS.getTiebreaks(w), wk) : [];
+  const guess = Object.fromEntries(tbs.map(t => [t.uid, t.total]));
+  const last = gs.slice().sort((a, b) => a.kickoff.seconds - b.kickoff.seconds).pop();
+  const actual = (last.awayScore || 0) + (last.homeScore || 0);
+  const tk = u => { if (!tbOn) return [0, 0]; const g = guess[u]; return g == null ? [2, 0] : g <= actual ? [0, actual - g] : [1, g - actual]; };
+  const better = (u, v) => pts[u] > pts[v] || (pts[u] === pts[v] &&
+    (tk(u)[0] < tk(v)[0] || (tk(u)[0] === tk(v)[0] && tk(u)[1] < tk(v)[1])));
+  const wkPlace = 1 + mem.filter(m => better(m.uid, 'u_0')).length;
   return {
     pts: pts.u_0, correct: mine.filter(r => r.winner === win[r.gameId]).length, N,
     avg: Math.round(Object.values(pts).reduce((a, b) => a + b, 0) / mem.length),
@@ -625,6 +637,99 @@ if (want(17)) {
   }
   const all = texts.flat();
   ok('no sentence is shared word for word between three players', new Set(all).size === all.length, JSON.stringify(texts));
+}
+
+console.log('\n20. The Weekly Wrap opens about as soon as the app does');
+if (want(20)) {
+  /* v1.44.3 Lee: the wrap came about five seconds after opening. Network
+     here is slowed to roughly a phone on 4G, so the old order (standings,
+     then 1.9s of timers, then picks, then scoring mode, one after another)
+     shows up as a number rather than a feeling. Measured from navigation
+     to the overlay being visible. */
+  const delay = { getStandings: 800, getRevealed: 800, getScoringMode: 400 };
+  const { ctx, page, errors } = await open({ startISO: tuesday(), weeks: 3, gamesPerWeek: 16, playerCount: 12, autopop: true, delay }, { wait: 1 });
+  const t0 = Date.now();
+  let ms = null;
+  for (let i = 0; i < 120; i++) {
+    if (await page.evaluate(() => { const o = document.getElementById('wrapOv'); return !!o && !o.hidden; })) { ms = Date.now() - t0; break; }
+    await page.waitForTimeout(50);
+  }
+  ok('the wrap opens on its own', ms != null, 'never opened in 6s');
+  ok('and within two seconds of opening the app, on a slow network', ms != null && ms < 2000, `${ms}ms`);
+  const w = await readWrap(page);
+  const O = await wrapOracle(page, 1);
+  ok('it still shows the right points after reading in parallel', w.box[0] === String(O.pts), `${w.box[0]} vs ${O.pts}`);
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
+console.log('\n21. Week 8, rebuilt: a tie on points is settled by the tiebreaker');
+if (want(21)) {
+  /* v1.44.4 The real Week 8: two players on 91, one guessed 48 and one 58,
+     the game finished on 51, and the app crowned both. Rebuilt here on a
+     fixture whose top rows really are level on points: the player who
+     sorts FIRST by name is given the over guess (+7), so a name-ordered
+     table, or a shared one, gets it wrong; the second is given the under
+     guess (-3); every other level player overshoots by 20. Expected:
+     1st is the -3 guess alone, 2nd is the +7 guess alone. */
+  const plan = { playerCount: 50, weeks: 6, season: '2027', startISO: new Date(Date.now() - 40 * D).toISOString() };
+  /* Your own row carries no data-pu, and you (u_0) can be one of the level
+     players. The first draft of this case left you out, so your default
+     guess landed on the same number as the -3 guess and two players
+     rightly shared first: the rule was right and the fixture was not. */
+  const board = async page => page.evaluate(() => [...document.querySelectorAll('#board .row')].map(r => ({
+    uid: r.dataset.pu || 'u_0', name: (r.querySelector('.who b') || {}).textContent, pts: +((r.querySelector('.pts b') || {}).textContent || 0),
+    gold: !!r.querySelector('.leadtag:not(.silver)'), silver: !!r.querySelector('.leadtag.silver') })));
+  let { ctx, page } = await open(plan, { wait: 2600 });
+  await page.click('button[data-tab="standings"]').catch(() => {}); await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(500);
+  const before = await board(page);
+  const weeks = await page.evaluate(() => PS.getAllWeeks());
+  const gs = weeks[weeks.length - 1].games;
+  const lastG = gs.slice().sort((a, b) => a.kickoff.seconds - b.kickoff.seconds).pop();
+  const actual = lastG.awayScore + lastG.homeScore;
+  await ctx.close();
+  const best = Math.max(...before.map(r => r.pts));
+  const level = before.filter(r => r.pts === best).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  ok('the fixture has players level on points at the top', level.length >= 2, `${level.length} on ${best}`);
+  const idx = u => +String(u).replace('u_', '');
+  const tbTotals = [];
+  level.forEach(r => { tbTotals[idx(r.uid)] = actual + 20; });
+  tbTotals[idx(level[0].uid)] = actual + 7;      // like Lubbylubbs on 58
+  tbTotals[idx(level[1].uid)] = actual - 3;      // like Jeremy on 48
+  ({ ctx, page } = await open({ ...plan, tbTotals }, { wait: 2600 }));
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await page.click('button[data-tab="standings"]').catch(() => {}); await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(500);
+  const after = await board(page);
+  const golds = after.filter(r => r.gold), silvers = after.filter(r => r.silver);
+  ok('one week winner, not every player on the best score', golds.length === 1, `${golds.length} gold`);
+  ok('and it is the guess that stayed under the total', golds[0] && golds[0].uid === level[1].uid,
+     `${golds[0] && golds[0].name} vs expected ${level[1].name}`);
+  ok('the over guess on the same points is runner-up, alone', silvers.length === 1 && silvers[0].uid === level[0].uid,
+     JSON.stringify(silvers.map(r => r.name)));
+  ok('and the table lists them in that order', after[0].uid === level[1].uid && after[1].uid === level[0].uid,
+     after.slice(0, 3).map(r => r.name).join(', '));
+  await page.click('button[data-tab="grid"]').catch(() => {});
+  await page.waitForTimeout(500);
+  const cap = await page.evaluate(() => (document.querySelector('.tbstrip') || {}).textContent || '');
+  const c1 = cap.replace(/\s+/g, ' ').trim();
+  ok('the Grid says they finished tied, and who was closest without going over',
+     /finished the week tied with \d+ points each/.test(c1) && /tiebreaker was the .+ game total points/.test(c1)
+       && c1.includes(`${level[1].name} was closest without going over`), c1);
+  ok('and never says "level"', !/\blevel\b/i.test(c1), c1);
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+
+  /* Lee's ruling: in 2026 it starts at Week 8. The same tie in Week 6 of
+     2026 is shared, as it always was. */
+  ({ ctx, page } = await open({ ...plan, season: '2026', tbTotals }, { wait: 2600 }));
+  await page.click('button[data-tab="standings"]').catch(() => {}); await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(500);
+  const old = await board(page);
+  ok('in 2026, before Week 8, a tie on points is still shared',
+     old.filter(r => r.gold).length === level.length, `${old.filter(r => r.gold).length} gold for ${level.length} tied`);
+  await ctx.close();
 }
 
 await browser.close();

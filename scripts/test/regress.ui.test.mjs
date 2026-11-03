@@ -732,7 +732,7 @@ console.log('\n16. The two Standings tables must not borrow each other\'s histor
      put fake arrows on 46 of 50 rows from a single there-and-back. Keyed
      by view, it is 0. */
   const { ctx, page, errors } = await open(
-    { playerCount: 50, weeks: 6,
+    { playerCount: 50, weeks: 6, season: '2027',   // v1.44.4 a season where the tiebreaker decides every week
       startISO: new Date(Date.now() - 40 * 864e5).toISOString() });
   await page.waitForTimeout(900);
   await page.click('[data-tab="standings"]').catch(() => {});
@@ -799,26 +799,25 @@ console.log('\n16. The two Standings tables must not borrow each other\'s histor
      saying "leader" invites the question the seal already answered. */
   ok('and says "winner" now the week is over, not "leader"',
      /week \d+ winner/i.test(week.lead), week.lead);
-  /* THE RUNNER-UP IS A SCORE, NOT A ROW — "Ties share a place". This
-     asserted `week.second === 1`, which is only right when nobody is
-     level; score_week.py's runner-up is every row at the next DISTINCT
-     score down, and this fixture's generator happens to put the whole
-     top of the table on the same total, so "1" was wrong here the
-     moment the seals started following points instead of position. */
+  /* v1.44.4 THE TIEBREAKER DECIDES A TIE ON POINTS. This block used to
+     assert "Ties share a place": every row on the best score gold, every
+     row on the next distinct score silver. Lee ruled otherwise after Week
+     8 crowned two winners on 91 with guesses of 48 and 58 on a 51-point
+     game. This fixture still puts the top of the table level on points,
+     and the stub's guesses are all distinct (44 + 3i), so the tiebreaker
+     must now pick ONE winner and ONE runner-up, both from the level rows,
+     in the first two places. */
   const shareCount = (arr, v) => arr.filter(x => x === v).length;
   const wBest = week.pts.length ? Math.max(...week.pts) : 0;
-  const wLower = week.pts.filter(p => p < wBest);
-  const wSnd = wLower.length ? Math.max(...wLower) : 0;
-  const nWin = wBest > 0 ? shareCount(week.pts, wBest) : 0;
-  const nSnd = wSnd > 0 ? shareCount(week.pts, wSnd) : 0;
-  ok('the fixture actually reaches the shared-honour case',
-     nWin > 1, `${nWin} on the best score of ${wBest}`);
-  ok('every row at the runner-up score is banded, and only those',
-     week.second === nSnd, `${week.second} banded, ${nSnd} on ${wSnd}`);
-  ok('and every co-winner gets the gold banner, not just the first row',
-     week.gold === nWin, `${week.gold} gold, ${nWin} winners`);
-  ok('with a silver banner on each runner-up',
-     week.silver === nSnd, `${week.silver} silver, ${nSnd} runners-up`);
+  const nTop = wBest > 0 ? shareCount(week.pts, wBest) : 0;
+  const nWin = week.gold, nSnd = week.silver;
+  ok('the fixture actually reaches a tie on points at the top',
+     nTop > 1, `${nTop} on the best score of ${wBest}`);
+  ok('the tiebreaker settles it: one winner, not every row on the best score',
+     week.gold === 1, `${week.gold} gold, ${nTop} level on ${wBest}`);
+  ok('and one runner-up, banded and bannered, from the same level rows',
+     week.silver === 1 && week.second === 1 && week.pts[1] === wBest,
+     `${week.silver} silver, ${week.second} banded, row 2 on ${week.pts[1]}`);
 
   /* AND EVERY BANNER HAS TO BE ON ITS OWN ROW.
      `.leadtag` is position:absolute and `.row.lead` is the only row that
@@ -1535,8 +1534,8 @@ console.log('\n24. The alert preview must not contradict the alerts it previews'
      Static, and checked as a PAIR every time, so drift in EITHER file
      fails. */
   const fs = await import('node:fs');
-  const app  = fs.readFileSync('/root/work/pickem/index.html', 'utf8');
-  const live = fs.readFileSync('/root/work/pickem/worker/live.js', 'utf8');
+  const app  = fs.readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const live = fs.readFileSync(new URL('../../worker/live.js', import.meta.url), 'utf8');
 
   const preview = (app.match(/\$\{nt\((.|\n)*?\)\}/g) || []).join(' ');
   const prows = app.match(/\$\{nt\([^)]*\)\}/g) || [];
@@ -2554,9 +2553,9 @@ console.log('\n34. Grid and Standings must grade real picks correctly');
      point is that "agrees on the data we have" is not "is the same
      function". Check the shape in both files. */
   const fsx = await import('node:fs');
-  const jsPay = fsx.readFileSync('/root/work/pickem/index.html', 'utf8')
+  const jsPay = fsx.readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
                    .match(/const pay=\(r,n\)=>[^;]+;/)?.[0] || '';
-  const pyPay = fsx.readFileSync('/root/work/pickem/scripts/score_week.py', 'utf8');
+  const pyPay = fsx.readFileSync(new URL('../../scripts/score_week.py', import.meta.url), 'utf8');
   ok('the client payout is clamped at BOTH ends',
      /Math\.max\(0,\s*Math\.min\(n,/.test(jsPay), jsPay.slice(0, 90));
   ok('and the server payout is clamped at both ends too',

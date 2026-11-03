@@ -858,6 +858,11 @@ async function getTiebreaks(wk) {
   if (own && own.exists() && !rows.some(r => r.mine)) {
     rows.push({ ...own.data(), name: 'You', mine: true });
   }
+  /* v1.44.4 The tiebreaker now decides the week, so the app has to know
+     whether this is EVERYONE's guess or only yours after a failed list
+     query. Without this flag a phone could treat its owner as the only
+     player who guessed and hand them every tie. */
+  rows.complete = !!res;
   return rows;
 }
 

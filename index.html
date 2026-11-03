@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- v1.44.1 The version of THIS page. A test fails if it ever differs from sw.js. -->
-<meta name="app-version" content="v1.44.2">
+<meta name="app-version" content="v1.44.4">
 <title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
@@ -53,7 +53,7 @@
      cache miss, fetched fresh), and an old cached page keeps its own old
      one. The pair always matches. A test fails if this differs from the
      app-version above or from sw.js. -->
-<link rel="modulepreload" href="./firebase-init.js?v=1.44.2">
+<link rel="modulepreload" href="./firebase-init.js?v=1.44.4">
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
@@ -2523,7 +2523,8 @@ body:not([data-tab="picks"]) .nextup{display:none}
       <p>Your picks stay hidden from everyone else until each game kicks off. The Grid fills in one game at a time as the day goes on.</p></div>
     <div class="opt"><h4>Tiebreaker</h4>
       <p>Closest to the combined points in the week's final game, without going over.
-        That is Monday night most weeks, but it follows the schedule.</p></div>
+        That is Monday night most weeks, but it follows the schedule. It settles any
+        tie on points for the week, first place included.</p></div>
     <div class="opt">
       <h4>Account</h4>
       <p id="acctLine">Signed in. Your picks live with your account, so they follow you to any device.</p>
@@ -2668,7 +2669,7 @@ body:not([data-tab="picks"]) .nextup{display:none}
   <button class="fill-own" id="fillOwn">I'll rank them myself</button>
 </div>
 
-<script type="module" src="./firebase-init.js?v=1.44.2"></script>
+<script type="module" src="./firebase-init.js?v=1.44.4"></script>
 <script type="module">
 /* ============================================================
    CONFIG — the only block you edit in this file.
@@ -2715,6 +2716,11 @@ let RECORDS={};                                          // live: team W-L, opti
 let STANDINGS={};   // key -> {pts,hits,weekWins,weekSeconds,perfectWeeks}
 let standingsReady=false;   // v1.44.0: the Weekly Wrap waits for the season figures
 let TIEBREAKS={};   // key|week -> guessed total
+/* v1.44.4 When each week's guesses were last read (see tbReady), and the
+   scorer's record of each week's 1st and 2nd (score_week.py's _weeks
+   document, which getStandings already returns and used to be dropped). */
+const TB_AT={};
+let WEEK_AWARDS={};
 
 /* Everything a player supplies about themselves reaches innerHTML, and a
    member can set their own name to anything at all — the security rule
@@ -3089,12 +3095,97 @@ function tbState(w){
   }
   return {g,sealed:false,final:F,actual,rows,best};
 }
-/* tbSortKey / tbCmp USED TO LIVE HERE and are deliberately gone.
-   They reimplemented apply_tiebreak's key so the Grid could break a
-   week-points tie "the way the server does". The server does not do
-   that: apply_tiebreak is a secondary key on the SEASON total, and the
-   weekly award shares a tied place outright. Keeping the functions
-   around would only invite the same wrong conclusion again. */
+/* v1.44.4 THE TIEBREAKER DECIDES THE WEEK.
+
+   Until now the rule here, and in score_week.py, was that a tie on week
+   points was shared ("Ties share a place") and the guess only ordered the
+   season table. Week 8 of 2026 then crowned two winners on 91, when one
+   had guessed 48 and the other 58 on a game that finished on 51. Lee
+   ruled the way the Settings screen and the tiebreaker box ("Only used to
+   break a tie on points") have always read: points first, then the
+   tiebreaker, for EVERY place, since a pool paying the top two or three
+   needs third decided too.
+
+   score_week.py's tb_key and week_places are this same key. The two must
+   stay identical, or a notification and the Standings screen will name
+   different winners.
+
+   Players share a place only when level on points AND on the tiebreaker:
+   the same guess, or no guess. Before the tiebreak game is final there is
+   nothing to break a tie with, and level players share as before. */
+const TB_NONE=[];   // optional()'s fallback, so a failed read is never "ready"
+/* Lee's ruling: in 2026 the tiebreaker decides weeks from Week 8 on, the
+   week the problem came up. Weeks 1 to 7 keep the places they were given.
+   Any later season uses it from Week 1. score_week.py has the same table. */
+const TB_FROM={'2026':8};
+const tbFromWeek=()=>TB_FROM[String((typeof PS!=='undefined'&&PS&&PS.SEASON)||'')]||1;
+/* A week's guesses are complete only if they were read after its last game
+   kicked off: before that the reveal query returns nobody's but your own,
+   and a phone that had only your own would hand you every tie. Two minutes
+   covers the widest server clock allowance. */
+function tbReady(w){
+  if(DEMO)return true;
+  const g=tbGame(w);
+  return !!g&&(TB_AT[w]||0)>=g.kick+120000;
+}
+function applyTbs(wk,tbs){
+  (tbs||[]).forEach(t=>{
+    if(t.uid&&!NAMES[t.uid])NAMES[t.uid]=t.name||'Player';
+    TIEBREAKS[(t.uid||ME)+'|'+wk]=t.total;
+    if(t.mine||t.uid===ME)state.tb[wk]=t.total;
+  });
+  /* `complete` is false when firebase-init's list query failed and it
+     returned only your own guess. That must never count as everyone's. */
+  if(tbs&&tbs!==TB_NONE&&tbs.complete!==false)TB_AT[wk]=Date.now();
+}
+/* Fetch a week's guesses unless this phone already holds a complete set. */
+function ensureTb(wk){
+  if(tbReady(wk))return Promise.resolve();
+  return PS.getTiebreaks(wk).then(t=>applyTbs(wk,t)).catch(()=>{});
+}
+const tbGuessOf=(p,w)=>p===ME?(state.tb[w]??TIEBREAKS[p+'|'+w]??null):botGuess(p,w);
+/* [class, distance], smaller is better: 0 under or exact, 1 over, 2 no
+   guess. Null while the week cannot be decided by it. */
+function tbKeyFn(w){
+  if(+w<tbFromWeek())return null;
+  const g=tbGame(w);
+  if(!g||!isFinal(g)||!tbReady(w))return null;
+  const actual=tbActual(g); if(actual==null)return null;
+  return p=>{const v=tbGuessOf(p,w);
+    if(v==null)return [2,0];
+    return v<=actual?[0,actual-v]:[1,v-actual];};
+}
+/* Level on points, the tiebreaker orders them; 0 when it cannot. */
+function tbCmpWeek(w){
+  const key=tbKeyFn(w); if(!key)return ()=>0;
+  return (a,b)=>{const x=key(a),y=key(b); return (x[0]-y[0])||(x[1]-y[1]);};
+}
+/* The week's order: points, then the tiebreaker, then name (name decides
+   nothing, it only keeps the order still). `place` is competition
+   numbering: two players level on both read 1, 1 and the next reads 3. */
+function weekOrder(w,ptsOf){
+  const key=tbKeyFn(w);
+  const rows=PLAYERS.map(p=>({p,pts:ptsOf(p),k:key?key(p):[0,0]}));
+  rows.sort((a,b)=>(b.pts-a.pts)||(a.k[0]-b.k[0])||(a.k[1]-b.k[1])||
+    String(NAMES[a.p]||a.p||'').localeCompare(String(NAMES[b.p]||b.p||'')));
+  rows.forEach((r,i)=>{const q=rows[i-1];
+    r.place=(q&&q.pts===r.pts&&q.k[0]===r.k[0]&&q.k[1]===r.k[1])?q.place:i+1;});
+  return {rows,decided:!!key};
+}
+/* 1st and 2nd for a FINISHED week. When this phone does not hold that
+   week's guesses, the scorer's own record is the answer; only with
+   neither does it fall back to points alone. */
+function weekHonours(w,ptsOf){
+  const {rows,decided}=weekOrder(w,ptsOf);
+  const A=WEEK_AWARDS[w];
+  if(!decided&&A&&Array.isArray(A.winners)&&A.winners.length)
+    return {win:new Set(A.winners.map(x=>x.uid)),snd:new Set((A.seconds||[]).map(x=>x.uid)),rows,src:'server'};
+  if(!rows.length||!(rows[0].pts>0))return null;
+  const win=new Set(rows.filter(r=>r.place===1).map(r=>r.p));
+  const nx=rows.find(r=>r.place>1);
+  const snd=nx&&nx.pts>0?new Set(rows.filter(r=>r.place===nx.place).map(r=>r.p)):new Set();
+  return {win,snd,rows,src:decided?'tiebreak':'points'};
+}
 
 /* ONE GRID CELL. The number, and a word only where a word is true:
      green + Winner  -> closest, and the top two were level on points,
@@ -3851,11 +3942,12 @@ function renderGrid(){
        a week — so it imposed an order the scorer does not produce and
        implied the guess had decided something. Name is not a tiebreak
        and claims nothing; it is only stable, which an arbitrary order
-       is not. Who won the week is decided by points alone, shared when
-       level — see the honours block in renderBoard. */
+       is not. v1.44.4: once the week's last game is final, players level
+       on points are ordered by the tiebreaker, which now decides the week
+       (see weekOrder). Name only orders what neither can separate. */
     .sort(nothingYet
       ? (a,b)=>String(NAME(a.p)||'').localeCompare(String(NAME(b.p))||'')
-      : (a,b)=>(b.pts-a.pts)||String(NAME(a.p)||'').localeCompare(String(NAME(b.p))||''));
+      : (tb=>(a,b)=>(b.pts-a.pts)||tb(a.p,b.p)||String(NAME(a.p)||'').localeCompare(String(NAME(b.p))||''))(tbCmpWeek(state.week)));
   /* NO "WINNER" LABEL, and that is a correction of my own mistake.
      I had the column say WINNER when the top two were level on points,
      on the theory that the tiebreaker then decided the week. It does
@@ -4047,10 +4139,34 @@ function tbPanel(){
   /* If the closest guess is OVER the total, everybody overshot — say so,
      or a winning number larger than the combined score reads as a bug. */
   const allOver=bg!=null&&bg>T.actual;
+  /* v1.44.4 When the guess is what separated first place, say who it
+     handed the week to, since "closest" alone names someone who may have
+     won nothing. */
+  let dec='';
+  const wkD=state.week;
+  if((WEEKS[wkD]||[]).length&&(WEEKS[wkD]||[]).every(isFinal)){
+    const H=weekHonours(wkD,p=>weekSum(p,wkD).pts);
+    if(H&&H.src==='tiebreak'){
+      const top=H.rows.filter(r=>r.place===1), lvl=H.rows.filter(r=>r.place>1&&r.pts===top[0].pts);
+      if(top.length===1&&lvl.length){
+        /* Lee's wording. "Tied with", never "level". */
+        const all=[top[0],...lvl].map(r=>NAME(r.p));
+        const who=all.length===2?all.join(' and ')
+          :all.length===3?`${all[0]}, ${all[1]} and ${all[2]}`
+          :`${all[0]} and ${all.length-1} others`;
+        const tg=tbGame(wkD), mnf=usDay(tg.kick)==='Monday';
+        const gname=mnf?'Monday Night Football':`${TEAM(tg.a)[1]} @ ${TEAM(tg.h)[1]}`;
+        const over=(tbGuessOf(top[0].p,wkD)??-1)>T.actual;
+        dec=`<span class="w">${who} finished the week tied with ${top[0].pts} points each. `
+          +`The tiebreaker was the ${gname} game total points, and ${NAME(top[0].p)} was closest`
+          +`${over?', since every guess in the tie went over':' without going over'}.</span>`;
+      }
+    }
+  }
   return `<div class="tbstrip"><span class="k">Tiebreaker</span>
     <span class="v">${match} combined <b class="mono">${T.actual}</b></span>
     ${who?`<span class="w">${who}${names.length>1?' both':''} closest at
-      <b class="mono">${bg}</b>${allOver?' &mdash; everybody went over':''}</span>`:''}</div>`;
+      <b class="mono">${bg}</b>${allOver?' &mdash; everybody went over':''}</span>`:''}${dec}</div>`;
 }
 
 function renderTray(){
@@ -4258,7 +4374,8 @@ function renderInPlay(){
    points then name, exactly as renderBoard sorts it. Your place is your
    row's position in it, which is what the pinned bar on Standings shows. */
 function weekRows(wk){
-  return PLAYERS.map(p=>({p,...weekSum(p,wk)})).sort((a,b)=>(b.pts-a.pts)||
+  const tb=tbCmpWeek(wk);   // v1.44.4 the same order as Standings
+  return PLAYERS.map(p=>({p,...weekSum(p,wk)})).sort((a,b)=>(b.pts-a.pts)||tb(a.p,b.p)||
     String(NAMES[a.p]||a.p||'').localeCompare(String(NAMES[b.p]||b.p||'')));
 }
 /* Points from the finals on the phone, optionally leaving one game out.
@@ -4784,13 +4901,10 @@ function seasonHonours(){
   Object.keys(WEEKS).forEach(w=>{
     const gs=WEEKS[w]||[];
     if(!gs.length||!gs.every(isFinal))return;
-    const rows=PLAYERS.map(p=>({p,pts:weekSum(p,w).pts}));
-    const best=Math.max(0,...rows.map(r=>r.pts));
-    if(!(best>0))return;
-    rows.filter(r=>r.pts===best).forEach(r=>{win[r.p]=(win[r.p]||0)+1;});
-    const lower=rows.filter(r=>r.pts<best).map(r=>r.pts);
-    const sp=lower.length?Math.max(...lower):0;
-    if(sp>0)rows.filter(r=>r.pts===sp).forEach(r=>{snd[r.p]=(snd[r.p]||0)+1;});
+    const H=weekHonours(w,p=>weekSum(p,w).pts);   // v1.44.4 points, then the tiebreaker
+    if(!H)return;
+    H.win.forEach(p=>{win[p]=(win[p]||0)+1;});
+    H.snd.forEach(p=>{snd[p]=(snd[p]||0)+1;});
   });
   return {win,snd};
 }
@@ -4881,6 +4995,8 @@ function renderBoard(){
     x.classList.toggle('on',on);
     x.setAttribute('aria-selected',on?'true':'false');
   });
+  /* v1.44.4 Level on week points, the tiebreaker orders them. */
+  const wkTb=view==='week'?tbCmpWeek(wk):()=>0;
   const rows=PLAYERS.map(p=>{
     if(view==='week'){
       const r=weekSum(p,wk);
@@ -4897,7 +5013,7 @@ function renderBoard(){
        renders, which made the movement arrows flicker up and down on a
        Sunday while nobody's points had changed. It is not a tiebreak:
        see the note where tbSortKey/tbCmp used to live. */
-    return{p,pts,hits,gp};}).sort((a,b)=>(b.pts-a.pts)||
+    return{p,pts,hits,gp};}).sort((a,b)=>(b.pts-a.pts)||wkTb(a.p,b.p)||
       String(NAMES[a.p]||a.p||'').localeCompare(String(NAMES[b.p]||b.p||'')));
   /* A WEEK IS "DONE" ONLY WHEN EVERY GAME IN IT IS FINAL — not when
      some are. Everything below that says who won the week is gated on
@@ -4926,17 +5042,18 @@ function renderBoard(){
 
      The tiebreaker guess does NOT enter this. apply_tiebreak orders the
      SEASON total; see the note where tbSortKey/tbCmp used to live. */
-  const honours=(()=>{
-    if(view!=='week'||!weekDone||!rows.length)return null;
-    const best=Math.max(...rows.map(r=>r.pts));
-    if(!(best>0))return null;
-    const lower=rows.filter(r=>r.pts<best).map(r=>r.pts);
-    const sndPts=lower.length?Math.max(...lower):0;
-    return {
-      win:new Set(rows.filter(r=>r.pts===best).map(r=>r.p)),
-      snd:sndPts>0?new Set(rows.filter(r=>r.pts===sndPts).map(r=>r.p)):new Set()
-    };
-  })();
+  /* v1.44.4 Points, then the tiebreaker: weekHonours, the same function
+     the season seals and the Weekly Wrap use, and the same rule as
+     score_week.py. Shared only when level on both. */
+  const ptsMap=Object.fromEntries(rows.map(r=>[r.p,r.pts]));
+  const honours=(view==='week'&&weekDone&&rows.length)?weekHonours(wk,p=>ptsMap[p]||0):null;
+  /* Without this phone holding the week's guesses, the order comes from
+     the scorer's record so the badges sit on the right rows. */
+  if(honours&&honours.src==='server'){
+    const rk=p=>honours.win.has(p)?0:honours.snd.has(p)?1:2;
+    rows.sort((a,b)=>(b.pts-a.pts)||(rk(a.p)-rk(b.p))||
+      String(NAMES[a.p]||a.p||'').localeCompare(String(NAMES[b.p]||b.p||'')));
+  }
   const isWin=p=>!!honours&&honours.win.has(p);
   const isSnd=p=>!!honours&&honours.snd.has(p);
   const histKey=view==='week'?'week:'+wk:'season';
@@ -5504,7 +5621,7 @@ function rvPlayerSheet(u){
         <div class="me"><div class="rvwkl"><i class="w"></i>You won</div><div class="rvwks">${r.weeks.filter(x=>x.r==='w').map(x=>`<span class="w" title="Week ${x.wk}: ${x.a} to ${x.b}">${x.wk}</span>`).join('')||'<em>None yet</em>'}</div></div>
         <div class="them"><div class="rvwkl"><i class="l"></i>${nm} won</div><div class="rvwks">${r.weeks.filter(x=>x.r==='l').map(x=>`<span class="l" title="Week ${x.wk}: ${x.a} to ${x.b}">${x.wk}</span>`).join('')||'<em>None yet</em>'}</div></div>
       </div>${r.t?`<div class="rvties"><i class="t"></i>Tied: ${r.weeks.filter(x=>x.r==='t').map(x=>`<span class="t">${x.wk}</span>`).join('')}</div>`:''}`:''}
-      ${live?`<div class="rvlive"><span>Week ${wk}, if scores hold</span><em class="${d>0?'up':d<0?'dn':''}">${d>0?`You by ${d}`:d<0?`${nm} by ${-d}`:'Level'}</em></div>`:''}
+      ${live?`<div class="rvlive"><span>Week ${wk}, if scores hold</span><em class="${d>0?'up':d<0?'dn':''}">${d>0?`You by ${d}`:d<0?`${nm} by ${-d}`:'Tied'}</em></div>`:''}
       <button type="button" class="rvline" data-rvgo="rm" data-u="${esc(u)}">Remove rival</button>`};
   }
   const cur=myRivals();
@@ -5525,7 +5642,7 @@ function rivalLine(){
   /* ONE BAR, Lee's call. It opens the first rival's card, and a swipe
      on that card (or a tap on its dots) moves to the second. */
   const bits=rv.map(u=>{const d=me-weekSum(u,wk).pts;
-    return d>0?`Beating ${NAME(u)} by <em class="up">${d}</em>`:d<0?`Behind ${NAME(u)} by <em class="dn">${-d}</em>`:`Level with ${NAME(u)}`;});
+    return d>0?`Beating ${NAME(u)} by <em class="up">${d}</em>`:d<0?`Behind ${NAME(u)} by <em class="dn">${-d}</em>`:`Tied with ${NAME(u)}`;});
   return `<button type="button" class="rvlivebar" data-rvu="${esc(rv[0])}"><span><i>${done?`Your rivals &middot; week ${wk} final`:'Your rivals &middot; live'}</i>${bits.join(' &middot; ')}</span><b aria-hidden="true">&rsaquo;</b></button>`;
 }
 
@@ -5596,6 +5713,25 @@ function gamesTiles(gs){
    NOTHING HERE IS WRITTEN ANYWHERE. "Seen" is a localStorage flag per
    pool and week, so a second phone shows it once more, which is fine. */
 const WRAP_CACHE={};
+/* v1.44.3 The wrap's two network reads (that week's revealed picks and its
+   scoring mode) need nothing from standings, so they start the moment the
+   season is known, alongside standings instead of after it. Before this a
+   player waited on standings, then 1.9 seconds of timers, then both reads
+   one after the other: about five seconds of looking at Picks. */
+const WRAP_PRE={};
+function prefetchWrap(){
+  if(DEMO||!autoPopOK())return;
+  const wk=lastDoneWeek(); if(wk==null||WRAP_PRE[wk])return;
+  /* The live week's picks are in memory once loadWeek lands, and may not be
+     yet; buildWrap reads them itself. Only a finished, earlier week is fetched. */
+  if(wk===state.week)return;
+  if(lsGet(wrapSeenKey(wk)))return;
+  const lastKick=Math.max(...(WEEKS[wk]||[]).map(g=>g.kick));
+  if(Date.now()-lastKick>6*86400e3)return;
+  const picks=wrapPicks(wk); picks.catch(()=>{});
+  WRAP_PRE[wk]={picks, mode:PS.getScoringMode(wk).catch(()=>state.mode), tb:ensureTb(wk)};
+  loadSerif();   // the card's serif, so it does not swap in after the card shows
+}
 const wrapSeenKey=wk=>`ps_wrap_${poolKey()}_${(PS&&PS.SEASON)||''}_w${wk}`;
 const weekDoneN=wk=>{const gs=WEEKS[wk]||[]; return gs.length>0&&gs.every(isFinal);};
 function lastDoneWeek(){
@@ -5721,11 +5857,16 @@ async function buildWrap(wk){
   if(WRAP_CACHE[wk])return WRAP_CACHE[wk];
   const gs=[...(WEEKS[wk]||[])].sort((a,b)=>a.kick-b.kick), N=gs.length;
   if(!N||!weekDoneN(wk))return null;
-  const P=await wrapPicks(wk);
+  /* v1.44.3 Both reads at once, usually already finished by now. A failed
+     prefetch of the picks falls back to a fresh read, never to no wrap. */
+  const pre=WRAP_PRE[wk];
+  const [P,mode]=await Promise.all([
+    pre?pre.picks.catch(()=>wrapPicks(wk)):wrapPicks(wk),
+    wk===state.week?state.mode:(pre?pre.mode:PS.getScoringMode(wk).catch(()=>state.mode)),
+    pre&&pre.tb?pre.tb:ensureTb(wk)   // v1.44.4 the week's guesses, for the places
+  ]);
   const mine=P[ME]||{};
   if(!Object.keys(mine).length)return null;            // no picks, no wrap
-  let mode=state.mode;
-  if(wk!==state.week){ try{ mode=await PS.getScoringMode(wk); }catch{} }
   const conf=mode==='confidence';
   const val=k=>conf?pay(k.weight,N):1;
   const ptsOf=u=>gs.reduce((s,g)=>{const k=(P[u]||{})[g.id]; return s+(k&&k.winner===result(g)?val(k):0);},0);
@@ -5734,8 +5875,13 @@ async function buildWrap(wk){
   const sortBy=f=>[...PLAYERS].sort((a,b)=>(f(b)-f(a))||String(NAMES[a]||'').localeCompare(String(NAMES[b]||'')));
   const wkOrder=sortBy(u=>wkPts[u]);
   const best=Math.max(...PLAYERS.map(u=>wkPts[u]));
-  const winners=PLAYERS.filter(u=>wkPts[u]===best&&best>0);
-  const wkPlace=winners.includes(ME)?1:(1+PLAYERS.filter(u=>wkPts[u]>wkPts[ME]).length);
+  /* v1.44.4 Places by points, then the tiebreaker: weekOrder, the same as
+     Standings and the scorer. The week's guesses were fetched alongside
+     the picks above. */
+  const WO=weekOrder(wk,u=>wkPts[u]);
+  const winners=best>0?WO.rows.filter(r=>r.place===1).map(r=>r.p):[];
+  const myRow=WO.rows.find(r=>r.p===ME);
+  const wkPlace=myRow?myRow.place:(1+PLAYERS.filter(u=>wkPts[u]>wkPts[ME]).length);
   /* Season through this week, and through the week before, for the move. */
   const thru=(u,last)=>Object.keys(WEEKS).map(Number).filter(w=>w<=last).reduce((s,w)=>s+(w===wk?wkPts[u]:weekSum(u,w).pts),0);
   const before=sortBy(u=>thru(u,wk-1)), after=sortBy(u=>thru(u,wk));
@@ -5877,7 +6023,7 @@ async function maybeAutoWrap(){
   if(!standingsReady)return;
   if(document.querySelector('.sheet.on')||!$('#infoSheet').hidden)return;
   wrapTried=true;
-  setTimeout(()=>openWrap(wk,true),700);
+  openWrap(wk,true);
 }
 
 /* SHARE AS A PICTURE. Drawn on a canvas from the same W object, at
@@ -7373,8 +7519,11 @@ async function loadSeason(seedMembers){
      "_weeks" summary score_week.py writes, which is not a player. Its doc
      id is the uid, which is what we key on now — filing by name meant two
      players called "Player" overwrote each other. */
+  /* v1.44.3 Never allowed to cost a player the app. */
+  try{ prefetchWrap(); }catch(e){}
   standings.then(st=>{
     st.forEach(r=>{ if(r.uid&&!String(r.uid).startsWith('_'))STANDINGS[r.uid]=r; });
+    const wa=st.find(r=>r.uid==='_weeks'); if(wa){ const {uid,...rest}=wa; WEEK_AWARDS=rest; }
     /* Guarded and late: this can land after the player has already tapped
        into Standings, so it has to repaint rather than assume the render
        that read STANDINGS ran after it was filled. Guarded because a failed
@@ -7384,7 +7533,7 @@ async function loadSeason(seedMembers){
     /* v1.44.0 After first paint and with the season in hand: the heads up
        for anyone newly hunting you, then this week's Weekly Wrap. Both
        wrapped, because neither may ever cost a player the app. */
-    setTimeout(()=>{ try{ checkHunters(); }catch(e){} try{ maybeAutoWrap(); }catch(e){} },1200);
+    setTimeout(()=>{ try{ checkHunters(); }catch(e){} try{ maybeAutoWrap(); }catch(e){} },300);
   });
 
   /* getScoringMode used to be awaited HERE, on its own, purely because it
@@ -7407,7 +7556,7 @@ async function loadWeek(wk){
   const [picks,revealed,tbs,archive,mode]=await Promise.all([
     optional(PS.myPicks(wk),      {}, 'myPicks'),
     optional(PS.getRevealed(wk),  [], 'getRevealed'),
-    optional(PS.getTiebreaks(wk), [], 'getTiebreaks'),
+    optional(PS.getTiebreaks(wk), TB_NONE, 'getTiebreaks'),
     optional(PS.getArchive(),     [], 'getArchive'),
     // Moved out of loadSeason(), where it cost its own round trip between
     // the two batches. Refreshing it per week is also more correct: a mode
@@ -7429,11 +7578,7 @@ async function loadWeek(wk){
     if(p.uid&&!NAMES[p.uid])NAMES[p.uid]=p.name||'Player';
     (BOT[p.uid]||=({}))[p.gameId]={winner:p.winner,weight:p.weight};
   });
-  tbs.forEach(t=>{
-    if(t.uid&&!NAMES[t.uid])NAMES[t.uid]=t.name||'Player';
-    TIEBREAKS[(t.uid||ME)+'|'+wk]=t.total;
-    if(t.mine||t.uid===ME)state.tb[wk]=t.total;
-  });
+  applyTbs(wk,tbs);
   ARCHIVE_LIVE=archive;
   state.mode=mode; syncModeButtons();
   /* Reported once the week is assembled, not per read: a player does not

@@ -342,7 +342,8 @@ def score_pools(db, season, week):
         results.sort(key=lambda r: -r["total"])
         results = apply_tiebreak(db, pid, week, results, finals)
 
-        # Weekly awards, once every game is final. Ties share a place.
+        # Weekly awards, once every game is final: week points, then the
+        # tiebreaker (week_places). Only a tie on both shares a place.
         # winners/seconds are declared out here rather than inside the
         # branch because the report carries them now: the results
         # notification names who took the week, and it can only do that
@@ -352,11 +353,13 @@ def score_pools(db, season, week):
         if len(finals) == len(games) and results:
             best = max(r["wpts"] for r in results)
             if best > 0:
-                winners = [r for r in results if r["wpts"] == best]
-                # Runner-up is the next distinct score down, not the next row.
-                lower = [r["wpts"] for r in results if r["wpts"] < best]
-                second_pts = max(lower) if lower else 0
-                seconds = ([r for r in results if r["wpts"] == second_pts]
+                ranked, place = week_places(results, season, week)
+                winners = [r for r in ranked if place[r["uid"]] == 1]
+                # Runner-up is the next PLACE down. On a tie broken by the
+                # tiebreaker that is somebody on the winner's own points.
+                nxt = next((r for r in ranked if place[r["uid"]] > 1), None)
+                second_pts = nxt["wpts"] if nxt else 0
+                seconds = ([r for r in ranked if place[r["uid"]] == place[nxt["uid"]]]
                            if second_pts > 0 else [])
                 # (Two locals that built name lists used to sit here. The
                 # report below takes uid+name pairs directly and nothing
@@ -414,7 +417,7 @@ def score_pools(db, season, week):
                 print(f"  week {week}: 1st {', '.join(w['name'] for w in winners)} ({best})"
                       + (f" | 2nd {', '.join(w['name'] for w in seconds)} ({second_pts})"
                          if seconds else ""))
-        reports.append({"pool": pid, "name": pd.get("name", "Pool"),
+        reports.append({"pool": pid, "name": pd.get("name", "Pool"), "season": season,
                         "week": week, "results": results,
                         "complete": len(finals) == len(games),
                         "winners": [w["name"] for w in winners], "best": best,
@@ -506,14 +509,16 @@ def result_copy(rep, r, place, leaders):
     snd = names_phrase(rep.get("seconds") or [])
     win = names_phrase(rep.get("winners") or [])
 
+    on_tb = bool(rep.get("seconds")) and (rep.get("secondPts") or 0) == (rep.get("best") or 0)
     if won:
         title = f"You won Week {wk}"
-        body = f"{pts_label(r['wpts'])}."
+        body = f"{pts_label(r['wpts'])}{', on the tiebreaker' if on_tb else ''}."
         if snd:
             body += f" {snd} second on {pts_label(rep.get('secondPts') or 0)}."
     elif win:
         title = f"Week {wk} final"
-        body = (f"{win} won it with {pts_label(rep.get('best') or 0)}. "
+        body = (f"{win} won it with {pts_label(rep.get('best') or 0)}"
+                f"{' on the tiebreaker' if on_tb else ''}. "
                 f"You finished {ordinal(place)} with {pts_label(r['wpts'])}.")
     else:
         # Every game final and nobody scored: possible in a tiny pool, and
@@ -612,16 +617,12 @@ def notify(reports):
         top_total = max(r["total"] for r in rep["results"])
         leaders = [r for r in rep["results"] if r["total"] == top_total]
 
-        # Weekly places, computed from the WEEK's points. Ties share a
-        # place, so two players on 96 are both "1st" and the next is 3rd.
-        by_week = sorted({r["wpts"] for r in rep["results"]}, reverse=True)
-        place_of = {}
-        seen = 0
-        for pts in by_week:
-            tied = [r for r in rep["results"] if r["wpts"] == pts]
-            for r in tied:
-                place_of[r["uid"]] = seen + 1
-            seen += len(tied)
+        # Weekly places: week points, then the tiebreaker, from the same
+        # function that decides the awards, so a notification can never
+        # name a different place from the Standings screen. Before the
+        # week is final there is no total to break ties with, and level
+        # players share a place.
+        _, place_of = week_places(rep["results"], rep.get("season"), rep.get("week"))
 
         for r in rep["results"]:
             tokens = r.get("tokens") or []
@@ -654,6 +655,64 @@ def notify(reports):
                     print(f"  push failed for {r['name']}: {e}")
 
 
+def tb_key(guess, actual):
+    """The tiebreaker as a sort key. Smaller is better.
+
+    Closest without going over takes it. A guess that went over loses to
+    any guess that did not, and among overshoots the smaller miss is
+    better, so a week where everyone tied went over still has an order.
+    No guess sits behind every guess. With no final total yet there is
+    nothing to break a tie with, so everyone keys the same."""
+    if actual is None:
+        return (0, 0)
+    if guess is None:
+        return (2, 0)
+    if guess <= actual:
+        return (0, actual - guess)
+    return (1, guess - actual)
+
+
+# Lee's ruling: in 2026 the tiebreaker decides weeks from Week 8 on, the
+# week the problem came up; weeks 1 to 7 keep the places they were given.
+# Any later season uses it from Week 1. index.html has the same table.
+TB_FROM = {"2026": 8}
+
+
+def tb_applies(season, week):
+    if season is None or week is None:
+        return True
+    return int(week) >= TB_FROM.get(str(season), 1)
+
+
+def week_places(results, season=None, week=None):
+    """WEEKLY PLACES: week points first, then the tiebreaker.
+
+    v1.44.4. This used to read "Ties share a place", and the tiebreaker
+    only ordered the season table. Lee's ruling, after Week 8 crowned two
+    winners on 91 while one of them had guessed 48 and the other 58 on a
+    game that finished on 51: the tiebreaker decides the week, as the
+    Settings screen has always said. It breaks EVERY tie on points, not
+    only first, because a pool paying the top two or three needs third
+    decided too.
+
+    Players still share a place when they are level on points AND on the
+    tiebreaker: the same guess, or no guess at all.
+
+    Reads r["tbGuess"] and r["tbActual"], which apply_tiebreak attaches.
+    Returns the rows in order and a uid -> place map, with competition
+    numbering (1, 2, 2, 4)."""
+    on = tb_applies(season, week)
+    def k(r):
+        return (-r["wpts"],) + tb_key(r.get("tbGuess"), r.get("tbActual") if on else None)
+    rows = sorted(results, key=k)
+    place, prev = {}, None
+    for i, r in enumerate(rows):
+        kk = k(r)
+        place[r["uid"]] = place[prev[0]] if prev and prev[1] == kk else i + 1
+        prev = (r["uid"], kk)
+    return rows, place
+
+
 def apply_tiebreak(db, pid, week, results, games):
     """Order tied players by the Monday-night total.
 
@@ -672,12 +731,7 @@ def apply_tiebreak(db, pid, week, results, games):
         guesses[v["uid"]] = v["total"]
 
     def key(r):
-        g = guesses.get(r["uid"])
-        if g is None:
-            return (2, 0)            # no guess, always last
-        if g <= actual:
-            return (0, actual - g)   # under: closest wins
-        return (1, g - actual)       # over: only if nobody is under
+        return tb_key(guesses.get(r["uid"]), actual)
 
     out = sorted(results, key=lambda r: (-r["total"], key(r)))
     for r in out:

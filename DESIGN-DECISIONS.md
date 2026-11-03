@@ -1591,3 +1591,41 @@ the left, theirs red on the right, ties below. With two rivals the
 Picks bar stays ONE bar (Lee rejected one line per rival and rejected
 tabs on the card); the card shows two dots and swipes sideways to the
 other rival. v44 sections 7 and 10, mutations 121, 137, 138.
+
+## v1.44.4 — the tiebreaker decides the week (reverses sections 1 and the "Ties share a place" notes above)
+
+Week 8 of 2026 crowned two winners on 91 points. One had guessed 48 and
+the other 58 on a Bears @ Seahawks game that finished on 51, and three
+players on 87 were all shown as runner-up. Lee ruled the way the Settings
+screen and the tiebreaker box ("Only used to break a tie on points") had
+always read: **points first, then the tiebreaker, for every place**, so
+Jeremy won Week 8 outright and Lubbylubbs was second. Every tie is broken,
+not only first, because a pool paying the top two or three needs third
+decided too.
+
+The key, identical in `score_week.py` (`tb_key`, `week_places`) and
+index.html (`tbKeyFn`, `weekOrder`): under or exact beats over; among
+unders the smaller gap wins; among overs the smaller overshoot wins; no
+guess sits last. Players share a place only when level on points AND on
+the tiebreaker (the same guess, or no guess). Before the last game is
+final nothing breaks a tie and level players share, as before.
+
+One function decides it on each side, and everything reads it: Standings
+This Week (order, gold and silver), the season seals, the Weekly Wrap's
+place and seal, the Grid order and a caption naming who the tiebreaker
+gave 1st to, the `_weeks` record, `weekWins`/`weekSeconds`, and the
+Tuesday notification ("on the tiebreaker"). The app reads the scorer's
+`_weeks` record for any week whose guesses it does not hold, and treats a
+week's guesses as complete only if read after its last game kicked off,
+and only if firebase-init says the list query succeeded (`complete`), so
+a phone can never mistake its owner's guess for everyone's.
+
+Lee chose to START the rule at Week 8 of 2026, the week it came up:
+weeks 1 to 7 keep their shared places, and any later season uses it from
+Week 1 (`TB_FROM` in both files). Week 8 is re-decided by running the
+scorer for it with `--no-push`. Caption wording is Lee's: "X and Y
+finished the week tied with N points each. The tiebreaker was the Monday
+Night Football game total points, and X was closest without going over."
+"Tied with", never "level", anywhere a player reads it. Tests: test_week_places.py (18, built from the real Week 8),
+v44 section 21 (rebuilds Week 8 in the app) and the v44 wrap oracle,
+regress's honours case moved to the new rule.

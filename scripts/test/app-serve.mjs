@@ -305,7 +305,7 @@ const pickFor = (g, i, mi, wk) => {
 };
 
 const PSX = window.PS = {
-  SEASON: '2026', user: { uid: 'u_' + (P.me || 0) }, poolId: 'p_test',
+  SEASON: P.season || '2026', user: { uid: 'u_' + (P.me || 0) }, poolId: 'p_test',
   /* Real Firebase fires onAuthStateChanged the INSTANT this resolves —
      which is several lines before the PIN screen's go() reaches
      joinPool(). That ordering is the whole cause of the "boxes empty and
