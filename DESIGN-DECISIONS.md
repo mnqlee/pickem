@@ -1629,3 +1629,35 @@ Night Football game total points, and X was closest without going over."
 "Tied with", never "level", anywhere a player reads it. Tests: test_week_places.py (18, built from the real Week 8),
 v44 section 21 (rebuilds Week 8 in the app) and the v44 wrap oracle,
 regress's honours case moved to the new rule.
+
+## v1.44.5 — the Weekly Wrap, redesigned with Lee
+
+The old circle mixed two numbers: the place inside it was the WEEK and the
+arrow on top was the SEASON move, so "▼4 20TH" read as "dropped 4 to 20th",
+which was neither. Lee's design, settled on a mockup canvas:
+
+- **Headline is the season, on one line**: "Lee slips to 11th overall",
+  "Lee climbs to 7th overall". As large as fits beside the stamp, down to
+  20px; below that it sets on two even lines at 28px. A week winner's
+  headline stays the week: "Jeremy takes Week 8".
+- **Deck**: a plain fact in Lee's words ("Dropped 4 spots this week."),
+  then one witty line from a bank of 40+ per kind of week (330 lines).
+  The witty line never says "week", never repeats the spot count, and a
+  points figure only ever prints as "N points" ("1 point"); the highlight
+  lines follow the same points rule. Jokes go after teams and results,
+  never the person.
+- **No two players get the same line in a week**: assignWrapLines() hands
+  lines out over the whole pool in uid order on every phone, each player
+  taking the first unused line their picks can fill, from a start that
+  moves 13 places a week, so nobody repeats week to week either.
+- **The stamp is the week**: gold for 1st, silver for the next place
+  (both after the tiebreaker), red ink for everyone else. "WEEK n ★ WEEKLY
+  WRAP" across the top half, set halfway between the outer and inner
+  rings; gold and silver carry the black outer ring; stars at each side
+  and the bottom. The Share picture draws the same stamp.
+- **Four boxes**: Points, Correct, Pool avg, Season (with the season
+  arrow beside it). "This week" was dropped because the stamp says it.
+
+Tests: v44 section 22 (bank rules read from the source, hand-out on pools
+of 40, all 12 fixture players graded against a tiebreak oracle), mutations
+139 to 142, 131 moved to the stamp.

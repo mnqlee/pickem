@@ -946,14 +946,14 @@ const MUTATIONS = [
    ['not while the week is still being played'], 'v44:14'],
   [130, 'wrap: season rank one off', "  const sNow=after.indexOf(ME)+1, sWas=before.indexOf(ME)+1;", "  const sNow=after.indexOf(ME)+2, sWas=before.indexOf(ME)+1;",
    ['Season rank matches the oracle'], 'v44:13'],
-  [131, 'wrap: the winner seal says Winner', "<b>1ST</b><em>Place</em>", "<b>1ST</b><em>Winner</em>",
+  [131, 'wrap: the winner seal says Winner', 'font-size="5.6" letter-spacing="1.5">PLACE</text>', 'font-size="5.6" letter-spacing="1.5">${W.tier===\'gold\'?\'WINNER\':\'PLACE\'}</text>',
    ["it reads Week 1, 1ST, Place, never Winner"], 'v44:18'],
   [132, 'wrap: the same line twice on one paper', "for(let k=0;k<arr.length&&used.has(arr[i]);k++)i=(i+1)%arr.length;", "",
    ['no label and no sentence repeats on one paper'], 'v44:13,17'],
   [133, 'wrap: share an empty canvas', "  const cv=wrapCanvas(W);", "  const cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;",
    ['a real picture: paper, a masthead in ink, and the club colours'], 'v44:15'],
   /* v1.44.1: the page and its data file always travel together. */
-  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.1"></script>', '<script type="module" src="firebase-init.js"></script>',
+  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.5"></script>', '<script type="module" src="firebase-init.js"></script>',
    ["both the preload and the script ask for firebase-init.js at this page's version"], 'v44:19'],
   [135, 'data file: no self-heal when the save is missing', "  if(typeof PS.setRivals!=='function'){", "  if(false){",
    ['a page missing the save reloads itself instead of saying "did not save"'], 'v44:19'],
@@ -963,6 +963,15 @@ const MUTATIONS = [
    ['swiping left on the card moves to the other rival'], 'v44:10'],
   [138, 'rival card: no dots for the other rival', "    const sw=all.length>1?", "    const sw=false?",
    ['two dots, not tabs, this one lit'], 'v44:10'],
+  /* v1.44.5 the new Weekly Wrap. */
+  [139, 'wrap: two players can get the same line', "if(ok(bank[z])&&!taken.has(k+':'+z))pick=z;", "if(ok(bank[z]))pick=z;",
+   ['40 players slipping in the same week: 40 different lines'], 'v44:22'],
+  [140, 'wrap: no silver stamp for 2nd', "(nxR&&nxR.pts>0&&myRow&&myRow.place===nxR.place)?'silver':'red'", "false?'silver':'red'",
+   ['(place 2): silver stamp, labelled with the place'], 'v44:22'],
+  [141, 'wrap: headline never shrinks, jumps straight to two lines', "while(el.scrollWidth>el.clientWidth+0.5&&z>20){ z-=0.5; el.style.fontSize=z+'px'; }", "while(false){}",
+   ['two lines only when one line would need less than 20px'], 'v44:22'],
+  [142, 'wrap: a highlight prints a bare number again', "V:ptsN(x.v),", "V:x.v,",
+   ['every number in the words is a place, a count or "N points"'], 'v44:22'],
 ];
 
 function runSuite(suite = 'regress') {

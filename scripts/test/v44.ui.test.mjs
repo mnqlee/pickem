@@ -732,6 +732,96 @@ if (want(21)) {
   await ctx.close();
 }
 
+console.log('\n22. The new Weekly Wrap: stamps, one-line headline, and a line nobody else got');
+if (want(22)) {
+  /* v1.44.5, Lee's design. The rules are read from index.html's own text
+     and the rendered cards are graded against an oracle built here from
+     the stub's raw data, so the app cannot agree with itself about
+     something untrue. */
+  const fs = await import('fs');
+  const src = fs.readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const grab = name => { const a = src.indexOf(`const ${name}={`); let d = 0, i = a + name.length + 7;
+    for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) break; } } return eval('(' + src.slice(a + name.length + 7, i + 1) + ')'); };
+  const DECK = grab('DECK'), WR = grab('WR');
+  const tokens = new Set(['{B}', '{BV}', '{W}', '{WV}', '{PTS}', '{c}', '{N}', '{sp}', '{wp}']);
+  const kinds = ['win', 'winTie', 'rise', 'up', 'fall', 'down', 'hold', 'first'];
+  const probs = [];
+  kinds.forEach(k => { const a = DECK[k] || [];
+    if (a.length < 40) probs.push(`${k} has ${a.length}`);
+    if (new Set(a).size !== a.length) probs.push(`${k} repeats a line`);
+    a.forEach(t => { (t.match(/\{\w+\}/g) || []).forEach(x => { if (!tokens.has(x)) probs.push(`${k} ${x}: ${t}`); });
+      const plain = t.replace(/\{\w+\}/g, '');
+      if (/\bweek/i.test(plain)) probs.push(`${k} says week: ${t}`);
+      if (/\d/.test(plain)) probs.push(`${k} has a bare number: ${t}`);
+      if (/[–—]/.test(t)) probs.push(`${k} has a dash: ${t}`); }); });
+  ok('every bank has 40+ different lines, no "week", no spot count, no bare number, no dash', probs.length === 0, probs.slice(0, 3).join(' | '));
+  const wrBad = Object.values(WR).flatMap(c => c.txt).filter(t => /\{v\}/.test(t) || /\{V\}\s+\w*\s*points?\b/.test(t));
+  ok('every highlight line prints its points as "N points", once', wrBad.length === 0, wrBad.join(' | '));
+  /* The hand-out itself, run straight from index.html's source on pools
+     far bigger than this fixture, where a shared line cannot hide. */
+  const fnSrc = name => { const a = src.indexOf(`function ${name}(`); let d = 0, i = src.indexOf('{', a);
+    for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) break; } } return src.slice(a, i + 1); };
+  const assign = eval(`(() => { ${src.match(/const hashS=.*?;\n/)[0]} ${fnSrc('assignWrapLines')}; return assignWrapLines; })()`);
+  const both = { b: { t: 'LAR', v: 13 }, w: { t: 'KC', v: 14 } }, none = { b: null, w: null };
+  const uids = n => Array.from({ length: n }, (_, i) => 'u_' + String(i).padStart(3, '0'));
+  const texts = o => Object.values(o).map(x => x.text);
+  const f40 = assign(uids(40), () => 'fall', () => both, 8, '2026');
+  ok('40 players slipping in the same week: 40 different lines', new Set(texts(f40)).size === 40, `${new Set(texts(f40)).size} different`);
+  const plainHold = DECK.hold.filter(t => !/\{(B|BV|W|WV)\}/.test(t)).length;
+  const h40 = assign(uids(40), () => 'hold', () => none, 8, '2026');
+  ok('a player with no team to name never gets a line that names one', texts(h40).every(t => !/\{(B|BV|W|WV)\}/.test(t)));
+  ok(`with no teams to name: every one of the ${plainHold} plain lines is used before any repeats`, new Set(texts(h40)).size === plainHold, `${new Set(texts(h40)).size} of ${plainHold}`);
+  const f40b = assign(uids(40), () => 'fall', () => both, 9, '2026');
+  const same = uids(40).filter(u => f40[u].text === f40b[u].text).length;
+  ok('nobody gets the same line two weeks running', same === 0, `${same} repeats`);
+  const mixed = assign(uids(27), u => ['win', 'rise', 'up', 'fall', 'down', 'hold'][+u.slice(2) % 6], () => both, 8, '2026');
+  ok('a winner never repeats their points total in the witty line', Object.values(mixed).filter(x => x.kind === 'win').every(x => !x.text.includes('{PTS}')));
+
+  /* The oracle: week points, then the tiebreaker (season 2027, so it
+     decides from Week 1), for every player. */
+  const plan = { startISO: tuesday(), weeks: 3, gamesPerWeek: 16, playerCount: 12, autopop: true, season: '2027' };
+  const A = await open(plan, { wait: 1500 });
+  const rev = await A.page.evaluate(() => PS.getRevealed(1)), weeks = await A.page.evaluate(() => PS.getAllWeeks());
+  const tbs = await A.page.evaluate(() => PS.getTiebreaks(1)), mem = await A.page.evaluate(() => PS.getMembers());
+  await A.ctx.close();
+  const gs = weeks[0].games, N = gs.length, win = Object.fromEntries(gs.map(g => [g.id, g.winner]));
+  const last = gs.slice().sort((a, b) => a.kickoff.seconds - b.kickoff.seconds).pop(), actual = last.awayScore + last.homeScore;
+  const guess = Object.fromEntries(tbs.map(t => [t.uid, t.total]));
+  const pts = {}; mem.forEach(m => pts[m.uid] = 0);
+  rev.forEach(r => { if (r.winner === win[r.gameId]) pts[r.uid] += PAY(r.weight, N); });
+  const tk = u => { const g = guess[u]; return g == null ? [2, 0] : g <= actual ? [0, actual - g] : [1, g - actual]; };
+  const better = (u, v) => pts[u] > pts[v] || (pts[u] === pts[v] && (tk(u)[0] < tk(v)[0] || (tk(u)[0] === tk(v)[0] && tk(u)[1] < tk(v)[1])));
+  const place = u => 1 + mem.filter(m => better(m.uid, u)).length;
+  const ranked = mem.map(m => m.uid).sort((a, b) => place(a) - place(b));
+  const pickIdx = ranked;   // every player: a line shared by any two of them is a failure
+  const decks = [];
+  for (const u of pickIdx) {
+    const B = await open({ ...plan, me: +u.slice(2) }, { wait: 4200 });
+    const r = await B.page.evaluate(() => { const c = document.getElementById('wrapCard'), s = c.querySelector('.seal'), h = c.querySelector('.hl');
+      return { cls: s.className, label: s.getAttribute('aria-label'), deck: c.querySelector('.deck').textContent,
+        fit: h.dataset.fit, fs: parseFloat(h.style.fontSize), over: h.scrollWidth > h.clientWidth + 0.5, ws: getComputedStyle(h).whiteSpace,
+        mo: [...c.querySelectorAll('.mo span:not(.wchip)')].map(e => e.textContent), boxes: c.querySelectorAll('.box > div').length,
+        /* Would it have fitted on one line at the 20px floor? Then two lines is wrong. */
+        fits20: (() => { const k = h.cloneNode(true); k.style.fontSize = '20px'; k.style.whiteSpace = 'nowrap'; k.style.textWrap = ''; h.parentNode.appendChild(k);
+          const f = k.scrollWidth <= k.clientWidth + 0.5; k.remove(); return f; })(),
+        at32: (() => { const k = h.cloneNode(true); k.style.fontSize = '32px'; k.style.whiteSpace = 'nowrap'; h.parentNode.appendChild(k);
+          const f = k.scrollWidth <= k.clientWidth + 0.5; k.remove(); return f; })() }; });
+    const p = place(u), want = p === 1 ? 'gold' : p === place(ranked.find(v => place(v) > 1)) ? 'silver' : 'red';
+    ok(`${u} (place ${p}): ${want} stamp, labelled with the place`, r.cls.includes(want) && new RegExp(`\\b${p}(st|nd|rd|th) place`).test(r.label), `${r.cls} / ${r.label}`);
+    ok(`${u}: the headline sits on one line at 20px or more, or on two at 28px`, (r.fit === 'one' && !r.over && r.fs >= 20 && r.fs <= 32 && r.ws === 'nowrap') || (r.fit === 'two' && r.fs === 28), JSON.stringify({ fit: r.fit, fs: r.fs, over: r.over }));
+    ok(`${u}: two lines only when one line would need less than 20px`, r.fit === 'one' ? true : !r.fits20, JSON.stringify({ fit: r.fit, fits20: r.fits20 }));
+    ok(`${u}: as large as fits: 32px when 32px fits, smaller only when it does not`, r.fit !== 'one' || (r.at32 ? r.fs === 32 : r.fs < 32), JSON.stringify({ fs: r.fs, at32: r.at32 }));
+    const leftover = (r.deck + ' ' + r.mo.join(' ')).replace(/\b49ers\b/g, '').replace(/\d+ points?\b/g, '').replace(/\d+ spots?\b/g, '').replace(/\d+ of \d+/g, '').replace(/\d+(st|nd|rd|th)\b/g, '');
+    ok(`${u}: every number in the words is a place, a count or "N points"`, !/\d/.test(leftover), r.deck + ' || ' + r.mo.join(' | '));
+    const tail = r.deck.replace(/^[^.]*\.\s*/, '');
+    ok(`${u}: the witty line never says "week" again`, !/\bweek\b/i.test(tail), r.deck);
+    ok(`${u}: four boxes in the number row`, r.boxes === 4, String(r.boxes));
+    decks.push(r.deck);
+    await B.ctx.close();
+  }
+  ok(`all ${decks.length} players, ${decks.length} different lines`, new Set(decks.map(d => d.replace(/^[^.]*\.\s*/, ''))).size === decks.length, JSON.stringify(decks));
+}
+
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fails.length) { console.log('FAILURES:'); fails.forEach(f => console.log('  - ' + f)); }
