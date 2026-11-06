@@ -449,7 +449,8 @@ async function wrapOracle(page, wk) {
     avg: Math.round(Object.values(pts).reduce((a, b) => a + b, 0) / mem.length),
     lad: mine.map(r => ({ t: r.winner, v: PAY(r.weight, N), ok: r.winner === win[r.gameId] })).sort((a, b) => b.v - a.v || a.t.localeCompare(b.t)),
     seasonRank: sorted(wk).indexOf('u_0') + 1, was: sorted(wk - 1).indexOf('u_0') + 1, wkPlace, players: mem.length,
-    mnf: gs.slice().sort((a, b) => a.kickoff.seconds - b.kickoff.seconds).pop(), mineBy: Object.fromEntries(mine.map(r => [r.gameId, r]))
+    mnf: gs.slice().sort((a, b) => a.kickoff.seconds - b.kickoff.seconds).pop(), mineBy: Object.fromEntries(mine.map(r => [r.gameId, r])),
+    allPts: pts, names: nm
   };
 }
 async function readWrap(page) {
@@ -820,6 +821,118 @@ if (want(22)) {
     await B.ctx.close();
   }
   ok(`all ${decks.length} players, ${decks.length} different lines`, new Set(decks.map(d => d.replace(/^[^.]*\.\s*/, ''))).size === decks.length, JSON.stringify(decks));
+}
+
+console.log('\n23. Two rivals: both on the Weekly Wrap, stacked, and in the Share picture');
+if (want(23)) {
+  const plan = { startISO: tuesday(), weeks: 3, gamesPerWeek: 16, playerCount: 10, autopop: true, rivals: { u_0: ['u_4', 'u_5'] } };
+  const A = await open(plan, { wait: 4200, share: 'files' });
+  await A.page.waitForTimeout(800);
+  const O = await wrapOracle(A.page, 1);
+  const r = await A.page.evaluate(() => {
+    const c = document.getElementById('wrapCard');
+    return { open: !document.getElementById('wrapOv').hidden,
+      rows: [...c.querySelectorAll('.stub.two .rvrow')].map(x => ({ name: x.querySelector('.lb b').textContent,
+        vs: [...x.querySelectorAll('.vs span')].map(s => +s.textContent), rec: x.querySelector('.rec').textContent.replace(/\s+/g, ' ').trim() })),
+      bg: [...c.querySelectorAll('.stub.two .rvrow')].map(x => getComputedStyle(x).backgroundColor),
+      tallCard: c.classList.contains('tall'), tallSlot: document.getElementById('wrapSlot').classList.contains('tall'),
+      h: c.offsetHeight, w: c.offsetWidth, sh: document.getElementById('wrapSlot').clientHeight, sw2: document.getElementById('wrapSlot').clientWidth,
+      over: [...c.querySelectorAll('.stub.two .rvrow')].some(x => x.getBoundingClientRect().bottom > c.getBoundingClientRect().bottom + 0.5),
+      vw: innerWidth, sw: document.documentElement.scrollWidth };
+  });
+  ok('it opens', r.open);
+  ok('two rivals: both on the card, one row each', r.rows.length === 2 &&
+    r.rows[0].name === 'vs ' + O.names.u_4 && r.rows[1].name === 'vs ' + O.names.u_5, JSON.stringify(r.rows));
+  ok('each row: your points to theirs, from the oracle', r.rows.length === 2 &&
+    r.rows.every((x, i) => x.vs[0] === O.allPts.u_0 && x.vs[1] === O.allPts[['u_4', 'u_5'][i]]), JSON.stringify(r.rows.map(x => x.vs)) + ' vs ' + JSON.stringify([O.allPts.u_0, O.allPts.u_4, O.allPts.u_5]));
+  ok('each row carries Lead, Trail or Tied and a record', r.rows.length === 2 && r.rows.every(x => /^(Lead|Trail|Tied) ?\d+-\d+(-\d+)?$/.test(x.rec)), JSON.stringify(r.rows.map(x => x.rec)));
+  ok('the rows sit on the paper strip, not on a dark app row', r.bg.length === 2 && r.bg.every(v => v === 'rgba(0, 0, 0, 0)'), JSON.stringify(r.bg));
+  ok('the card and its slot grow to fit', r.tallCard && r.tallSlot, JSON.stringify(r));
+  ok('nothing spills off the bottom of the card', !r.over);
+  ok('the card is 420 by 565, and its slot has the same shape', r.w === 420 && r.h === 565 && Math.abs(r.sh / r.sw2 - 565 / 420) < 0.01, `${r.w}x${r.h} slot ${r.sw2}x${r.sh}`);
+  ok('still no sideways scroll', r.sw <= r.vw, `${r.sw} ${r.vw}`);
+  await A.page.click('#wrapShare'); await A.page.waitForTimeout(1200);
+  const px = await A.page.evaluate(async () => {
+    const bm = await createImageBitmap(window.__sharedFile);
+    const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height;
+    const x = c.getContext('2d'); x.drawImage(bm, 0, 0);
+    let ink = 0; for (let X = 40; X < 1040; X += 3) { const p = x.getImageData(X, bm.height - 50, 1, 1).data; if (p[0] < 90 && p[1] < 90 && p[2] < 90) ink++; }
+    return { w: bm.width, h: bm.height, ink };
+  });
+  ok('the Share picture grows the same way: 1080 x 1453', px.w === 1080 && px.h === 1453, `${px.w}x${px.h}`);
+  ok('and the second rival is drawn in it (ink on the bottom row)', px.ink > 8, String(px.ink));
+  ok('no page errors', A.errors.length === 0, A.errors[0] || '');
+  await A.ctx.close();
+
+  const B = await open({ ...plan, rivals: { u_0: ['u_4'] } }, { wait: 4200 });
+  const b = await B.page.evaluate(() => { const c = document.getElementById('wrapCard');
+    return { two: !!c.querySelector('.stub.two'), stub: c.querySelector('.stub').textContent.replace(/\s+/g, ' ').trim(),
+      tall: c.classList.contains('tall') || document.getElementById('wrapSlot').classList.contains('tall') }; });
+  ok('one rival: the single strip as before, card not grown', !b.two && !b.tall && /^Rivalry/.test(b.stub), JSON.stringify(b));
+  await B.ctx.close();
+  const C = await open({ ...plan, rivals: {} }, { wait: 4200 });
+  const c = await C.page.evaluate(() => { const k = document.getElementById('wrapCard');
+    return { stub: k.querySelector('.stub').textContent.replace(/\s+/g, ' ').trim(), tall: k.classList.contains('tall') }; });
+  ok('no rival: the week winner, card not grown', /^Week winner/i.test(c.stub) && !c.tall, JSON.stringify(c));
+  await C.ctx.close();
+}
+
+console.log('\n24. The Grid: a wrong pick has a red undertone, a red box still means no pick');
+if (want(24)) {
+  /* A finished week with wins and losses, plus a player with no picks at
+     all for the "no pick" cells, and a live week for in-progress cells. */
+  const A = await open({ startISO: tuesday(), weeks: 3, gamesPerWeek: 12, playerCount: 8 }, { wait: 3000 });
+  await A.page.evaluate(() => { const o = document.getElementById('wrapOv'); if (o) o.hidden = true; });
+  await tab(A.page, 'grid'); await A.page.waitForTimeout(400);
+  await A.page.evaluate(() => document.querySelector('.wk[data-wk="1"]').click()); await A.page.waitForTimeout(1500);
+  const g = await A.page.evaluate(() => {
+    const st = s => { const c = document.querySelector('#v-grid ' + s); if (!c) return null; const k = getComputedStyle(c);
+      const b = c.querySelector('b'); return { bg: k.backgroundColor, bd: k.borderTopColor, col: k.color,
+        strike: b ? getComputedStyle(b).textDecorationLine : '' }; };
+    const lg = [...document.querySelectorAll('#v-grid .legend span')].map(x => x.textContent.trim());
+    const sw = c => { const e = document.querySelector('#v-grid .legend .' + c); if (!e) return null; const k = getComputedStyle(e);
+      return { bg: k.backgroundColor, img: k.backgroundImage, bd: k.borderTopColor }; };
+    /* An ordinary row and your own row, so the undertone is checked where
+       it is new AND where the row already tints. */
+    const missOther = [...document.querySelectorAll('#v-grid tbody tr:not(.me):not(.poolrow) .cell.miss')].length;
+    return { miss: st('tbody tr:not(.me) .cell.miss'), hit: st('.cell.hit'), lg, missOther,
+      swMiss: sw('lg-miss'), swNone: sw('lg-none'), swHid: sw('lg-hid') };
+  });
+  ok('the fixture has wrong picks on other players\' rows', g.missOther > 0 && !!g.miss, String(g.missOther));
+  ok('a wrong pick has the red undertone', g.miss && g.miss.bg === 'rgba(200, 52, 42, 0.07)', JSON.stringify(g.miss));
+  ok('a wrong pick keeps a grey outline, so a red box still means no pick', g.miss && g.miss.bd === 'rgba(250, 247, 241, 0.1)', JSON.stringify(g.miss));
+  ok('a wrong pick keeps grey text and its strike-through', g.miss && g.miss.col === 'rgba(250, 247, 241, 0.62)' && g.miss.strike === 'line-through', JSON.stringify(g.miss));
+  ok('a correct pick is unchanged: solid green, white text', g.hit && g.hit.col === 'rgb(255, 255, 255)' && g.hit.bg === g.hit.bd, JSON.stringify(g.hit));
+  ok('the legend explains the red box: No pick, right after Wrong',
+    JSON.stringify(g.lg) === JSON.stringify(['Correct', 'Wrong', 'No pick', 'In progress', 'Sealed until kickoff', 'Closest tiebreaker']), JSON.stringify(g.lg));
+  ok('the Wrong swatch carries a strike, like a wrong cell', g.swMiss && /linear-gradient/.test(g.swMiss.img), JSON.stringify(g.swMiss));
+  ok('the No pick swatch has the red outline, nothing inside', g.swNone && /^rgba\(200, 52, 42, 0\.55\)$/.test(g.swNone.bd) && g.swNone.img === 'none' && g.swNone.bg === 'rgba(0, 0, 0, 0)', JSON.stringify(g.swNone));
+  ok('Wrong and Sealed no longer look alike in the legend', g.swMiss && g.swHid && g.swMiss.img !== g.swHid.img, JSON.stringify([g.swMiss, g.swHid]));
+  ok('no page errors', A.errors.length === 0, A.errors[0] || '');
+  await A.ctx.close();
+
+  /* A missed pick: same red box as before, no undertone. */
+  const B = await open({ startISO: tuesday(), weeks: 3, gamesPerWeek: 12, playerCount: 8 }, { wait: 3000 });
+  await B.page.evaluate(() => { const o = document.getElementById('wrapOv'); if (o) o.hidden = true; });
+  await tab(B.page, 'grid'); await B.page.waitForTimeout(400);
+  await B.page.evaluate(() => document.querySelector('.wk[data-wk="1"]').click()); await B.page.waitForTimeout(1500);
+  const none = await B.page.evaluate(() => {
+    /* Render one "no pick" cell exactly as the app writes it and read its style. */
+    const td = document.querySelector('#v-grid tbody tr:not(.poolrow) td:nth-child(2)');
+    const d = document.createElement('div'); d.className = 'cell none'; d.innerHTML = '<b>—</b>'; td.appendChild(d);
+    const k = getComputedStyle(d); return { bg: k.backgroundColor, bd: k.borderTopColor, col: k.color };
+  });
+  ok('a missed pick is unchanged: red outline, red dash, no fill', none.bg === 'rgba(0, 0, 0, 0)' && none.bd === 'rgba(200, 52, 42, 0.3)' && none.col === 'rgb(224, 100, 90)', JSON.stringify(none));
+  await B.ctx.close();
+
+  /* Live games: an in-progress cell is still a solid dark fill, so it cannot be mistaken for a loss. */
+  const C = await open({ startISO: sunLive(), weeks: 2, gamesPerWeek: 12, playerCount: 8 }, { wait: 3000 });
+  await tab(C.page, 'grid'); await C.page.waitForTimeout(2000);
+  const live = await C.page.evaluate(() => { const c = document.querySelector('#v-grid .cell.pend'); const m = document.querySelector('#v-grid .cell.miss');
+    return { pend: c && getComputedStyle(c).backgroundColor, miss: m && getComputedStyle(m).backgroundColor }; });
+  ok('an in-progress pick keeps its solid fill, unlike a loss', !!live.pend && live.pend !== 'rgba(0, 0, 0, 0)' && live.pend !== 'rgba(200, 52, 42, 0.07)', JSON.stringify(live));
+  ok('no page errors on a live Sunday', C.errors.length === 0, C.errors[0] || '');
+  await C.ctx.close();
 }
 
 await browser.close();

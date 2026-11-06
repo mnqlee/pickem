@@ -46,3 +46,6 @@ Claude outputs/
 # Player backups written by scripts/remove_member.py: names and picks, and
 # this repository is public.
 backups/
+
+# Usage reports stay off the public repo
+*.csv

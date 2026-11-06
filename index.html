@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- v1.44.1 The version of THIS page. A test fails if it ever differs from sw.js. -->
-<meta name="app-version" content="v1.44.5">
+<meta name="app-version" content="v1.44.7">
 <title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
@@ -53,7 +53,7 @@
      cache miss, fetched fresh), and an old cached page keeps its own old
      one. The pair always matches. A test fails if this differs from the
      app-version above or from sw.js. -->
-<link rel="modulepreload" href="./firebase-init.js?v=1.44.5">
+<link rel="modulepreload" href="./firebase-init.js?v=1.44.7">
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
@@ -817,7 +817,10 @@ tbody tr.me .plrank{color:var(--stamp)}
 .cell.hidden b{font-size:13px;letter-spacing:.06em}
 .cell.pend{background:var(--shell-3);color:var(--paper)}
 .cell.hit{background:var(--hit);border-color:var(--hit);color:#fff}
-.cell.miss{background:transparent;border-color:rgba(250,247,241,.1);color:rgba(250,247,241,.62)}
+/* v1.44.7 a wrong pick carries the same faint red undertone as your own
+   row, so a loss reads as a loss at a glance. Text, rank and strike stay
+   grey, and the outline stays grey: a RED outline means only "no pick". */
+.cell.miss{background:rgba(200,52,42,.07);border-color:rgba(250,247,241,.1);color:rgba(250,247,241,.62)}
 .cell.miss b{text-decoration:line-through;text-decoration-thickness:1.5px}
 .cell.none{background:transparent;border-color:rgba(200,52,42,.3);color:#E0645A}
 
@@ -862,7 +865,8 @@ tbody tr.me td.tot{background:#241F1E}
 .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;
   vertical-align:-2px;border:1px solid rgba(250,247,241,.14)}
 .lg-hit{background:var(--hit);border-color:var(--hit)}
-.lg-miss{background:transparent}
+.lg-miss{background:linear-gradient(transparent calc(50% - .75px),rgba(250,247,241,.62) calc(50% - .75px),rgba(250,247,241,.62) calc(50% + .75px),transparent calc(50% + .75px)),rgba(200,52,42,.14)}
+.lg-none{background:transparent;border-color:rgba(200,52,42,.55)!important}
 .lg-pend{background:var(--shell-3)}
 .lg-hid{background:transparent;border-style:dashed}
 /* The tiebreaker swatch shows a green NUMERAL rather than a green
@@ -2142,6 +2146,10 @@ body:not([data-tab="picks"]) .nextup{display:none}
 .wcard .stub .vs .dim{color:#7A756B}
 .wcard .stub .rec{text-align:right;font:800 6.8px/1.25 'Archivo',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#7A756B}
 .wcard .stub .rec b{display:block;font:600 14px/1.05 'Oswald',sans-serif;letter-spacing:.02em;color:#16171A}
+.wcard.tall{height:565px}.wslot.tall{aspect-ratio:420/565}
+.wcard .stub.two{display:block;padding:4px 20px 6px}
+.wcard .stub.two .rvrow{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;padding:5px 0}
+.wcard .stub.two .rvrow+.rvrow{border-top:1px solid rgba(22,23,26,.14)}
 .wrapov .seal{opacity:0;transform:rotate(-7deg) scale(2.6);transition:transform .32s cubic-bezier(.3,1.6,.5,1) .78s,opacity .1s .78s}
 .wrapov.on .seal{opacity:1;transform:rotate(-7deg) scale(1)}
 .wbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:360px;opacity:0;transform:translateY(10px);transition:opacity .3s 1s,transform .3s 1s}
@@ -2661,7 +2669,7 @@ body:not([data-tab="picks"]) .nextup{display:none}
   <button class="fill-own" id="fillOwn">I'll rank them myself</button>
 </div>
 
-<script type="module" src="./firebase-init.js?v=1.44.5"></script>
+<script type="module" src="./firebase-init.js?v=1.44.7"></script>
 <script type="module">
 /* ============================================================
    CONFIG — the only block you edit in this file.
@@ -4075,6 +4083,7 @@ function renderGrid(){
     <div class="legend">
       <span><i class="lg-hit"></i>Correct</span>
       <span><i class="lg-miss"></i>Wrong</span>
+      <span><i class="lg-none"></i>No pick</span>
       <span><i class="lg-pend"></i>In progress</span>
       <span><i class="lg-hid"></i>Sealed until kickoff</span>
       <span><i class="lg-tb"></i>Closest tiebreaker</span></div>`;
@@ -6296,17 +6305,16 @@ async function buildWrap(wk){
   /* Monday night: the last game of the week. */
   const mg=gs[gs.length-1], msc=scoreOf(mg)||[null,null], mk=mine[mg.id];
   const mnf={a:mg.a,h:mg.h,sa:msc[0],sh:msc[1],pick:mk?mk.winner:null,v:mk?val(mk):0,ok:mk?mk.winner===result(mg):false};
-  /* The stub: your first rival, or the week's winner when you have none. */
-  const rv=myRivals()[0];
-  let stub;
-  if(rv){
+  /* The stub: your rivals, BOTH of them (v1.44.6: it used to take the
+     first and drop the second, from before a second rival existed), or
+     the week's winner when you have none. Two rivals stack one per row
+     and the card grows to fit (Lee's pick over splitting the strip). */
+  const rivals=myRivals().slice(0,2).map(rv=>{
     const r=rivalRec(rv,{wk,a:myPts,b:wkPts[rv]??0});
-    stub={kind:'rival',name:NAMES[rv]||'Player',me:myPts,them:wkPts[rv]??0,
-      lead:r.w>r.l?'Lead':r.w<r.l?'Trail':'Tied',rec:recStr(Math.max(r.w,r.l),Math.min(r.w,r.l),r.t)};
-  }else{
-    stub={kind:'winner',name:winners.length>1?`${winners.length} tied`:(NAMES[winners[0]]||'Nobody'),pts:best,avg};
-  }
-  const W={wk,N,conf,name:nm,players,myPts,correct,avg,sNow,sWas,mv,wkPlace,kind,kick,hl,deck,tier,lad,moments,mnf,stub,
+    return {kind:'rival',name:NAMES[rv]||'Player',me:myPts,them:wkPts[rv]??0,
+      lead:r.w>r.l?'Lead':r.w<r.l?'Trail':'Tied',rec:recStr(Math.max(r.w,r.l),Math.min(r.w,r.l),r.t)};});
+  const stub=rivals[0]||{kind:'winner',name:winners.length>1?`${winners.length} tied`:(NAMES[winners[0]]||'Nobody'),pts:best,avg};
+  const W={wk,N,conf,name:nm,players,myPts,correct,avg,sNow,sWas,mv,wkPlace,kind,kick,hl,deck,tier,lad,moments,mnf,stub,rivals,
     date:new Date(Math.max(...gs.map(g=>g.kick))+4*3600e3)};
   WRAP_CACHE[wk]=W;
   return W;
@@ -6354,8 +6362,10 @@ function wrapCardHTML(W){
   const mo=W.moments.map(m=>`<div class="mo"><small>${esc(m.lab)}</small>${chipH(m.t)}<span>${esc(m.txt)}</span><b class="${m.ok?'up':'dn'}">${m.ok?'+'+m.v:'<s>'+m.v+'</s>'}</b></div>`).join('');
   const M=W.mnf, aLo=M.sa!=null&&+M.sa<+M.sh, hLo=M.sa!=null&&+M.sh<+M.sa;
   const st=W.stub;
-  const stub=st.kind==='rival'
-    ? `<div class="lb">Rivalry<b>vs ${esc(st.name)}</b></div><div class="vs"><span class="${st.me>=st.them?'':'dim'}">${st.me}</span><small>to</small><span class="${st.me>=st.them?'dim':''}">${st.them}</span></div><div class="rec">${st.lead}<b>${st.rec}</b></div>`
+  const rivRow=r=>`<div class="lb">Rivalry<b>vs ${esc(r.name)}</b></div><div class="vs"><span class="${r.me>=r.them?'':'dim'}">${r.me}</span><small>to</small><span class="${r.me>=r.them?'dim':''}">${r.them}</span></div><div class="rec">${r.lead}<b>${r.rec}</b></div>`;
+  const two=(W.rivals||[]).length>1;
+  const stub=two ? W.rivals.map(r=>`<div class="rvrow">${rivRow(r)}</div>`).join('')
+    : st.kind==='rival' ? rivRow(st)
     : `<div class="lb">Week winner<b>${esc(st.name)}</b></div><div class="vs"><span>${st.pts}</span><small>pts</small></div><div class="rec">Pool avg<b>${st.avg}</b></div>`;
   return `<div class="np"><div class="ear">Week<b>${W.wk}</b></div><div class="title"><small>Weekly NFL Pick&rsquo;em</small><b>Weekly Wrap</b></div><div class="ear">Season<b>${esc((PS&&PS.SEASON)||'')}</b></div></div>
     <div class="rule2"></div>
@@ -6367,7 +6377,7 @@ function wrapCardHTML(W){
     <div class="lower"><div>${mo}</div><div class="mnf"><div class="h">Monday night</div>
       <div class="t${aLo?' lo':''}">${chipH(M.a)}<b>${M.sa??''}</b></div><div class="t${hLo?' lo':''}">${chipH(M.h)}<b>${M.sh??''}</b></div>
       <div class="y"><span>${M.pick?`You: ${esc(M.pick)}`:'No pick'}</span><b class="${M.ok?'up':'dn'}">${M.pick?(M.ok?'+'+M.v:'<s>'+M.v+'</s>'):''}</b></div></div></div>
-    <div class="stub">${stub}</div>`;
+    <div class="stub${two?' two':''}">${stub}</div>`;
 }
 
 let wrapOpenWk=null;
@@ -6383,6 +6393,8 @@ async function openWrap(wk,auto){
   $('#wrapEye').textContent=`Week ${wk} is in the books`;
   $('#wrapLater').textContent=`Find it any time under the Week ${wk} box`;
   $('#wrapCard').innerHTML=wrapCardHTML(W);
+  const tall=(W.rivals||[]).length>1;
+  $('#wrapCard').classList.toggle('tall',tall); $('#wrapSlot').classList.toggle('tall',tall);
   ov.hidden=false; document.body.style.overflow='hidden';
   sizeWrap(); fitWrapHl();
   try{ document.fonts&&document.fonts.ready.then(()=>{ if(wrapOpenWk===wk)fitWrapHl(); }); }catch{}
@@ -6429,12 +6441,13 @@ async function maybeAutoWrap(){
    browser will hand to the share sheet. Falls back to a download where
    the share sheet cannot take files. */
 function wrapCanvas(W){
-  const S=1080/420, cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;
+  const TWO=(W.rivals||[]).length>1, CH=TWO?565:525;   // v1.44.6 two rivals: the picture grows like the card
+  const S=1080/420, cv=document.createElement('canvas'); cv.width=1080; cv.height=Math.round(CH*S);
   const x=cv.getContext('2d'); x.scale(S,S);
   const ink='#16171A', ink2='#3B3A36', ink3='#7A756B', paper='#F5EFE2', red='#B3362B', grn='#2C6B24';
   const F=(w,px,fam)=>`${w} ${px}px ${fam}`;
   const OS="'Oswald','Arial Narrow',sans-serif", AR="'Archivo',system-ui,sans-serif", MO="'Roboto','Roboto Mono',monospace", SE="italic 500 12.5px 'Source Serif 4',Georgia,serif";
-  x.fillStyle=paper; x.fillRect(0,0,420,525);
+  x.fillStyle=paper; x.fillRect(0,0,420,CH);
   const txt=(s,X,Y,f,c,al)=>{x.font=f; x.fillStyle=c||ink; x.textAlign=al||'left'; x.fillText(s,X,Y);};
   const sp=(s,n)=>String(s).split('').join(' '.repeat(n||1));
   // nameplate
@@ -6513,9 +6526,15 @@ function wrapCanvas(W){
   txt(M.pick?`You: ${M.pick}`:'No pick',bx+8,bY+115,F(700,8.5,AR),ink2);
   if(M.pick)txt(M.ok?'+'+M.v:String(M.v),bx+102,bY+116,F(600,14,OS),M.ok?grn:red,'right');
   // stub
-  const sy=470; x.fillStyle='#ECE4D2'; x.fillRect(0,sy,420,55);
+  const sy=470; x.fillStyle='#ECE4D2'; x.fillRect(0,sy,420,CH-sy);
   x.setLineDash([4,3]); x.strokeStyle='rgba(22,23,26,.35)'; x.beginPath(); x.moveTo(0,sy); x.lineTo(420,sy); x.stroke(); x.setLineDash([]);
   const st=W.stub;
+  if(TWO){ W.rivals.forEach((r,i)=>{ const oy=sy+4+i*46;
+      if(i){ x.fillStyle='rgba(22,23,26,.14)'; x.fillRect(20,oy-1,380,1); }
+      txt('RIVALRY',20,oy+15,F(800,6.8,AR),'#C8342A'); txt(('VS '+r.name).toUpperCase(),20,oy+31,F(600,11,OS),ink);
+      txt(`${r.me}   to   ${r.them}`,230,oy+30,F(600,19,OS),ink,'center');
+      txt(r.lead.toUpperCase(),400,oy+15,F(800,6.8,AR),ink3,'right'); txt(r.rec,400,oy+32,F(600,14,OS),ink,'right'); });
+    return cv; }
   txt(st.kind==='rival'?'RIVALRY':'WEEK WINNER',20,sy+20,F(800,6.8,AR),'#C8342A'); txt((st.kind==='rival'?'VS '+st.name:st.name).toUpperCase(),20,sy+36,F(600,11,OS),ink);
   if(st.kind==='rival'){txt(`${st.me}   to   ${st.them}`,210,sy+35,F(600,19,OS),ink,'center'); txt(st.lead.toUpperCase(),400,sy+20,F(800,6.8,AR),ink3,'right'); txt(st.rec,400,sy+37,F(600,14,OS),ink,'right');}
   else{txt(`${st.pts} pts`,210,sy+35,F(600,19,OS),ink,'center'); txt('POOL AVG',400,sy+20,F(800,6.8,AR),ink3,'right'); txt(String(st.avg),400,sy+37,F(600,14,OS),ink,'right');}

@@ -1,0 +1,68 @@
+name: Daily betting lines
+
+# Refreshes the spread on every game in the upcoming week (and the one
+# after) once a day, plus a last call before the Sunday slate. Lines only:
+# no scores, no scoring, no notifications. ESPN accepts requests from
+# GitHub Actions (score_week.py has pulled from here all season), which is
+# why this lives here and not in the Cloudflare Worker that ESPN refuses.
+#
+# Times are UTC and GitHub can run up to ~15 minutes late.
+on:
+  schedule:
+    - cron: '41 13 * * *'   # every day, 8:41 AM ET / 10:41 PM in Japan
+    - cron: '23 16 * * 0'   # Sunday, about 1h40m before the 1pm ET slate
+  workflow_dispatch:
+    inputs:
+      week:
+        description: 'Week to price (blank = the next week with a game to play)'
+        required: false
+
+concurrency:
+  group: lines
+  cancel-in-progress: false
+
+jobs:
+  lines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Write service account key
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "${SA:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is not set on this repository."
+            exit 1
+          fi
+          printf '%s' "$SA" > /tmp/sa.json
+          python -c "import json,sys; json.load(open('/tmp/sa.json'))" || {
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON."
+            exit 1
+          }
+
+      - name: Refresh lines
+        # Inputs go through the environment, never straight into the shell.
+        env:
+          FIREBASE_SERVICE_ACCOUNT_FILE: /tmp/sa.json
+          SEASON: ${{ vars.SEASON || '2026' }}
+          IN_WEEK: ${{ inputs.week }}
+        run: |
+          set -u
+          case "${IN_WEEK:-}" in
+            ''|*[!0-9]*) WEEK_ARG="" ;;
+            *)           WEEK_ARG="--week ${IN_WEEK}" ;;
+          esac
+          python scripts/score_week.py --season "$SEASON" $WEEK_ARG --lines-only
+
+      - name: Shred the key
+        if: always()
+        run: rm -f /tmp/sa.json

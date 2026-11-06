@@ -179,7 +179,8 @@ def pull_lines(db, season, week):
         # Same rule as pull_scores: only ever UPDATE a game we already
         # have. A merge-set on an unknown id creates a document holding
         # nothing but a spread, with no wk and no kickoff.
-        known = {d.id for d in col.where("wk", "==", wk).stream()}
+        known = {d.id: (d.to_dict() or {}).get("spread") or ""
+                 for d in col.where("wk", "==", wk).stream()}
         n = 0
         for ev in r.json().get("events", []):
             try:
@@ -193,7 +194,14 @@ def pull_lines(db, season, week):
             gid = f"{sid}_W{wk}_{by['away']}_{by['home']}"
             if gid not in known:
                 continue
-            col.document(gid).set({"spread": odds[0].get("details") or ""}, merge=True)
+            new = odds[0].get("details") or ""
+            # Never erase a line ESPN has stopped quoting (it drops odds
+            # for some games close to kickoff): blank keeps the old one.
+            if not new:
+                continue
+            if new != known[gid]:
+                print(f"    {by['away']} @ {by['home']}: {known[gid] or '(none)'} -> {new}")
+            col.document(gid).set({"spread": new}, merge=True)
             n += 1
         print(f"  lines wk{wk}: {n} priced")
 
@@ -828,6 +836,10 @@ def main():
     ap.add_argument("--scores-only", action="store_true",
                     help="Refresh scores and lines, skip scoring and notifications. "
                          "This is what the 5-minute Live loop calls.")
+    ap.add_argument("--lines-only", action="store_true",
+                    help="Refresh betting lines only, for the week of the next "
+                         "game still to kick off and the week after. No scores, "
+                         "no scoring, no notifications. What lines.yml runs daily.")
     ap.add_argument("--status-file",
                     help="Also write this week's state as JSON to PATH: games, "
                          "final, live, complete and the season's next kickoff. "
@@ -842,6 +854,25 @@ def main():
     key = os.environ.get("FIREBASE_SERVICE_ACCOUNT_FILE", "serviceAccount.json")
     firebase_admin.initialize_app(credentials.Certificate(key))
     db = firestore.client()
+
+    if args.lines_only:
+        # The week of the NEXT game, not the last one kicked off: on a
+        # Wednesday current_week() still says last week, which would
+        # refresh a finished week and miss the one people are picking.
+        wk = args.week
+        if not wk:
+            sid, _y, _t = season_parts(args.season)
+            nxt = db.collection("seasons").document(sid).collection("games") \
+                    .where("kickoff", ">", datetime.now(timezone.utc)) \
+                    .order_by("kickoff").limit(1).stream()
+            wk = next((g.to_dict()["wk"] for g in nxt), None)
+        if not wk:
+            print("No game left to kick off. Nothing to price.")
+            return
+        print(f"Lines only, season {args.season}, weeks {wk} and {wk + 1}")
+        pull_lines(db, args.season, wk)
+        print("Done.")
+        return
 
     week = args.week or current_week(db, args.season)
     print(f"Scoring season {args.season}, week {week}")

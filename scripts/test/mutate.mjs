@@ -953,7 +953,7 @@ const MUTATIONS = [
   [133, 'wrap: share an empty canvas', "  const cv=wrapCanvas(W);", "  const cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;",
    ['a real picture: paper, a masthead in ink, and the club colours'], 'v44:15'],
   /* v1.44.1: the page and its data file always travel together. */
-  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.5"></script>', '<script type="module" src="firebase-init.js"></script>',
+  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.7"></script>', '<script type="module" src="firebase-init.js"></script>',
    ["both the preload and the script ask for firebase-init.js at this page's version"], 'v44:19'],
   [135, 'data file: no self-heal when the save is missing', "  if(typeof PS.setRivals!=='function'){", "  if(false){",
    ['a page missing the save reloads itself instead of saying "did not save"'], 'v44:19'],
@@ -972,6 +972,18 @@ const MUTATIONS = [
    ['two lines only when one line would need less than 20px'], 'v44:22'],
   [142, 'wrap: a highlight prints a bare number again', "V:ptsN(x.v),", "V:x.v,",
    ['every number in the words is a place, a count or "N points"'], 'v44:22'],
+  /* v1.44.6 both rivals. */
+  [143, 'wrap: only the first rival again', "const rivals=myRivals().slice(0,2).map(", "const rivals=myRivals().slice(0,1).map(",
+   ['two rivals: both on the card, one row each'], 'v44:23'],
+  /* v1.44.7 wrong picks on the Grid, and the legend. */
+  [144, 'grid: wrong picks lose the red undertone', ".cell.miss{background:rgba(200,52,42,.07);", ".cell.miss{background:transparent;",
+   ['a wrong pick has the red undertone'], 'v44:24'],
+  [145, 'grid: wrong picks get a red outline like no pick', ".cell.miss{background:rgba(200,52,42,.07);border-color:rgba(250,247,241,.1);", ".cell.miss{background:rgba(200,52,42,.07);border-color:rgba(200,52,42,.3);",
+   ['a wrong pick keeps a grey outline, so a red box still means no pick'], 'v44:24'],
+  [146, 'grid: No pick drops out of the legend', '      <span><i class="lg-none"></i>No pick</span>\n', '',
+   ['the legend explains the red box: No pick, right after Wrong'], 'v44:24'],
+  [147, 'grid: the Wrong swatch loses its strike', ".lg-miss{background:linear-gradient(", ".lg-miss{background-color:transparent;--x:linear-gradient(",
+   ['the Wrong swatch carries a strike, like a wrong cell'], 'v44:24'],
 ];
 
 function runSuite(suite = 'regress') {
