@@ -953,7 +953,7 @@ const MUTATIONS = [
   [133, 'wrap: share an empty canvas', "  const cv=wrapCanvas(W);", "  const cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;",
    ['a real picture: paper, a masthead in ink, and the club colours'], 'v44:15'],
   /* v1.44.1: the page and its data file always travel together. */
-  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.7"></script>', '<script type="module" src="firebase-init.js"></script>',
+  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.8"></script>', '<script type="module" src="firebase-init.js"></script>',
    ["both the preload and the script ask for firebase-init.js at this page's version"], 'v44:19'],
   [135, 'data file: no self-heal when the save is missing', "  if(typeof PS.setRivals!=='function'){", "  if(false){",
    ['a page missing the save reloads itself instead of saying "did not save"'], 'v44:19'],
@@ -984,6 +984,15 @@ const MUTATIONS = [
    ['the legend explains the red box: No pick, right after Wrong'], 'v44:24'],
   [147, 'grid: the Wrong swatch loses its strike', ".lg-miss{background:linear-gradient(", ".lg-miss{background-color:transparent;--x:linear-gradient(",
    ['the Wrong swatch carries a strike, like a wrong cell'], 'v44:24'],
+  /* v1.44.8 shared places on a finished week (from the test copy's v1.45.0). */
+  [148, 'grid: row number instead of place', "<div class=\"plrank mono\">${nothingYet?'&middot;':gPlace[i]}</div>", "<div class=\"plrank mono\">${nothingYet?'&middot;':i+1}</div>",
+   ['the Grid shows the same shared place'], 'v44:25'],
+  [149, 'standings: row number instead of place', "<div class=\"rank mono\">${sPlace[i]}${mv?", "<div class=\"rank mono\">${i+1}${mv?",
+   ['Standings, This week: the two share one place'], 'v44:25'],
+  [150, 'places: ignore the tiebreaker', "placesOf(rows,(a,b)=>a.pts===b.pts&&wkTb(a.p,b.p)===0)", "placesOf(rows,(a,b)=>a.pts===b.pts)",
+   ['the rest of the level group, separated by their guesses, do not share'], 'v44:25'],
+  [151, 'places: shared mid-week and on the Season view too', "  const sPlace=view==='week'&&weekDone\n    ? placesOf", "  const sPlace=true\n    ? placesOf",
+   ['the Season view still numbers 1 to N'], 'v44:25'],
 ];
 
 function runSuite(suite = 'regress') {

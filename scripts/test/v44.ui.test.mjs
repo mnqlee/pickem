@@ -935,6 +935,72 @@ if (want(24)) {
   await C.ctx.close();
 }
 
+console.log('\n25. Level on points AND on the tiebreaker: one shared place, on every screen');
+if (want(25)) {
+  /* v1.44.8 Found by the planted pair in the test pool (Test Quarters and
+     Test Redzone): same picks, same guess, both 52 points and 31, and the
+     Grid numbered them 13 and 14. weekOrder() already shared the place;
+     the row numbers ignored it. Built here on a level group: two of them
+     get the SAME under guess, the rest of the group overshoots. */
+  const plan = { playerCount: 30, weeks: 6, season: '2027', startISO: new Date(Date.now() - 40 * D).toISOString() };
+  const board = async page => page.evaluate(() => [...document.querySelectorAll('#board .row')].map(r => ({
+    uid: r.dataset.pu || 'u_0', name: (r.querySelector('.who b') || {}).textContent.trim(),
+    pts: +((r.querySelector('.pts b') || {}).textContent || 0),
+    rank: +(((r.querySelector('.rank') || {}).firstChild || {}).textContent || 0) })));
+  let { ctx, page } = await open(plan, { wait: 2600 });
+  await page.click('button[data-tab="standings"]').catch(() => {}); await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(500);
+  const before = await board(page);
+  const weeks = await page.evaluate(() => PS.getAllWeeks());
+  const lastG = weeks[weeks.length - 1].games.slice().sort((a, b) => a.kickoff.seconds - b.kickoff.seconds).pop();
+  const actual = lastG.awayScore + lastG.homeScore;
+  await ctx.close();
+  const by = {}; before.filter(r => r.uid !== 'u_0').forEach(r => (by[r.pts] ||= []).push(r));
+  const grp = Object.values(by).filter(g => g.length >= 3).sort((a, b) => b[0].pts - a[0].pts)[0]
+           || Object.values(by).filter(g => g.length >= 2)[0];
+  ok('the fixture has a group level on points', !!grp, JSON.stringify(Object.keys(by)));
+  const idx = u => +String(u).replace('u_', '');
+  const tbTotals = [];
+  for (let i = 0; i < 30; i++) tbTotals[i] = actual + 40 + i;     // everyone else: far over, all different
+  const [A, B, ...rest] = grp;
+  tbTotals[idx(A.uid)] = actual - 2; tbTotals[idx(B.uid)] = actual - 2;   // identical, under
+  rest.forEach((r, k) => { tbTotals[idx(r.uid)] = actual + 5 + k; });
+  ({ ctx, page } = await open({ ...plan, tbTotals }, { wait: 2600 }));
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await page.click('button[data-tab="standings"]').catch(() => {}); await page.click('[data-stand="week"]').catch(() => {});
+  await page.waitForTimeout(500);
+  const after = await board(page);
+  const a = after.find(r => r.uid === A.uid), b = after.find(r => r.uid === B.uid);
+  ok('Standings, This week: the two share one place', a && b && a.rank === b.rank && a.rank > 0, JSON.stringify([a, b]));
+  const nextRow = after[Math.max(after.indexOf(a), after.indexOf(b)) + 1];
+  ok('and the next player skips a number (13, 13, 15)', nextRow && nextRow.rank === a.rank + 2, JSON.stringify(nextRow));
+  const others = after.filter(r => r.pts === A.pts && r.uid !== A.uid && r.uid !== B.uid);
+  ok('the rest of the level group, separated by their guesses, do not share', new Set(others.map(r => r.rank)).size === others.length,
+     JSON.stringify(others.map(r => r.rank)));
+  const ranks = after.map(r => r.rank);
+  ok('every other place is its row position, unchanged', after.every((r, i) => r.rank === i + 1 || r.rank === ranks[i - 1] || (i > 0 && r.rank === i + 1)),
+     JSON.stringify(ranks));
+  await page.click('[data-stand="season"]').catch(() => {}); await page.waitForTimeout(300);
+  const season = await board(page);
+  ok('the Season view still numbers 1 to N', season.every((r, i) => r.rank === i + 1), JSON.stringify(season.map(r => r.rank)));
+  await tab(page, 'grid'); await page.waitForTimeout(600);
+  const grid = await page.evaluate(() => [...document.querySelectorAll('#gridBody tbody tr:not(.poolrow)')].map(tr => ({
+    name: (tr.querySelector('.plmeta b') || {}).textContent, rank: +((tr.querySelector('.plrank') || {}).textContent || 0), pts: +((tr.querySelector('.totnum') || {}).textContent || 0), wk: document.querySelector('.wk.on') && document.querySelector('.wk.on').dataset.wk })));
+  const ga = grid.find(r => r.name === A.name), gb = grid.find(r => r.name === B.name);
+  ok('the Grid shows the same shared place', ga && gb && ga.rank === gb.rank && ga.rank === a.rank, JSON.stringify([ga, gb, a.rank]));
+  const gNext = grid[Math.max(grid.indexOf(ga), grid.indexOf(gb)) + 1];
+  ok('and on the Grid the next player skips a number too', gNext && gNext.rank === ga.rank + 2, JSON.stringify(gNext));
+  /* Where both screens hold the same points they must give the same
+     place. (In this fixture the lower rows' Standings points come from
+     the stored season record while the Grid adds up revealed picks, so
+     only rows whose two totals agree are comparable.) */
+  const same = after.filter(r => { const g = grid.find(x => x.name === r.name); return g && g.pts === r.pts; });
+  ok('the Grid and Standings agree on every comparable place', same.length >= 4 && same.every(r => grid.find(x => x.name === r.name).rank === r.rank),
+     `${same.length} comparable; ` + JSON.stringify(same.filter(r => grid.find(x => x.name === r.name).rank !== r.rank).slice(0, 3)));
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fails.length) { console.log('FAILURES:'); fails.forEach(f => console.log('  - ' + f)); }

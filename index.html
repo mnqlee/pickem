@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- v1.44.1 The version of THIS page. A test fails if it ever differs from sw.js. -->
-<meta name="app-version" content="v1.44.7">
+<meta name="app-version" content="v1.44.8">
 <title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
@@ -53,7 +53,7 @@
      cache miss, fetched fresh), and an old cached page keeps its own old
      one. The pair always matches. A test fails if this differs from the
      app-version above or from sw.js. -->
-<link rel="modulepreload" href="./firebase-init.js?v=1.44.7">
+<link rel="modulepreload" href="./firebase-init.js?v=1.44.8">
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
@@ -2669,7 +2669,7 @@ body:not([data-tab="picks"]) .nextup{display:none}
   <button class="fill-own" id="fillOwn">I'll rank them myself</button>
 </div>
 
-<script type="module" src="./firebase-init.js?v=1.44.7"></script>
+<script type="module" src="./firebase-init.js?v=1.44.8"></script>
 <script type="module">
 /* ============================================================
    CONFIG — the only block you edit in this file.
@@ -3163,6 +3163,14 @@ function tbCmpWeek(w){
 /* The week's order: points, then the tiebreaker, then name (name decides
    nothing, it only keeps the order still). `place` is competition
    numbering: two players level on both read 1, 1 and the next reads 3. */
+/* Competition places for rows already in order: a row level with the one
+   above it (by `same`) takes that row's place, otherwise its own position.
+   [100, 90, 90, 80] -> [1, 2, 2, 4]. */
+function placesOf(rows,same){
+  const out=[];
+  rows.forEach((r,i)=>{ out.push(i>0&&same(rows[i-1],r)?out[i-1]:i+1); });
+  return out;
+}
 function weekOrder(w,ptsOf){
   const key=tbKeyFn(w);
   const rows=PLAYERS.map(p=>({p,pts:ptsOf(p),k:key?key(p):[0,0]}));
@@ -3996,9 +4004,17 @@ function renderGrid(){
      row one crowned, which is whoever happens to sort first. The
      Standings tab already guards this; the Grid did not. */
   const anyPts=rows.some(r=>r.pts>0);
+  /* SHARED PLACES (v1.44.8). The row number was i+1, so two players level
+     on points AND on the tiebreaker read 13 and 14 although the rule, and
+     weekOrder(), give them both 13. Competition numbering: 13, 13, 15. */
+  /* Only on a FINISHED week. Mid-week nobody is tied for anything yet:
+     the tiebreaker has not been played, and the week-so-far bar counts
+     plain order, which this must not contradict. */
+  const gTb=tbCmpWeek(state.week), gDone=gs.length>0&&gs.every(isFinal);
+  const gPlace=gDone?placesOf(rows,(a,b)=>a.pts===b.pts&&gTb(a.p,b.p)===0):rows.map((_,i)=>i+1);
   rows.forEach((r,i)=>{
     body+=`<tr class="${r.p===ME?'me ':''}${i===0&&anyPts?'lead':''}"><td class="pl"><div class="plname">
-      <div class="plrank mono">${nothingYet?'&middot;':i+1}</div><div class="plmeta"><b>${NAME(r.p)}</b>
+      <div class="plrank mono">${nothingYet?'&middot;':gPlace[i]}</div><div class="plmeta"><b>${NAME(r.p)}</b>
       <span class="mono">${nothingYet?'no games scored yet':r.hits+' correct'}</span></div></div></td>`;
     gs.forEach(g=>{
       /* UNSEAL ON THE DATA, NOT ON THE CLOCK.
@@ -5047,6 +5063,12 @@ function renderBoard(){
      the season seals and the Weekly Wrap use, and the same rule as
      score_week.py. Shared only when level on both. */
   const ptsMap=Object.fromEntries(rows.map(r=>[r.p,r.pts]));
+  /* Shared places on the WEEK view of a FINISHED week, by the same rule
+     as the Grid and weekOrder: level on points and on the tiebreaker.
+     Mid-week, and the Season view, keep plain order. */
+  const sPlace=view==='week'&&weekDone
+    ? placesOf(rows,(a,b)=>a.pts===b.pts&&wkTb(a.p,b.p)===0)
+    : rows.map((_,i)=>i+1);
   const honours=(view==='week'&&weekDone&&rows.length)?weekHonours(wk,p=>ptsMap[p]||0):null;
   /* Without this phone holding the week's guesses, the order comes from
      the scorer's record so the badges sit on the right rows. */
@@ -5209,7 +5231,7 @@ function renderBoard(){
     return `<div class="row${r.p===ME?' me':''}${gold?' lead':''}${
         second?' second hastag':''}${mv?' '+mv:''}${isRv?' rv':''}${isHt?' ht':''}"${
         r.p!==ME?` data-pu="${esc(r.p)}" role="button" tabindex="0"`:''}>
-      <div class="rank mono">${i+1}${mv?`<i class="arrow">${
+      <div class="rank mono">${sPlace[i]}${mv?`<i class="arrow">${
         mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
       <div class="who">
         <div class="nrow"><b>${NAME(r.p)}</b>${badge}${
@@ -5253,10 +5275,10 @@ function renderBoard(){
       const lead=view==='week'&&weekDone
         ? (isWin(ME)?` · won week ${wk}`:'')
         : (mi===0?(view==='week'?` · week ${wk} leader`:' · season leader'):'');
-      meBar.innerHTML=`<div class="rank mono">${mi+1}${mv?`<i class="arrow">${
+      meBar.innerHTML=`<div class="rank mono">${sPlace[mi]}${mv?`<i class="arrow">${
           mv==='up'?'&#9650;':'&#9660;'}</i>`:''}</div>
         <div class="who"><b>You${lead}</b>
-          <span>${view==='week'?`Week ${wk} · `:''}${ordinal(mi+1)} of ${rows.length}${gap}</span></div>
+          <span>${view==='week'?`Week ${wk} · `:''}${ordinal(sPlace[mi])} of ${rows.length}${gap}</span></div>
         <div class="pts"><b class="mono">${r.pts}</b><span>pts</span></div>`;
       meBar.classList.remove('hide');
       meBar.classList.toggle('up',mv==='up');
@@ -7643,8 +7665,18 @@ async function startApp({fromOnboarding=false,background=false}={}){
        used to yank the whole wizard away mid-sentence. If the player is
        still in it, load everything underneath and let obAdvance close it
        when they are actually done. */
-    if(fromOnboarding||!obWizardActive)
+    if(fromOnboarding||!obWizardActive){
       document.getElementById('ob').classList.add('hide');
+      /* AND REMEMBER IT (v1.44.8). ps_onboarded was only ever written by
+         the wizard's last tap, so a player who signed in and then left
+         the wizard early (closed it on the install screen, reloaded on
+         the alerts screen) never got it. Every open after that put the
+         sign-up form up from the first frame, over the loading cover,
+         for the whole load: "flashes out to the sign in screen, waits a
+         few seconds, then goes back in". They are in the app now, so
+         they are past it. */
+      try{ localStorage.setItem('ps_onboarded','1'); }catch(_){}
+    }
     bootHide();
     appBooted=true;
     return true;
@@ -9730,7 +9762,15 @@ function replayOnboarding(toHowTo){
 $('#hpReplay').addEventListener('click',()=>replayOnboarding(true));
 $('#obReplay').addEventListener('click',()=>replayOnboarding(false));
 
-if(!localStorage.getItem('ps_onboarded')){
+/* THE WIZARD GOES UP AT ONCE ONLY FOR SOMEONE PLAINLY NEW (v1.44.8).
+
+   It used to go up for anyone without ps_onboarded, signed in or not, and
+   sit over the loading cover until startApp took it down at the end of
+   the load. A pool id means this device has joined before, so let boot()
+   decide: the cover shows while the session is checked, and the wizard
+   appears only if watchAuth or startApp actually finds nobody signed in
+   or no pool (both already call showOnboarding for exactly that). */
+if(!localStorage.getItem('ps_onboarded')&&!localStorage.getItem('ps_pool')){
   $('#ob').classList.remove('hide');
   obRender();
 }
