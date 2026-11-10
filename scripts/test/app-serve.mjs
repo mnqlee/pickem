@@ -362,7 +362,11 @@ const PSX = window.PS = {
       done.forEach(w => { weeks[String(w)] = {
         pts:  P.recPts  == null ? 60 + ((i*7 + w*11) % 55) : P.recPts,
         hits: P.recHits == null ? 8 + ((i + w) % 8)        : P.recHits,
-        mode: 'confidence', perfect: (i === 1 && w === 2) }; });
+        mode: 'confidence', perfect: P.noPerfectFlag ? false : (i === 1 && w === 2) };
+        /* P.stdWeek: {uid: {wk: {hits, perfect}}} overrides one stored week,
+           to write down a record the scorer got wrong (v1.44.9). */
+        const o = ((P.stdWeek || {})[m.uid] || {})[w];
+        if (o) Object.assign(weeks[String(w)], o); });
       return { uid: m.uid, name: m.name, weeks,
         pts: Object.values(weeks).reduce((a,b)=>a+b.pts,0),
         hits: Object.values(weeks).reduce((a,b)=>a+b.hits,0),
@@ -377,7 +381,9 @@ const PSX = window.PS = {
     if (P.noPicks) return {};
     const o = {}; GAMES.filter(g=>g.wk===wk).forEach((g,i) => {
       if (i < (P.myPickCount == null ? 16 : P.myPickCount))
-        o[g.id] = P.promo
+        /* P.myPicksRight: weeks in which my every pick is the result (v1.44.9). */
+        o[g.id] = (P.myPicksRight || []).includes(wk) && g.winner ? { winner: g.winner, weight: i + 1 }
+        : P.promo
           ? { winner: (((i*2654435761 + wk*97) >>> 4) % 100 < 62 ? g.home : g.away),
               weight: unstakedGame(i) ? 0 : ((i*7+wk)%16)+1 }
           : { winner: i%2 ? g.home : g.away,

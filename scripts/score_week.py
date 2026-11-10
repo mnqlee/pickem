@@ -651,12 +651,16 @@ def notify(reports):
                         webpush=messaging.WebpushConfig(
                             fcm_options=messaging.WebpushFCMOptions(
                                 link=f"{APP_ORIGIN}/index.html"),   # MUST be absolute
-                            notification={
-                                # Its own tag, so a result never collapses
-                                # onto an unread kickoff reminder.
-                                "tag": f"result-{rep['week']}-{'final' if rep['complete'] else 'live'}",
-                                "renotify": False,
-                            })))
+                            # A WebpushNotification, NOT a plain dict
+                            # (Nov 2026): current firebase-admin refuses a
+                            # dict on every send, and every weekly result
+                            # notification was failing with "must be an
+                            # instance of WebpushNotification class".
+                            # Its own tag, so a result never collapses
+                            # onto an unread kickoff reminder.
+                            notification=messaging.WebpushNotification(
+                                tag=f"result-{rep['week']}-{'final' if rep['complete'] else 'live'}",
+                                renotify=False))))
                 except Exception as e:
                     # One dead device token must not stop the rest of the pool
                     # from hearing how their week went.

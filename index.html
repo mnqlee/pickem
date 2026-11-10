@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- v1.44.1 The version of THIS page. A test fails if it ever differs from sw.js. -->
-<meta name="app-version" content="v1.44.8">
+<meta name="app-version" content="v1.44.9">
 <title>Weekly NFL Pick’em</title>
 <meta name="description" content="Rank all sixteen games. Highest points wins the week.">
 
@@ -53,7 +53,7 @@
      cache miss, fetched fresh), and an old cached page keeps its own old
      one. The pair always matches. A test fails if this differs from the
      app-version above or from sw.js. -->
-<link rel="modulepreload" href="./firebase-init.js?v=1.44.8">
+<link rel="modulepreload" href="./firebase-init.js?v=1.44.9">
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
@@ -2669,7 +2669,7 @@ body:not([data-tab="picks"]) .nextup{display:none}
   <button class="fill-own" id="fillOwn">I'll rank them myself</button>
 </div>
 
-<script type="module" src="./firebase-init.js?v=1.44.8"></script>
+<script type="module" src="./firebase-init.js?v=1.44.9"></script>
 <script type="module">
 /* ============================================================
    CONFIG — the only block you edit in this file.
@@ -4699,6 +4699,15 @@ const TROPHY_D=`<path d="M7 3h10v5a5 5 0 0 1-10 0V3z"/>
     fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
   <path d="M11 13h2v4h-2zM7.5 18.4h9V21h-9z"/>`;
 const GOLD='#E8B84B', SILVER='#B9C1CB', S=21, GAP=6;
+/* THE TROPHY FILLS THE SEAL'S HEIGHT (v1.44.9, Lee: "a little bigger").
+   The glyph sits inside a 24-unit box with 3 units of air above and below,
+   so scaling the box to S drew it at three quarters of a seal. Scaling its
+   18-unit height to S, and shifting off the air, makes it as tall as the
+   seals beside it. */
+/* Then a step back (Lee: "a tad too big, in between"): halfway between the
+   old size (S/24) and full seal height (S/18), centred in the row. */
+const TK=S*(1/24+1/18)/2, TROPHY_FIT=`translate(${((S-14.8*TK)/2-4.6*TK).toFixed(2)},${((S+2-18*TK)/2-3*TK).toFixed(2)}) scale(${TK.toFixed(4)})`;
+
 
 function badgeSVG(items){
   items=items.filter(Boolean);
@@ -4706,8 +4715,8 @@ function badgeSVG(items){
   let x=0,out='';
   items.forEach(it=>{
     if(it.kind==='trophy'){
-      out+=`<g transform="translate(${x},1) scale(${S/24})" fill="${GOLD}"
-        color="${GOLD}">${TROPHY_D}</g>`;
+      out+=`<g class="sl-trophy" transform="translate(${x},0)" fill="${GOLD}"
+        color="${GOLD}"><g transform="${TROPHY_FIT}">${TROPHY_D}</g></g>`;
     }else{
       const col=it.kind==='1st'?GOLD:SILVER;
       out+=`<g transform="translate(${x},0) scale(${(S/44).toFixed(4)})" color="${col}">
@@ -4753,7 +4762,7 @@ function sealRun(f,s,p){
   for(let i=list.length-1;i>=0;i--){
     const x=i*step, k=list[i];
     if(k==='trophy'){
-      out+=`<g class="sl-trophy" transform="translate(${x},1) scale(${S/24})" fill="${GOLD}" color="${GOLD}">${TROPHY_D}</g>`;
+      out+=`<g class="sl-trophy" transform="translate(${x},0)" fill="${GOLD}" color="${GOLD}"><g transform="${TROPHY_FIT}">${TROPHY_D}</g></g>`;
       continue;
     }
     const col=k==='1st'?GOLD:SILVER;
@@ -4950,8 +4959,40 @@ function perfectWeeks(pl){
   // Demo only: nobody in generated data ever goes 16-0, so seed one to
   // show the badge. Delete with the rest of the demo scaffolding.
   if(DEMO&&pl==='Mateo')n=Math.max(n,1);
-  return DEMO?n:((STANDINGS[pl]||{}).perfectWeeks||0);
+  if(DEMO)return n;
+  /* NOT ONLY THE SCORER'S FLAG (v1.44.9). Week 9 2026: Lubbylubbs and
+     Star Daddy both went 15 of 15 and neither got the trophy, because the
+     trophy came only from perfectWeeks in score_week.py's record, and that
+     is set only if the scorer saw the week as finished with every game it
+     counts called right. A week it never closed, or a stray game document
+     it counted and this app does not, and the rarest thing in the pool
+     silently vanished. The scorer's own per-week record already holds
+     each player's correct picks, so a finished week here where that count
+     equals every game in the week is a perfect week too. */
+  return Math.max((STANDINGS[pl]||{}).perfectWeeks||0, perfectWeekList(pl).length);
 }
+/* The weeks a player went perfect: the scorer said so, or a finished week
+   (every game final here) where the scorer's correct count is every game. */
+function perfectWeekList(pl){
+  const wks=((STANDINGS[pl]||{}).weeks)||{}, out=[];
+  for(const w in WEEKS){
+    const gs=WEEKS[w]||[], r=wks[w];
+    if(!gs.length)continue;
+    if((r&&(r.perfect===true||(gs.every(isFinal)&&Number(r.hits)===gs.length)))||perfectNow(pl,Number(w)))
+      out.push(Number(w));
+  }
+  return out;
+}
+/* The week on screen, judged from the picks themselves the moment its last
+   game goes final, the same way the 1ST and 2ND seals already are. The
+   scorer's record catches up minutes later (the Live loop scores the week
+   after the final whistle), and the trophy used to wait for it. */
+function perfectNow(pl,w){
+  if(w!==state.week)return false;
+  const gs=WEEKS[w]||[];
+  return gs.length>0&&gs.every(isFinal)&&gs.every(g=>{const k=pickOf(pl,g.id); return !!k&&k.winner===result(g);});
+}
+
 
 /* TWO MAPS, NOT ONE, AND THIS IS THE WHOLE TRAP.
 
@@ -5185,14 +5226,16 @@ function renderBoard(){
        No count beside it here, deliberately: a "1" would read as a
        tally and reintroduce exactly the ambiguity above. */
     const won=isWin(r.p), snd=isSnd(r.p);
-    const wSeal=won?badgeSVG([{kind:'1st',n:1}])
-      : snd?badgeSVG([{kind:'2nd',n:1}]) : '';
+    /* THE PERFECT WEEK ON THE WEEK IT HAPPENED (v1.44.9, Lee: "it should
+       reflect on the week and season"). Every game in a finished week
+       called right; the trophy sits after the week's seal. */
+    const pw=view==='week'&&weekDone&&perfectWeekList(r.p).includes(Number(wk));
+    const wSeal=badgeSVG([won?{kind:'1st',n:1}:snd?{kind:'2nd',n:1}:null, pw?{kind:'trophy',n:1}:null]);
     const badge=view==='season'?sealRun(ww,w2,tw):wSeal;
     const sub=view==='week'
-      ? (won ? `Won week ${wk} · ${r.hits} of ${r.gp} correct`
-        :snd ? `Runner-up · ${r.hits} of ${r.gp} correct`
-        : `${r.hits} of ${r.gp} correct`)
-      : [ww?`${ww} first`:'', w2?`${w2} second`:'',
+      ? [won?`Won week ${wk}`:snd?'Runner-up':'', pw?'Perfect week':'',
+         `${r.hits} of ${r.gp} correct`].filter(Boolean).join(' · ')
+      : [ww?`${ww} first`:'', w2?`${w2} second`:'', tw?`${tw} perfect week${tw===1?'':'s'}`:'',
          `${r.hits} of ${r.gp} correct`].filter(Boolean).join(' · ');
     /* Rows re-sort as results land, so show which way somebody just moved.
        `prev` is this view's own history — see the lastRank declaration. */

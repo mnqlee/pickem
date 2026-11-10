@@ -5,7 +5,7 @@
    If you forget, people stay on the old version. This one line
    is the difference between updates working and not working.
    ============================================================ */
-const VERSION = 'v1.44.8';
+const VERSION = 'v1.44.9';
 const CACHE = `poolsheet-${VERSION}`;
 
 /* Files cached on install. Keep this list short — anything not
@@ -20,7 +20,7 @@ const SHELL = [
   './',
   /* Versioned, matching index.html, so the page and its data file are
      always cached as a pair. See the note above the script tag. */
-  './firebase-init.js?v=1.44.8',
+  './firebase-init.js?v=1.44.9',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'

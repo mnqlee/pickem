@@ -1001,6 +1001,52 @@ if (want(25)) {
   await ctx.close();
 }
 
+console.log('\n26. A perfect week gets its trophy even when the scorer did not flag it');
+if (want(26)) {
+  /* v1.44.9 Week 9 2026: two players went 15 of 15 and neither got the
+     trophy, because it came only from the scorer's perfectWeeks. Here the
+     scorer's record holds each week's correct count but never sets
+     `perfect`; the app must see a finished week called in full. */
+  const N = 6;
+  /* Week 1 finished nine days ago; week 2 kicks off in five days. */
+  const plan = { playerCount: 6, weeks: 2, gamesPerWeek: N, startISO: new Date(Date.now() - 9 * D).toISOString(),
+    noPerfectFlag: true, stdWeek: { u_2: { 1: { hits: N } }, u_3: { 1: { hits: N - 1 } } },
+    /* Nobody else's picks, and mine right in week 1: so the only trophies
+       are u_2 (from the scorer's record) and me (from my picks, the moment
+       the week is final, before any record says so). */
+    noRevealed: true, myPicksRight: [1] };
+  const { ctx, page } = await open(plan, { wait: 2600 });
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await page.click('button[data-tab="standings"]').catch(() => {}); await page.click('[data-stand="season"]').catch(() => {});
+  await page.waitForTimeout(500);
+  const rows = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#board .row')].map(r => {
+    const sv = r.querySelector('svg.seals');
+    return [r.dataset.pu || 'u_0', { trophy: r.querySelectorAll('.sl-trophy').length, aria: sv ? sv.getAttribute('aria-label') : '' }]; })));
+  ok('a finished week with every game right: the trophy shows on Season', rows.u_2 && rows.u_2.trophy === 1, JSON.stringify(rows.u_2));
+  ok('and its label says perfect week', rows.u_2 && /1 perfect week/.test(rows.u_2.aria), JSON.stringify(rows.u_2));
+  ok('one game short: no trophy', rows.u_3 && rows.u_3.trophy === 0, JSON.stringify(rows.u_3));
+  ok('nobody else gets one on Season yet (my week 1 is not the week on screen)', Object.entries(rows).filter(([u]) => u !== 'u_2').every(([, r]) => r.trophy === 0), JSON.stringify(rows));
+  const subOf = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#board .row')].map(r =>
+    [r.dataset.pu || 'u_0', { trophy: r.querySelectorAll('.sl-trophy').length, sub: r.innerText.replace(/\s+/g, ' ') }])));
+  const season = await subOf();
+  ok('Season writes it out: "1 perfect week"', /1 perfect week/.test(season.u_2.sub) && !/perfect/.test(season.u_3.sub), JSON.stringify([season.u_2.sub, season.u_3.sub]));
+  /* And on the week it happened (Lee: "it should reflect on the week and season"). */
+  await page.evaluate(() => { const b = document.querySelector('.wk[data-wk="1"]'); if (b) b.click(); });
+  await page.waitForTimeout(800);
+  await page.click('[data-stand="week"]').catch(() => {}); await page.waitForTimeout(500);
+  const week = await subOf();
+  ok('This week, week 1: the trophy on the perfect row', week.u_2 && week.u_2.trophy === 1, JSON.stringify(week.u_2));
+  ok('with "Perfect week" in the line under the name', week.u_2 && /Perfect week/.test(week.u_2.sub) && /6 of 6 correct/.test(week.u_2.sub), week.u_2 && week.u_2.sub);
+  ok('mine too, from my own picks, though no record says so yet', week.u_0 && week.u_0.trophy === 1 && /Perfect week/.test(week.u_0.sub), JSON.stringify(week.u_0));
+  ok('and on no other row', Object.entries(week).filter(([u]) => !['u_2', 'u_0'].includes(u)).every(([, r]) => r.trophy === 0 && !/Perfect week/.test(r.sub)), JSON.stringify(week));
+  await page.evaluate(() => { const b = document.querySelector('.wk[data-wk="2"]'); if (b) b.click(); });
+  await page.waitForTimeout(800);
+  const wk2 = await subOf();
+  ok('a week not yet played shows no trophy for anyone', Object.values(wk2).every(r => r.trophy === 0), JSON.stringify(wk2));
+  ok('no page errors', errors.length === 0, errors[0] || '');
+  await ctx.close();
+}
+
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fails.length) { console.log('FAILURES:'); fails.forEach(f => console.log('  - ' + f)); }

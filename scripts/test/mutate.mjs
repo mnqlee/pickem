@@ -953,7 +953,7 @@ const MUTATIONS = [
   [133, 'wrap: share an empty canvas', "  const cv=wrapCanvas(W);", "  const cv=document.createElement('canvas'); cv.width=1080; cv.height=1350;",
    ['a real picture: paper, a masthead in ink, and the club colours'], 'v44:15'],
   /* v1.44.1: the page and its data file always travel together. */
-  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.8"></script>', '<script type="module" src="firebase-init.js"></script>',
+  [134, 'data file: back to one unversioned address', '<script type="module" src="./firebase-init.js?v=1.44.9"></script>', '<script type="module" src="firebase-init.js"></script>',
    ["both the preload and the script ask for firebase-init.js at this page's version"], 'v44:19'],
   [135, 'data file: no self-heal when the save is missing', "  if(typeof PS.setRivals!=='function'){", "  if(false){",
    ['a page missing the save reloads itself instead of saying "did not save"'], 'v44:19'],
@@ -993,6 +993,15 @@ const MUTATIONS = [
    ['the rest of the level group, separated by their guesses, do not share'], 'v44:25'],
   [151, 'places: shared mid-week and on the Season view too', "  const sPlace=view==='week'&&weekDone\n    ? placesOf", "  const sPlace=true\n    ? placesOf",
    ['the Season view still numbers 1 to N'], 'v44:25'],
+  /* v1.44.9 the perfect-week trophy. */
+  [152, 'trophy: only the scorer flag again', "  return Math.max((STANDINGS[pl]||{}).perfectWeeks||0, perfectWeekList(pl).length);", "  return (STANDINGS[pl]||{}).perfectWeeks||0;",
+   ['a finished week with every game right: the trophy shows on Season'], 'v44:26'],
+  [153, 'trophy: not on the week view', "    const pw=view==='week'&&weekDone&&perfectWeekList(r.p).includes(Number(wk));", "    const pw=false;",
+   ['This week, week 1: the trophy on the perfect row'], 'v44:26'],
+  [154, 'trophy: waits for the scorer on the week on screen', "  if(w!==state.week)return false;", "  return false;",
+   ['mine too, from my own picks, though no record says so yet'], 'v44:26'],
+  [155, 'trophy: one game short still counts', "Number(r.hits)===gs.length", "Number(r.hits)>=gs.length-1",
+   ['one game short: no trophy'], 'v44:26'],
 ];
 
 function runSuite(suite = 'regress') {

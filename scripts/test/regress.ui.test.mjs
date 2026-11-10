@@ -744,7 +744,10 @@ console.log('\n16. The two Standings tables must not borrow each other\'s histor
     top: (document.querySelector('#board .row .pts b') || {}).textContent || '',
     arrows: document.querySelectorAll('#board .row .arrow').length,
     lead: (document.querySelector('#board .leadtag') || {}).textContent || '',
-    seals: document.querySelectorAll('#board .row svg').length,
+    /* Seals, not svgs: since v1.44.9 a perfect week also draws a trophy
+       in the same svg, and this fixture's picks make several players
+       perfect. Count the 1ST/2ND seals themselves. */
+    seals: [...document.querySelectorAll('#board .row svg text')].filter(t => /^(1ST|2ND)$/.test(t.textContent.trim())).length,
     /* A SEASON seal prints a count next to the badge; a WEEK seal never
        does. badgeSVG only emits that <text> when n > 1, so counting the
        numerals inside the badge svgs is how the two are told apart. */

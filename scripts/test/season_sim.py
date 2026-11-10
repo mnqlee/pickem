@@ -58,8 +58,21 @@ msg_mod = types.ModuleType("firebase_admin.messaging")
 msg_mod.send = _fake_send
 msg_mod.Message = lambda **k: k
 msg_mod.Notification = lambda **k: k
-msg_mod.WebpushConfig = lambda **k: k
 msg_mod.WebpushFCMOptions = lambda **k: k
+# AS STRICT AS THE REAL LIBRARY (v1.46.1). This fake used to take anything,
+# so `notification={...}` as a plain dict passed here for months while the
+# real firebase-admin refused it on every send: "WebpushConfig.notification
+# must be an instance of WebpushNotification class". Every weekly result
+# notification failed, one log line each, and the job still went green.
+class WebpushNotification(dict):
+    def __init__(self, **k): super().__init__(**k)
+def _webpush_config(**k):
+    n = k.get("notification")
+    if n is not None and not isinstance(n, WebpushNotification):
+        raise ValueError("WebpushConfig.notification must be an instance of WebpushNotification class.")
+    return k
+msg_mod.WebpushNotification = WebpushNotification
+msg_mod.WebpushConfig = _webpush_config
 fb.messaging = msg_mod
 sys.modules["firebase_admin"] = fb
 sys.modules["firebase_admin.credentials"] = fb.credentials
@@ -329,16 +342,39 @@ def main():
         # 3. awards only exist once the week is complete
         wk_doc = (db.read("pools/%s/standings/_weeks" % POOL) or {}).get(str(w))
         if complete:
-            best = max(p for p, _ in exp.values())
-            want = sorted(u for u, (p, _) in exp.items() if p == best)
+            # THE RULE, written out here from Lee's ruling and sharing no code
+            # with the scorer: from Week 8 of 2026 (Week 1 of any later
+            # season) a tie on points goes to the tiebreaker, closest to the
+            # last game's total without going over; an over guess loses to
+            # any under; no guess ranks last. Players share a place only
+            # when level on both. Before that, ties on points share.
+            # (This oracle used the old shared-ties rule for every week and
+            # had been failing weeks 11 and 14 since v1.44.4, correctly
+            # reporting that the scorer had moved on and the test had not.)
+            tb_on = not (str(SEASON) == "2026" and w < 8)
+            gms = [db.read("seasons/%s/games/%s" % (SEASON, g)) for g in truth["games"][w]]
+            last = max(gms, key=lambda g: g["kickoff"])
+            actual = (last["awayScore"] or 0) + (last["homeScore"] or 0)
+            guess = {v["uid"]: v.get("total") for k, v in db.docs.items()
+                     if len(k) == 4 and k[2] == "tiebreaks" and v.get("wk") == w}
+            def key(u):
+                if not tb_on: return (0, 0)
+                g = guess.get(u)
+                return (2, 0) if g is None else (0, actual - g) if g <= actual else (1, g - actual)
+            rank = sorted(exp, key=lambda u: (-exp[u][0], key(u)))
+            place = {}
+            for i, u in enumerate(rank):
+                q = rank[i - 1] if i else None
+                place[u] = place[q] if q and exp[q][0] == exp[u][0] and key(q) == key(u) else i + 1
+            best = exp[rank[0]][0]
+            want = sorted(u for u in rank if place[u] == 1) if best > 0 else []
             got = sorted(x["uid"] for x in (wk_doc or {}).get("winners", []))
-            ok("week %2d: winner list matches, ties shared" % w, want == got,
+            ok("week %2d: winner list matches the rule" % w, want == got,
                "%s vs %s" % (want, got))
-            lower = [p for p, _ in exp.values() if p < best]
-            second = max(lower) if lower else 0
-            want2 = sorted(u for u, (p, _) in exp.items() if p == second) if second else []
+            nxt = next((u for u in rank if place[u] > 1), None)
+            want2 = sorted(u for u in rank if nxt and place[u] == place[nxt]) if nxt and exp[nxt][0] > 0 else []
             got2 = sorted(x["uid"] for x in (wk_doc or {}).get("seconds", []))
-            ok("week %2d: runner-up is the next distinct score" % w, want2 == got2,
+            ok("week %2d: runner-up matches the rule" % w, want2 == got2,
                "%s vs %s" % (want2[:4], got2[:4]))
         else:
             ok("week %2d: an incomplete week awards nothing" % w, wk_doc is None,
@@ -540,6 +576,9 @@ def main():
         SENT.clear()
         score_week.notify(reports)
         ok("a full pool of 50 produces notifications", len(SENT) > 0, len(SENT))
+        ok("each one carries its own tag, built the way the real library accepts",
+           SENT and all(isinstance(m["webpush"]["notification"], WebpushNotification)
+                        and str(m["webpush"]["notification"].get("tag", "")).startswith("result-") for m in SENT))
         ok("nobody without a token is messaged",
            len(SENT) <= sum(1 for i in range(N_PLAYERS) if i % 3), len(SENT))
         ok("opting out of results is respected",

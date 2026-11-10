@@ -168,8 +168,12 @@ def run(season, dry):
                                     # same fix in worker/live.js's push().
                                     fcm_options=messaging.WebpushFCMOptions(
                                         link=f"{APP_ORIGIN}/index.html"),
-                                    notification={"tag": f"ps-{wk}-{slot_key}",
-                                                  "renotify": urgent})))
+                                    # A WebpushNotification, not a dict:
+                                    # current firebase-admin refuses a dict
+                                    # (same fix as score_week.py, Nov 2026).
+                                    notification=messaging.WebpushNotification(
+                                        tag=f"ps-{wk}-{slot_key}",
+                                        renotify=urgent))))
                         # Mark ONLY the people FCM actually accepted.
                         # This used to mark everyone in `fresh` regardless,
                         # so a rejected send was permanently recorded as
