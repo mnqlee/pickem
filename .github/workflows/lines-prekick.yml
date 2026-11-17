@@ -1,0 +1,66 @@
+name: Lines before kickoff
+
+# One more look at the spreads shortly before each slate kicks off.
+# The daily run in lines.yml stays exactly as it was; this is in addition.
+#
+# Runs every 30 minutes, but almost every run stops after one database read:
+# "is a game kicking off in the next 2 hours?" Only when one is, and that
+# slate has not been refreshed yet, does it pull the lines from ESPN.
+# So each slate gets one refresh, usually 90 to 120 minutes before
+# kickoff. Four runs fall inside every 2 hour lead, so if GitHub drops or
+# delays one or two, a later one still refreshes before kickoff.
+# The rules live in pre_kickoff_lines() in scripts/score_week.py.
+#
+# Lines only: no scores, no scoring, no notifications, no picks.
+# Minutes 7 and 37, not 0 and 30: GitHub is busiest on the hour and the
+# half hour and drops more runs there.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Same group as lines.yml, so the daily run and this one never overlap.
+concurrency:
+  group: lines
+  cancel-in-progress: false
+
+jobs:
+  prekick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Write service account key
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "${SA:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is not set on this repository."
+            exit 1
+          fi
+          printf '%s' "$SA" > /tmp/sa.json
+          python -c "import json,sys; json.load(open('/tmp/sa.json'))" || {
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON."
+            exit 1
+          }
+
+      - name: Refresh lines if a game kicks off soon
+        env:
+          FIREBASE_SERVICE_ACCOUNT_FILE: /tmp/sa.json
+          SEASON: ${{ vars.SEASON || '2026' }}
+        run: python scripts/score_week.py --season "$SEASON" --before-kickoff
+
+      - name: Shred the key
+        if: always()
+        run: rm -f /tmp/sa.json

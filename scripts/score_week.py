@@ -11,7 +11,7 @@ recomputes from scratch each time rather than accumulating.
 
 import argparse, json, os, sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import requests
@@ -158,12 +158,13 @@ def pull_scores(db, season, week):
 
 
 # ---------- 1b. refresh betting lines ----------
-def pull_lines(db, season, week):
+def pull_lines(db, season, week, counts=None):
     sid, year, stype = season_parts(season)
     """Lines are only posted a week or so ahead, so refresh the current
     and next week every run rather than importing them all in the spring.
     A Week 12 spread does not exist in September and should not be shown."""
     col = db.collection("seasons").document(sid).collection("games")
+    total = 0          # games priced across both weeks, for pre_kickoff_lines
     for wk in (week, week + 1):
         # 4, not 3: the preseason has a Hall of Fame week that shifts the
         # numbering, and import_schedule.py and worker/live.js both use 4.
@@ -204,6 +205,99 @@ def pull_lines(db, season, week):
             col.document(gid).set({"spread": new}, merge=True)
             n += 1
         print(f"  lines wk{wk}: {n} priced")
+        total += n
+        if counts is not None:
+            counts[wk] = n
+    return total
+
+
+# ---------- 1c. one more look at the lines before each kickoff ----------
+# Lead and slate, in minutes. See pre_kickoff_lines.
+PREKICK_LEAD_MIN = 120
+PREKICK_SLATE_MIN = 60
+
+
+def _utc(t):
+    """A Firestore timestamp (or a plain datetime) as an aware UTC datetime."""
+    if t is None:
+        return None
+    if isinstance(t, datetime):
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromtimestamp(t.timestamp(), timezone.utc)
+    except Exception:
+        return None
+
+
+def pre_kickoff_lines(db, season, now=None, pull=None):
+    """Refresh the lines once, shortly before each slate kicks off.
+
+    WHY. The daily lines run is at 13:41 UTC. A Friday-morning-in-Japan
+    Thursday game was priced eleven hours before kickoff, and lines move
+    most in the last few hours (injury news, inactives, weather).
+
+    HOW. lines-prekick.yml calls this every 30 minutes. Each call costs
+    one read: "what is the next kickoff?". If it is more than
+    PREKICK_LEAD_MIN away, stop. If it is closer, refresh that week (and
+    the next, as pull_lines always does), unless this slate was already
+    refreshed. With a 30 minute caller and a 120 minute lead, four runs
+    fall inside every lead window (prime time kicks off at :15 or :20,
+    which an hourly :07 run would have hit only 68 and 8 minutes out), so
+    a run GitHub drops or delays is covered by the next one, and the
+    slate marker stops the later ones from pulling again.
+
+    A SLATE is every kickoff within PREKICK_SLATE_MIN of the one last
+    refreshed for: the 4:05 and 4:25 Sunday games are one slate, the
+    1:00 and 4:05 are two.
+
+    WHAT IT TOUCHES. Only what pull_lines touches (the spread on games
+    already in the schedule) plus one marker document,
+    seasons/{season}/meta/lines, that the app never reads. No scores, no
+    scoring, no notifications, no picks.
+
+    SUCCESS MEANS THE SLATE'S OWN WEEK WAS PRICED. pull_lines also prices
+    the week after; a pull where ESPN failed for this week but answered
+    for the next must not count. If this week got nothing (ESPN down, or
+    no lines posted), the marker is NOT written, the run logs a GitHub
+    warning, and the next run tries again.
+
+    Returns one word, for the log and the tests: none, early, done,
+    failed or refreshed."""
+    now = _utc(now) or datetime.now(timezone.utc)
+    pull = pull or pull_lines
+    sid, _y, _t = season_parts(season)
+    sref = db.collection("seasons").document(sid)
+    nxt = list(sref.collection("games").where("kickoff", ">", now)
+                   .order_by("kickoff").limit(1).stream())
+    if not nxt:
+        print("No game left to kick off. Nothing to do.")
+        return "none"
+    g = nxt[0].to_dict() or {}
+    kick, wk = _utc(g.get("kickoff")), g.get("wk")
+    if kick is None or wk is None:
+        print(f"Next game {nxt[0].id} has no kickoff or week. Nothing to do.")
+        return "none"
+    mins = (kick - now).total_seconds() / 60
+    if mins > PREKICK_LEAD_MIN:
+        print(f"Next kickoff in {mins:.0f} min ({nxt[0].id}). "
+              f"Refresh starts {PREKICK_LEAD_MIN} min before. Nothing to do.")
+        return "early"
+    mref = sref.collection("meta").document("lines")
+    last = _utc(((mref.get().to_dict()) or {}).get("preKickFor"))
+    if last is not None and last <= kick <= last + timedelta(minutes=PREKICK_SLATE_MIN):
+        print(f"Already refreshed for this slate (kickoff {last.isoformat()}). Nothing to do.")
+        return "done"
+    print(f"Kickoff in {mins:.0f} min ({nxt[0].id}). Refreshing week {wk} lines.")
+    counts = {}
+    pull(db, season, wk, counts)
+    priced = counts.get(wk, 0)
+    if not priced:
+        print(f"::warning::ESPN priced no week {wk} games before kickoff. "
+              "Marker not written: the next run tries again.")
+        return "failed"
+    mref.set({"preKickFor": kick, "at": now, "week": wk, "priced": priced}, merge=True)
+    print(f"Refreshed: {priced} games priced.")
+    return "refreshed"
 
 
 # ---------- 2. score every pool ----------
@@ -853,11 +947,22 @@ def main():
                          "to close a finished week straight away instead of "
                          "waiting for the Tuesday cron, and to stop a window "
                          "that has nothing left to watch.")
+    ap.add_argument("--before-kickoff", action="store_true",
+                    help="Refresh betting lines only if a game kicks off within "
+                         "the next two hours and this slate has not been "
+                         "refreshed yet. No scores, no scoring, no notifications. "
+                         "What lines-prekick.yml runs every hour.")
     args = ap.parse_args()
 
     key = os.environ.get("FIREBASE_SERVICE_ACCOUNT_FILE", "serviceAccount.json")
     firebase_admin.initialize_app(credentials.Certificate(key))
     db = firestore.client()
+
+    if args.before_kickoff:
+        print(f"Before kickoff, season {args.season}")
+        pre_kickoff_lines(db, args.season)
+        print("Done.")
+        return
 
     if args.lines_only:
         # The week of the NEXT game, not the last one kicked off: on a
