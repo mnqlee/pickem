@@ -51,6 +51,10 @@ one is the same class of mistake as a green run that graded a stale file.
 
     python season_sim.py         # 128 the REAL scorer, 50 players, 18 weeks
     python test_result_copy.py   #  30 what a player reads on Tuesday morning
+    python test_kickoff_sync.py  #  25 a kickoff the NFL moves is followed by the
+                                 #     daily lines run, and every saved pick for it
+                                 #     is sealed until the new time (16 checks, 9 breaks)
+    python test_repin_reveals.py #  21 re-sealing picks when a kickoff moves
     python test_status_env.py    #  32 the four variables the week closer reads
     python test_loop_window.py   #  49 the Live-scores window's own shell logic
     python test_usage_report.py  #  33 the usage aggregate, and that it

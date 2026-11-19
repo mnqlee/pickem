@@ -117,6 +117,7 @@ def main():
 
     batch, n, kept = db.batch(), 0, 0
     written_ids = set()
+    moved = set()          # games whose kickoff time this import changes
     weeks_touched = {g["wk"] for g in games}
     for g in games:
         gid = g.pop("id")
@@ -143,6 +144,9 @@ def main():
                 g.pop(f, None)
             kept += 1
 
+        if prev and prev.get("kickoff") is not None and g.get("kickoff") is not None \
+                and prev.get("kickoff") != g.get("kickoff"):
+            moved.add(gid)
         batch.set(col.document(gid), g, merge=True)
         n += 1
         if n % 400 == 0:
@@ -151,6 +155,13 @@ def main():
     print(f"Wrote {n} games to seasons/{season_id}/games")
     if kept:
         print(f"  ({kept} already final — kept their scores, refreshed only the schedule)")
+    # A kickoff that MOVED: every pick already saved for that game still
+    # carries the old time as the moment it may be shown to the league.
+    # Put it back on the real kickoff, in every league (repin_reveals.py).
+    if moved:
+        from repin_reveals import repin, report
+        print(f"{len(moved)} game(s) changed kickoff time: {', '.join(sorted(moved))}")
+        report(repin(db, season_id, only=moved), True)
 
     # A re-import's doc id is built from the matchup, not just the week —
     # deliberately, so a game already final never gets walked over (see the

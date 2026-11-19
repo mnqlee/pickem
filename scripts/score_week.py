@@ -158,13 +158,15 @@ def pull_scores(db, season, week):
 
 
 # ---------- 1b. refresh betting lines ----------
-def pull_lines(db, season, week, counts=None):
+def pull_lines(db, season, week, counts=None, now=None):
     sid, year, stype = season_parts(season)
     """Lines are only posted a week or so ahead, so refresh the current
     and next week every run rather than importing them all in the spring.
     A Week 12 spread does not exist in September and should not be shown."""
     col = db.collection("seasons").document(sid).collection("games")
     total = 0          # games priced across both weeks, for pre_kickoff_lines
+    moved = set()      # games whose kickoff this run moved
+    now = now or datetime.now(timezone.utc)
     for wk in (week, week + 1):
         # 4, not 3: the preseason has a Hall of Fame week that shifts the
         # numbering, and import_schedule.py and worker/live.js both use 4.
@@ -180,20 +182,22 @@ def pull_lines(db, season, week, counts=None):
         # Same rule as pull_scores: only ever UPDATE a game we already
         # have. A merge-set on an unknown id creates a document holding
         # nothing but a spread, with no wk and no kickoff.
-        known = {d.id: (d.to_dict() or {}).get("spread") or ""
-                 for d in col.where("wk", "==", wk).stream()}
+        docs = {d.id: (d.to_dict() or {}) for d in col.where("wk", "==", wk).stream()}
+        known = {gid: g.get("spread") or "" for gid, g in docs.items()}
         n = 0
         for ev in r.json().get("events", []):
             try:
                 c = ev["competitions"][0]
                 odds = c.get("odds") or []
-                if not odds:
-                    continue
                 by = {t["homeAway"]: t["team"]["abbreviation"] for t in c["competitors"]}
             except Exception:
                 continue
             gid = f"{sid}_W{wk}_{by['away']}_{by['home']}"
             if gid not in known:
+                continue
+            # The same look also catches a kickoff the NFL has moved.
+            follow_kickoff(col, gid, docs[gid], ev, c, moved, now)
+            if not odds:
                 continue
             new = odds[0].get("details") or ""
             # Never erase a line ESPN has stopped quoting (it drops odds
@@ -208,7 +212,50 @@ def pull_lines(db, season, week, counts=None):
         total += n
         if counts is not None:
             counts[wk] = n
+    # Every pick already saved for a moved game still carries the old time
+    # as the moment the league may see it. Put it on the real kickoff.
+    if moved:
+        from repin_reveals import repin, report
+        print(f"  {len(moved)} kickoff(s) moved: {', '.join(sorted(moved))}")
+        report(repin(db, sid, only=moved, now=now), True)
     return total
+
+
+# ---------- 1a. follow a kickoff the NFL moves (flex scheduling) ----------
+def _espn_time(s):
+    try:
+        t = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def follow_kickoff(col, gid, game, ev, c, moved, now):
+    """The schedule was imported in the spring and nothing changed a kickoff
+    after that, so a flexed game kept its old time: the app locked it at the
+    wrong moment (too early if it moved later, and, worse, too LATE if it
+    moved earlier, leaving picks open after the real kickoff).
+
+    Moved only when every one of these holds, and otherwise left alone:
+      ESPN says the time is real (timeValid is not false: a TBD Saturday
+      game is listed at a placeholder), the game has not started on either
+      side (ESPN still "pre", and our kickoff still ahead), the new time is
+      ahead too, and it differs by a minute or more. Nothing else on the
+      game is touched."""
+    if c.get("timeValid") is False:
+        return False
+    state = (((c.get("status") or ev.get("status") or {}).get("type") or {}).get("state")) or "pre"
+    if state != "pre":
+        return False
+    new, old = _espn_time(ev.get("date") or c.get("date")), _utc(game.get("kickoff"))
+    if new is None or old is None or old <= now or new <= now:
+        return False
+    if abs((new - old).total_seconds()) < 60:
+        return False
+    col.document(gid).set({"kickoff": new}, merge=True)
+    moved.add(gid)
+    print(f"    {gid}: kickoff moved {old.isoformat()} -> {new.isoformat()}")
+    return True
 
 
 # ---------- 1c. one more look at the lines before each kickoff ----------
